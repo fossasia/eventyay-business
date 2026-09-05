@@ -1,0 +1,5 @@
+recursive-include eventyay_business/static *
+recursive-include eventyay_business/templates *
+recursive-include eventyay_business/locale *
+include LICENSE
+exclude .gitlab-ci.yml

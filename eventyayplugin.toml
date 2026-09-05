@@ -1,0 +1,4 @@
+[plugin]
+package = "eventyay-business"
+modules = [ "eventyay_business" ]
+marketplace_name = "eventyay-business"

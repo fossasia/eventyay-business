@@ -1,0 +1,53 @@
+test:
+    image:
+        name: eventyay/ci-image
+    before_script:
+        - pip install -U pip uv
+        - uv pip install --system -U wheel setuptools pytest pytest-django coverage
+        - uv pip install --system -U git+"https://github.com/fossasia/eventyay.git@019682dad5b69b95f33902b37c849608c5abccd5#egg=eventyay-unified&subdirectory=app"
+    script:
+        - uv pip install --system -e .
+        - make
+        - coverage run -m pytest tests
+        - coverage report
+style:
+    image:
+        name: eventyay/ci-image
+    before_script:
+        - pip install -U pip uv
+        - uv pip install --system -U wheel setuptools isort black flake8 check-manifest
+        - uv pip install --system -U git+"https://github.com/fossasia/eventyay.git@019682dad5b69b95f33902b37c849608c5abccd5#egg=eventyay-unified&subdirectory=app"
+    script:
+        - uv pip install --system -e .
+        - black --check .
+        - isort -c --gitignore .
+        - flake8 --extend-exclude .cache .
+        - check-manifest --ignore .cache .
+build:
+    image:
+        name: eventyay/ci-image
+    before_script:
+        - pip install -U pip uv
+        - uv pip install --system -U wheel setuptools build eventyay-plugin-build check-manifest
+    script:
+        - python -m build
+        - check-manifest .
+    only:
+        - pypi
+    artifacts:
+        paths:
+            - dist/
+upload:
+    image:
+        name: eventyay/ci-image
+    before_script:
+        - cat $PYPIRC > ~/.pypirc
+        - pip install -U pip uv
+        - uv pip install --system -U twine
+    script:
+        - twine check dist/*
+        - twine upload dist/*
+    only:
+        - pypi
+    dependencies:
+        - build

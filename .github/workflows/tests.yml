@@ -1,0 +1,42 @@
+name: Tests
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [ main, master ]
+    paths-ignore:
+      - 'eventyay_business/locale/**'
+  pull_request:
+    branches: [ main, master ]
+    paths-ignore:
+      - 'eventyay_business/locale/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    name: Tests
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.12
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/setup.py') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+      - name: Install system dependencies
+        run: sudo apt update && sudo apt-get install -y gettext
+      - name: Install eventyay
+        run: pip3 install "git+https://github.com/fossasia/eventyay.git@019682dad5b69b95f33902b37c849608c5abccd5#egg=eventyay-unified&subdirectory=app"
+      - name: Install Dependencies
+        run: pip3 install pytest pytest-django -Ue .
+      - name: Run checks
+        run: py.test tests
+
