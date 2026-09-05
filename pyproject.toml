@@ -16,7 +16,7 @@ dependencies = [
 ]
 
 [project.entry-points."pretix.plugin"]
-eventyay_business = "eventyay_business.apps:PluginApp"
+eventyay_business = "eventyay_business:PluginApp"
 
 [project.entry-points."distutils.commands"]
 build = "pretix_plugin_build.build:CustomBuild"

@@ -21,10 +21,11 @@ class PluginApp(PluginConfig):
         description = gettext_lazy(
             "Eventyay plugin for tiers, add-ons, and billing restrictions"
         )
-        visible = True
+        visible = False
+        restricted = True
         version = __version__
         category = "FEATURE"
-        compatibility = "eventyay>=2.7.0"
+        compatibility = []
         settings_links = []
         navigation_links = []
 
