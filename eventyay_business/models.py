@@ -65,6 +65,12 @@ class TierVersion(models.Model):
         verbose_name = _("Tier version")
         verbose_name_plural = _("Tier versions")
         unique_together = (("tier", "version"),)
+        constraints = [
+            models.CheckConstraint(
+                name="tierversion_effective_dates",
+                condition=models.Q(effective_until__isnull=True) | models.Q(effective_from__isnull=True) | models.Q(effective_until__gt=models.F("effective_from")),
+            )
+        ]
 
     def __str__(self):
         return f"{self.tier.name} v{self.version}"
@@ -99,6 +105,12 @@ class TierPrice(models.Model):
         verbose_name = _("Tier price")
         verbose_name_plural = _("Tier prices")
         unique_together = (("tier_version", "billing_interval", "currency"),)
+        constraints = [
+            models.CheckConstraint(
+                name="tierprice_amount_nonnegative",
+                condition=models.Q(amount__gte=0),
+            )
+        ]
 
 
 class TierEntitlement(models.Model):
@@ -126,3 +138,13 @@ class TierEntitlement(models.Model):
         verbose_name = _("Tier entitlement")
         verbose_name_plural = _("Tier entitlements")
         unique_together = (("tier_version", "capability"),)
+        constraints = [
+            models.CheckConstraint(
+                name="tierentitlement_overage_price_nonnegative",
+                condition=models.Q(overage_price__isnull=True) | models.Q(overage_price__gte=0),
+            ),
+            models.CheckConstraint(
+                name="tierentitlement_overage_block_positive",
+                condition=models.Q(overage_block_size__isnull=True) | models.Q(overage_block_size__gt=0),
+            )
+        ]
