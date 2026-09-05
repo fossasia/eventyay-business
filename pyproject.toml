@@ -1,0 +1,42 @@
+[project]
+name = "eventyay-business"
+dynamic = ["version"]
+description = "Eventyay plugin for tiers, add-ons, and billing restrictions"
+readme = "README.rst"
+license = {file = "LICENSE"}
+keywords = ["eventyay"]
+authors = [
+    {name = "eventyay team", email = "support@eventyay.com"},
+]
+maintainers = [
+    {name = "eventyay team", email = "support@eventyay.com"},
+]
+
+dependencies = [
+]
+
+[project.entry-points."pretix.plugin"]
+eventyay_business = "eventyay_business.apps:PluginApp"
+
+[project.entry-points."distutils.commands"]
+build = "pretix_plugin_build.build:CustomBuild"
+
+[build-system]
+requires = [
+    "setuptools",
+    "pretix-plugin-build",
+]
+
+[project.urls]
+homepage = "https://github.com/fossasia/eventyay-business"
+repository = "https://github.com/fossasia/eventyay-business"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.dynamic]
+version = {attr = "eventyay_business.__version__"}
+
+[tool.setuptools.packages.find]
+include = ["eventyay*"]
+namespaces = false
