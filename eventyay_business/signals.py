@@ -19,9 +19,9 @@ if nav_global:
         return [
             {
                 "label": _("Tiers"),
-                "url": reverse("eventyay_business:tiers.list"),
+                "url": reverse("plugins:eventyay_business:tiers.list"),
                 "active": (
-                    url.namespace == "eventyay_business"
+                    url.namespace == "plugins:eventyay_business"
                     and url.url_name.startswith("tiers.")
                 ),
                 "parent": reverse("eventyay_admin:admin.global.business"),
