@@ -1,0 +1,100 @@
+name: Code Style
+
+on:
+  push:
+    branches: [ main, master ]
+    paths-ignore:
+      - 'eventyay_business/locale/**'
+      - 'eventyay_business/static/**'
+  pull_request:
+    branches: [ main, master ]
+    paths-ignore:
+      - 'eventyay_business/locale/**'
+      - 'eventyay_business/static/**'
+
+jobs:
+  isort:
+    name: isort
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v1
+        with:
+          python-version: 3.12
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/setup.py') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+      - name: Install Dependencies
+        run: pip3 install isort -Ue .
+      - name: Run isort
+        run: isort -c .
+  flake:
+    name: flake8
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v1
+        with:
+          python-version: 3.12
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/setup.py') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+      - name: Install Dependencies
+        run: pip3 install flake8 -Ue .
+      - name: Run flake8
+        run: flake8 .
+        working-directory: .
+  black:
+    name: black
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v1
+        with:
+          python-version: 3.12
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/setup.py') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+      - name: Install Dependencies
+        run: pip3 install black -Ue .
+      - name: Run black
+        run: black --check .
+        working-directory: .
+  packaging:
+    name: packaging
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v1
+        with:
+          python-version: 3.12
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/setup.py') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+      - name: Install Dependencies
+        run: pip3 install twine check-manifest pretix-plugin-build setuptools build -Ue .
+      - name: Run check-manifest
+        run: check-manifest .
+        working-directory: .
+      - name: Build package
+        run: python setup.py sdist
+        working-directory: .
+      - name: Check package
+        run: twine check dist/*
+        working-directory: .
