@@ -3,7 +3,7 @@ Eventyay Business
 
 This is a plugin for `eventyay`_. 
 
-Short description
+Eventyay plugin for tiers, add-ons, and billing restrictions
 
 Development setup
 -----------------
@@ -36,14 +36,14 @@ You can auto-fix some of these issues by running::
     isort .
     black .
 
-To automatically check for these issues before you commit, you can run ``.install-hooks``.
+To automatically check for these issues before you commit, you can run ``sh .install-hooks.sh``.
 
 
 License
 -------
 
 
-Copyright 2026 Your name
+Copyright 2026 eventyay team
 
 Released under the terms of the Apache License 2.0
 

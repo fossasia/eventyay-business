@@ -4,8 +4,10 @@ from . import __version__
 
 try:
     from eventyay.base.plugins import PluginConfig
-except ImportError:
-    raise RuntimeError("Please use eventyay 2.7 or above to run this plugin!")
+except ImportError as e:
+    if getattr(e, "name", None) != "eventyay.base.plugins":
+        raise
+    raise RuntimeError("Please use eventyay 2.7 or above to run this plugin!") from e
 
 
 class PluginApp(PluginConfig):

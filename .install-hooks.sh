@@ -8,10 +8,24 @@ then
     exit 1
 fi
 
-echo "#!/bin/sh" > $GIT_DIR/hooks/pre-commit
-echo "set -e" >> $GIT_DIR/hooks/pre-commit
-echo ". \"$VENV_ACTIVATE\"" >> $GIT_DIR/hooks/pre-commit
-echo "black --check ." >> $GIT_DIR/hooks/pre-commit
-echo "isort -c ." >> $GIT_DIR/hooks/pre-commit
-echo "flake8 ." >> $GIT_DIR/hooks/pre-commit
-chmod +x $GIT_DIR/hooks/pre-commit
+HOOK_FILE="$GIT_DIR/hooks/pre-commit"
+BLOCK_START="# --- EVENTYAY MANAGED BLOCK START ---"
+BLOCK_END="# --- EVENTYAY MANAGED BLOCK END ---"
+
+if [ -f "$HOOK_FILE" ]; then
+    sed -i.bak "/$BLOCK_START/,/$BLOCK_END/d" "$HOOK_FILE"
+    rm -f "$HOOK_FILE.bak"
+else
+    echo "#!/bin/sh" > "$HOOK_FILE"
+    echo "set -e" >> "$HOOK_FILE"
+fi
+
+cat <<EOF >> "$HOOK_FILE"
+$BLOCK_START
+. "$VENV_ACTIVATE"
+black --check .
+isort -c .
+flake8 .
+$BLOCK_END
+EOF
+chmod +x "$HOOK_FILE"

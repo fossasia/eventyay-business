@@ -6,8 +6,12 @@ set -e
 set -x
 
 # Lock Weblate
+LOCKED=""
+trap 'for c in $LOCKED; do wlc unlock "$c"; done' EXIT
+
 for c in $COMPONENTS; do
 	wlc lock $c;
+	LOCKED="$LOCKED $c"
 done
 
 # Push changes from Weblate to GitHub
@@ -31,7 +35,3 @@ git commit -s -m "Update po files
 # Push changes
 git push
 
-# Unlock Weblate
-for c in $COMPONENTS; do
-	wlc unlock $c;
-done
