@@ -219,9 +219,14 @@ class OrganizerPlanView(OrganizerPermissionRequiredMixin, OrganizerDetailViewMix
         organizer = self.request.organizer
         from .models import Subscription
         
+        from django.utils.timezone import now
+        current_time = now()
         sub = Subscription.objects.filter(
-            organizer=organizer, 
-            status__in=['active', 'pending']
+            organizer=organizer,
+            status="active",
+            starts_at__lte=current_time,
+        ).exclude(
+            ends_at__lt=current_time
         ).select_related('tier_version__tier').first()
         
         ctx['subscription'] = sub

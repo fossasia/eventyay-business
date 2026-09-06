@@ -15,12 +15,9 @@ def dummy_organizer():
 def business_setup(dummy_organizer):
     tier = Tier.objects.create(slug="pro", name="Pro", is_public=True)
     version = TierVersion.objects.create(tier=tier, version=1, published_at=now())
-    sub = Subscription.objects.create(
-        organizer=dummy_organizer,
-        tier_version=version,
-        status='active',
-        starts_at=now()
-    )
+    sub = Subscription.objects.get(organizer=dummy_organizer)
+    sub.tier_version = version
+    sub.save(update_fields=["tier_version"])
     
     # Register a test capability
     cap = Capability(

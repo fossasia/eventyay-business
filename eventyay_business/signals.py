@@ -108,9 +108,14 @@ if entitlement_check and EntitlementDecision:
         if not cap_def:
             return None
             
+        from django.utils.timezone import now
+        current_time = now()
         sub = Subscription.objects.filter(
-            organizer=organizer, 
-            status__in=["active", "pending"]
+            organizer=organizer,
+            status="active",
+            starts_at__lte=current_time,
+        ).exclude(
+            ends_at__lt=current_time
         ).select_related("tier_version").first()
         
         value = None
