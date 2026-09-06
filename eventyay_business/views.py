@@ -50,6 +50,13 @@ class TierUpdateView(AdministratorPermissionRequiredMixin, UpdateView):
         self.object = self.get_object()
         self.latest_version = self.object.versions.first()
         
+        if not self.latest_version:
+            self.latest_version = TierVersion.objects.create(
+                tier=self.object,
+                version=1,
+                created_by=request.user
+            )
+            
         # If the latest version is published, redirect to detail view or duplicate prompt
         if self.latest_version and self.latest_version.published_at:
             messages.info(
@@ -102,7 +109,7 @@ class TierNewDraftView(AdministratorPermissionRequiredMixin, View):
     
     @transaction.atomic
     def post(self, request, *args, **kwargs):
-        tier = get_object_or_404(Tier, pk=kwargs.get("pk"))
+        tier = get_object_or_404(Tier.objects.select_for_update(), pk=kwargs.get("pk"))
         latest_version = tier.versions.first()
         
         if not latest_version or not latest_version.published_at:
@@ -142,7 +149,7 @@ class TierPublishView(AdministratorPermissionRequiredMixin, View):
             latest_version.published_at = now()
             latest_version.save()
             
-            if tier.status == TierStatus.DRAFT:
+            if tier.status in (TierStatus.DRAFT, TierStatus.ARCHIVED):
                 tier.status = TierStatus.PUBLISHED
                 tier.save()
                 
