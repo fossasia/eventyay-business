@@ -31,3 +31,6 @@ class PluginApp(PluginConfig):
 
     def ready(self):
         from . import signals  # NOQA
+        from .capabilities import register_builtin_capabilities
+
+        register_builtin_capabilities()
