@@ -24,9 +24,12 @@ def auto_assign_free_tier(apps, schema_editor):
             version=1,
             defaults={"published_at": now()}
         )
+        if latest_version.published_at is None:
+            latest_version.published_at = now()
+            latest_version.save(update_fields=["published_at"])
 
     # Cross-app relations might not be available on historical models, so query IDs
-    subscribed_org_ids = Subscription.objects.values_list('organizer_id', flat=True)
+    subscribed_org_ids = Subscription.objects.filter(status__in=['active', 'pending']).values_list('organizer_id', flat=True)
     organizers_without_subs = Organizer.objects.exclude(pk__in=subscribed_org_ids)
     
     subscriptions_to_create = []
