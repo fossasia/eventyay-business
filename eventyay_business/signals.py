@@ -8,6 +8,12 @@ except ImportError:
     nav_global = None
 
 
+try:
+    from eventyay.base.signals import register_entitlements
+except ImportError:
+    register_entitlements = None
+
+
 if nav_global:
 
     @receiver(nav_global, dispatch_uid="business_tiers_nav")
@@ -27,3 +33,12 @@ if nav_global:
                 "parent": reverse("eventyay_admin:admin.global.business"),
             }
         ]
+
+
+if register_entitlements:
+
+    @receiver(register_entitlements, dispatch_uid="business_register_capabilities")
+    def register_capabilities_receiver(sender, **kwargs):
+        from .capabilities import default_registry
+
+        return default_registry.as_dict()
