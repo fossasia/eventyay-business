@@ -1,0 +1,174 @@
+{% extends "pretixcontrol/admin/base.html" %}
+{% load i18n %}
+
+{% block title %}
+    {% trans "Tier Details" %}: {{ tier.name }}
+{% endblock %}
+
+{% block content %}
+    <h1>
+        {{ tier.name }}
+        <small>
+            {% if tier.status == "published" %}
+                <span class="label label-success">{% trans "Published" %}</span>
+            {% elif tier.status == "archived" %}
+                <span class="label label-danger">{% trans "Archived" %}</span>
+            {% else %}
+                <span class="label label-warning">{% trans "Draft" %}</span>
+            {% endif %}
+        </small>
+    </h1>
+    
+    <div class="row">
+        <div class="col-md-8">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <h3 class="panel-title">{% trans "General Information" %}</h3>
+                </div>
+                <div class="panel-body">
+                    <dl class="dl-horizontal">
+                        <dt>{% trans "Slug" %}</dt><dd>{{ tier.slug }}</dd>
+                        <dt>{% trans "Public" %}</dt><dd>{{ tier.is_public|yesno:"Yes,No" }}</dd>
+                        <dt>{% trans "Description" %}</dt><dd>{{ tier.description|linebreaksbr|default:"-" }}</dd>
+                    </dl>
+                </div>
+            </div>
+
+            {% if latest_version %}
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <h3 class="panel-title">
+                        {% trans "Latest Version" %}: v{{ latest_version.version }}
+                        {% if latest_version.published_at %}
+                            <span class="label label-success">{% trans "Published" %}</span>
+                        {% else %}
+                            <span class="label label-warning">{% trans "Draft" %}</span>
+                        {% endif %}
+                    </h3>
+                </div>
+                <div class="panel-body">
+                    <h4>{% trans "Prices" %}</h4>
+                    {% if latest_version.prices.all %}
+                        <table class="table table-condensed">
+                            <thead>
+                                <tr>
+                                    <th>{% trans "Interval" %}</th>
+                                    <th>{% trans "Amount" %}</th>
+                                    <th>{% trans "Active" %}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for price in latest_version.prices.all %}
+                                <tr>
+                                    <td>{{ price.get_billing_interval_display }}</td>
+                                    <td>{{ price.currency }} {{ price.amount }}</td>
+                                    <td>{{ price.active|yesno:"Yes,No" }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    {% else %}
+                        <p class="text-muted">{% trans "No prices defined." %}</p>
+                    {% endif %}
+
+                    <h4>{% trans "Entitlements" %}</h4>
+                    {% if latest_version.entitlements.all %}
+                        <table class="table table-condensed">
+                            <thead>
+                                <tr>
+                                    <th>{% trans "Capability" %}</th>
+                                    <th>{% trans "Value" %}</th>
+                                    <th>{% trans "Overage Allowed" %}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for ent in latest_version.entitlements.all %}
+                                <tr>
+                                    <td>{{ ent.capability }}</td>
+                                    <td>{{ ent.value|default:"-" }} {{ ent.unit }}</td>
+                                    <td>
+                                        {% if ent.overage_allowed %}
+                                            {% trans "Yes" %} ({{ ent.currency|default:"" }} {{ ent.overage_price|default:"0" }} / {{ ent.overage_block_size|default:"1" }})
+                                        {% else %}
+                                            {% trans "No" %}
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    {% else %}
+                        <p class="text-muted">{% trans "No entitlements defined." %}</p>
+                    {% endif %}
+                </div>
+            </div>
+            {% else %}
+                <div class="alert alert-warning">
+                    {% trans "No versions exist for this tier." %}
+                </div>
+            {% endif %}
+        </div>
+        
+        <div class="col-md-4">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <h3 class="panel-title">{% trans "Actions" %}</h3>
+                </div>
+                <div class="list-group">
+                    {% if latest_version and latest_version.published_at %}
+                        <form action="{% url 'plugins:eventyay_business:tiers.draft' pk=tier.pk %}" method="post" style="display:inline;">
+                            {% csrf_token %}
+                            <button class="list-group-item">
+                                <i class="fa fa-fw fa-copy"></i> {% trans "Create New Draft Version" %}
+                            </button>
+                        </form>
+                    {% else %}
+                        <a href="{% url 'plugins:eventyay_business:tiers.edit' pk=tier.pk %}" class="list-group-item">
+                            <i class="fa fa-fw fa-edit"></i> {% trans "Edit Draft" %}
+                        </a>
+                        {% if latest_version %}
+                            <form action="{% url 'plugins:eventyay_business:tiers.publish' pk=tier.pk %}" method="post" style="display:inline;">
+                                {% csrf_token %}
+                                <button class="list-group-item" onclick="return confirm('{% trans "Are you sure you want to publish this draft? It cannot be edited once published." %}');">
+                                    <i class="fa fa-fw fa-bullhorn text-success"></i> {% trans "Publish Draft" %}
+                                </button>
+                            </form>
+                        {% endif %}
+                    {% endif %}
+                    
+                    {% if tier.status != "archived" %}
+                        <form action="{% url 'plugins:eventyay_business:tiers.archive' pk=tier.pk %}" method="post" style="display:inline;">
+                            {% csrf_token %}
+                            <button class="list-group-item" onclick="return confirm('{% trans "Are you sure you want to archive this tier?" %}');">
+                                <i class="fa fa-fw fa-archive text-danger"></i> {% trans "Archive Tier" %}
+                            </button>
+                        </form>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <h3 class="panel-title">{% trans "Version History" %}</h3>
+                </div>
+                <div class="list-group">
+                    {% for version in tier.versions.all %}
+                        <div class="list-group-item">
+                            <h4 class="list-group-item-heading">
+                                v{{ version.version }}
+                                {% if version.published_at %}
+                                    <small class="pull-right text-success">{% trans "Published" %} {{ version.published_at|date:"SHORT_DATE_FORMAT" }}</small>
+                                {% else %}
+                                    <small class="pull-right text-warning">{% trans "Draft" %}</small>
+                                {% endif %}
+                            </h4>
+                            <p class="list-group-item-text">
+                                {{ version.prices.count }} {% trans "prices" %}, {{ version.entitlements.count }} {% trans "entitlements" %}
+                            </p>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
