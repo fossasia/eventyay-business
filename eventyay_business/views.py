@@ -30,7 +30,7 @@ class TierCreateView(AdministratorPermissionRequiredMixin, CreateView):
     
     @transaction.atomic
     def form_valid(self, form):
-        super().form_valid(form)
+        self.object = form.save()
         # Create the initial draft TierVersion
         TierVersion.objects.create(
             tier=self.object,
