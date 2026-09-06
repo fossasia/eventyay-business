@@ -84,6 +84,11 @@ class TierUpdateView(AdministratorPermissionRequiredMixin, UpdateView):
         entitlement_formset = context["entitlement_formset"]
 
         if form.is_valid() and price_formset.is_valid() and entitlement_formset.is_valid():
+            latest_version = TierVersion.objects.select_for_update().filter(pk=self.latest_version.pk).first()
+            if latest_version and latest_version.published_at:
+                messages.error(self.request, _("Cannot save edits: this version was published concurrently."))
+                return redirect(reverse("plugins:eventyay_business:tiers.detail", kwargs={"pk": self.object.pk}))
+
             self.object = form.save()
             price_formset.save()
             entitlement_formset.save()
@@ -145,11 +150,15 @@ class TierPublishView(AdministratorPermissionRequiredMixin, View):
         tier = get_object_or_404(Tier, pk=kwargs.get("pk"))
         latest_version = tier.versions.first()
         
+        if tier.status == TierStatus.ARCHIVED:
+            messages.error(request, _("Cannot publish a draft for an archived tier. Unarchive it first."))
+            return redirect(reverse("plugins:eventyay_business:tiers.list"))
+
         if latest_version and not latest_version.published_at:
             latest_version.published_at = now()
             latest_version.save()
             
-            if tier.status in (TierStatus.DRAFT, TierStatus.ARCHIVED):
+            if tier.status == TierStatus.DRAFT:
                 tier.status = TierStatus.PUBLISHED
                 tier.save()
                 

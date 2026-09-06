@@ -129,6 +129,9 @@ class TierEntitlement(models.Model):
     overage_price = models.DecimalField(
         max_digits=10, decimal_places=2, null=True, blank=True, verbose_name=_("Overage price")
     )
+    currency = models.CharField(
+        max_length=3, blank=True, null=True, verbose_name=_("Overage currency")
+    )
     overage_block_size = models.PositiveIntegerField(
         null=True, blank=True, verbose_name=_("Overage block size")
     )

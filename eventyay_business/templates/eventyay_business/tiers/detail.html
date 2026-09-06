@@ -88,7 +88,7 @@
                                     <td>{{ ent.value|default:"-" }} {{ ent.unit }}</td>
                                     <td>
                                         {% if ent.overage_allowed %}
-                                            {% trans "Yes" %} ({{ ent.overage_price|default:"0" }} / {{ ent.overage_block_size|default:"1" }})
+                                            {% trans "Yes" %} ({{ ent.currency|default:"" }} {{ ent.overage_price|default:"0" }} / {{ ent.overage_block_size|default:"1" }})
                                         {% else %}
                                             {% trans "No" %}
                                         {% endif %}

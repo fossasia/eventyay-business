@@ -28,7 +28,7 @@ TierPriceFormSet = inlineformset_factory(
 TierEntitlementFormSet = inlineformset_factory(
     TierVersion,
     TierEntitlement,
-    fields=["capability", "value", "unit", "overage_allowed", "overage_price", "overage_block_size"],
+    fields=["capability", "value", "unit", "overage_allowed", "overage_price", "currency", "overage_block_size"],
     extra=1,
     can_delete=True,
 )

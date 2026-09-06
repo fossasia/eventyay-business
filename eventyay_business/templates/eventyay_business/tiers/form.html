@@ -52,7 +52,7 @@
                                         {% if p_form.instance.pk %}
                                             {% bootstrap_field p_form.DELETE layout='inline' %}
                                         {% else %}
-                                            <button type="button" class="btn btn-danger" data-formset-delete-button>
+                                            <button type="button" class="btn btn-danger" data-formset-delete-button aria-label="{% trans 'Delete Price' %}">
                                                 <i class="fa fa-trash"></i>
                                             </button>
                                         {% endif %}
@@ -76,7 +76,7 @@
                                     <div class="col-sm-3">{% bootstrap_field price_formset.empty_form.stripe_price_id layout='inline' %}</div>
                                     <div class="col-sm-2">{% bootstrap_field price_formset.empty_form.active layout='inline' %}</div>
                                     <div class="col-sm-1 text-right">
-                                        <button type="button" class="btn btn-danger" data-formset-delete-button>
+                                        <button type="button" class="btn btn-danger" data-formset-delete-button aria-label="{% trans 'Delete Price' %}">
                                             <i class="fa fa-trash"></i>
                                         </button>
                                     </div>
@@ -107,16 +107,17 @@
                             <div class="panel-body">
                                 <div class="row">
                                     <div class="col-sm-2">{% bootstrap_field e_form.capability layout='inline' %}</div>
-                                    <div class="col-sm-2">{% bootstrap_field e_form.value layout='inline' %}</div>
+                                    <div class="col-sm-1">{% bootstrap_field e_form.value layout='inline' %}</div>
                                     <div class="col-sm-1">{% bootstrap_field e_form.unit layout='inline' %}</div>
                                     <div class="col-sm-2">{% bootstrap_field e_form.overage_allowed layout='inline' %}</div>
-                                    <div class="col-sm-2">{% bootstrap_field e_form.overage_price layout='inline' %}</div>
+                                    <div class="col-sm-2">{% bootstrap_field e_form.currency layout='inline' %}</div>
+                                    <div class="col-sm-1">{% bootstrap_field e_form.overage_price layout='inline' %}</div>
                                     <div class="col-sm-2">{% bootstrap_field e_form.overage_block_size layout='inline' %}</div>
                                     <div class="col-sm-1 text-right">
                                         {% if e_form.instance.pk %}
                                             {% bootstrap_field e_form.DELETE layout='inline' %}
                                         {% else %}
-                                            <button type="button" class="btn btn-danger" data-formset-delete-button>
+                                            <button type="button" class="btn btn-danger" data-formset-delete-button aria-label="{% trans 'Delete Entitlement' %}">
                                                 <i class="fa fa-trash"></i>
                                             </button>
                                         {% endif %}
@@ -135,13 +136,14 @@
                             <div class="panel-body">
                                 <div class="row">
                                     <div class="col-sm-2">{% bootstrap_field entitlement_formset.empty_form.capability layout='inline' %}</div>
-                                    <div class="col-sm-2">{% bootstrap_field entitlement_formset.empty_form.value layout='inline' %}</div>
+                                    <div class="col-sm-1">{% bootstrap_field entitlement_formset.empty_form.value layout='inline' %}</div>
                                     <div class="col-sm-1">{% bootstrap_field entitlement_formset.empty_form.unit layout='inline' %}</div>
                                     <div class="col-sm-2">{% bootstrap_field entitlement_formset.empty_form.overage_allowed layout='inline' %}</div>
-                                    <div class="col-sm-2">{% bootstrap_field entitlement_formset.empty_form.overage_price layout='inline' %}</div>
+                                    <div class="col-sm-2">{% bootstrap_field entitlement_formset.empty_form.currency layout='inline' %}</div>
+                                    <div class="col-sm-1">{% bootstrap_field entitlement_formset.empty_form.overage_price layout='inline' %}</div>
                                     <div class="col-sm-2">{% bootstrap_field entitlement_formset.empty_form.overage_block_size layout='inline' %}</div>
                                     <div class="col-sm-1 text-right">
-                                        <button type="button" class="btn btn-danger" data-formset-delete-button>
+                                        <button type="button" class="btn btn-danger" data-formset-delete-button aria-label="{% trans 'Delete Entitlement' %}">
                                             <i class="fa fa-trash"></i>
                                         </button>
                                     </div>
