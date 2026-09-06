@@ -148,19 +148,13 @@ class TierEntitlement(models.Model):
         if not cap:
             return self.value
         if cap.value_type == CapabilityValueType.BOOLEAN:
-            return self.value.lower() in ("true", "1", "yes")
+            return str(self.value).lower() in ("true", "1", "yes")
         if cap.value_type == CapabilityValueType.INTEGER:
-            try:
-                return int(self.value)
-            except ValueError:
-                return 0
+            return int(self.value)
         if cap.value_type in (CapabilityValueType.DECIMAL, CapabilityValueType.MONEY):
-            try:
-                from decimal import Decimal, InvalidOperation
+            from decimal import Decimal
 
-                return Decimal(self.value)
-            except (InvalidOperation, TypeError):
-                return 0
+            return Decimal(self.value)
         return self.value
 
     class Meta:

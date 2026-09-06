@@ -64,7 +64,9 @@ class TierEntitlementForm(forms.ModelForm):
                     from decimal import Decimal, InvalidOperation
 
                     try:
-                        Decimal(value)
+                        val = Decimal(value)
+                        if not val.is_finite():
+                            raise InvalidOperation
                     except (InvalidOperation, TypeError):
                         self.add_error(
                             "value",
