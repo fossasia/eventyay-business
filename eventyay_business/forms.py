@@ -3,7 +3,7 @@ from django.forms import inlineformset_factory
 from django.utils.translation import gettext_lazy as _
 
 from .capabilities import get_capability_choices
-from .models import Tier, TierEntitlement, TierPrice, TierVersion
+from .models import Subscription, SubscriptionStatus, Tier, TierEntitlement, TierPrice, TierVersion
 
 
 class TierForm(forms.ModelForm):
@@ -104,3 +104,19 @@ TierEntitlementFormSet = inlineformset_factory(
     extra=1,
     can_delete=True,
 )
+
+class SubscriptionAdminForm(forms.ModelForm):
+    class Meta:
+        model = Subscription
+        fields = [
+            "organizer",
+            "tier_version",
+            "status",
+            "billing_interval",
+            "currency",
+            "starts_at",
+            "ends_at",
+            "cancel_at",
+            "stripe_customer_id",
+            "stripe_subscription_id",
+        ]

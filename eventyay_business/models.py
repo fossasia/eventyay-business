@@ -172,3 +172,70 @@ class TierEntitlement(models.Model):
                 condition=models.Q(overage_block_size__isnull=True) | models.Q(overage_block_size__gt=0),
             )
         ]
+
+class SubscriptionStatus(models.TextChoices):
+    PENDING = "pending", _("Pending")
+    ACTIVE = "active", _("Active")
+    PAST_DUE = "past_due", _("Past due")
+    CANCELED = "canceled", _("Canceled")
+    EXPIRED = "expired", _("Expired")
+
+
+class Subscription(models.Model):
+    organizer = models.ForeignKey(
+        "base.Organizer",
+        on_delete=models.CASCADE,
+        related_name="subscriptions",
+        verbose_name=_("Organizer"),
+    )
+    tier_version = models.ForeignKey(
+        TierVersion,
+        on_delete=models.RESTRICT,
+        related_name="subscriptions",
+        verbose_name=_("Tier version"),
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=SubscriptionStatus.choices,
+        default=SubscriptionStatus.PENDING,
+        verbose_name=_("Status"),
+    )
+    billing_interval = models.CharField(
+        max_length=20,
+        choices=BillingInterval.choices,
+        null=True,
+        blank=True,
+        verbose_name=_("Billing interval"),
+    )
+    currency = models.CharField(
+        max_length=3, null=True, blank=True, verbose_name=_("Currency")
+    )
+    starts_at = models.DateTimeField(verbose_name=_("Starts at"))
+    ends_at = models.DateTimeField(null=True, blank=True, verbose_name=_("Ends at"))
+    cancel_at = models.DateTimeField(null=True, blank=True, verbose_name=_("Cancel at"))
+    stripe_customer_id = models.CharField(
+        max_length=255, blank=True, null=True, verbose_name=_("Stripe customer ID")
+    )
+    stripe_subscription_id = models.CharField(
+        max_length=255, blank=True, null=True, verbose_name=_("Stripe subscription ID")
+    )
+    configuration_snapshot = models.JSONField(
+        default=dict, blank=True, verbose_name=_("Configuration snapshot")
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("Created at"))
+    updated_at = models.DateTimeField(auto_now=True, verbose_name=_("Updated at"))
+
+    class Meta:
+        ordering = ["-starts_at", "-id"]
+        verbose_name = _("Subscription")
+        verbose_name_plural = _("Subscriptions")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["organizer"],
+                condition=models.Q(status__in=["active", "pending"]),
+                name="unique_active_subscription_per_organizer",
+            )
+        ]
+
+    def __str__(self):
+        return f"Subscription for {self.organizer} ({self.status})"
