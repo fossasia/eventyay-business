@@ -148,3 +148,57 @@ def test_tier_entitlement_form_choices():
     edit_form = TierEntitlementForm(instance=existing)
     edit_choices = dict(edit_form.fields["capability"].widget.choices)
     assert "legacy.unregistered_feature" in edit_choices
+
+
+def test_tier_entitlement_typed_value():
+    from decimal import Decimal
+
+    # Integer capability
+    ent_int = TierEntitlement(capability="video.jitsi.concurrent_rooms", value="5")
+    assert ent_int.get_typed_value() == 5
+
+    # Decimal capability
+    ent_dec = TierEntitlement(capability="commerce.platform_fee_percent", value="2.5")
+    assert ent_dec.get_typed_value() == Decimal("2.5")
+
+    # Money capability
+    ent_money = TierEntitlement(capability="registration.free_overage_price", value="0.50")
+    assert ent_money.get_typed_value() == Decimal("0.50")
+
+    # Boolean capability
+    ent_bool_true = TierEntitlement(capability="video.youtube", value="true")
+    assert ent_bool_true.get_typed_value() is True
+    ent_bool_false = TierEntitlement(capability="video.youtube", value="false")
+    assert ent_bool_false.get_typed_value() is False
+
+    # Empty value
+    ent_empty = TierEntitlement(capability="video.youtube", value="")
+    assert ent_empty.get_typed_value() is None
+
+
+def test_tier_entitlement_form_validation():
+    # Valid decimal for commerce.platform_fee_percent
+    form = TierEntitlementForm()
+    form.cleaned_data = {"capability": "commerce.platform_fee_percent", "value": "2.5"}
+    cleaned = form.clean()
+    assert "value" not in form.errors
+    assert cleaned["value"] == "2.5"
+
+    # Invalid decimal for commerce.platform_fee_percent
+    form_invalid = TierEntitlementForm()
+    form_invalid.cleaned_data = {"capability": "commerce.platform_fee_percent", "value": "not-a-number"}
+    form_invalid.clean()
+    assert "value" in form_invalid.errors
+
+    # Valid integer for organizer.full_admins
+    form_int = TierEntitlementForm()
+    form_int.cleaned_data = {"capability": "organizer.full_admins", "value": "4"}
+    cleaned_int = form_int.clean()
+    assert "value" not in form_int.errors
+    assert cleaned_int["value"] == "4"
+
+    # Invalid integer for organizer.full_admins
+    form_int_invalid = TierEntitlementForm()
+    form_int_invalid.cleaned_data = {"capability": "organizer.full_admins", "value": "2.5"}
+    form_int_invalid.clean()
+    assert "value" in form_int_invalid.errors
