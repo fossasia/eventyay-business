@@ -1,0 +1,35 @@
+{% extends "eventyay_admin/base.html" %}
+{% load i18n %}
+{% load bootstrap3 %}
+
+{% block title %}
+    {% if object %}
+        {% trans "Edit subscription" %}
+    {% else %}
+        {% trans "Create subscription" %}
+    {% endif %}
+{% endblock %}
+
+{% block content %}
+    <h1>
+        {% if object %}
+            {% trans "Edit subscription" %}
+        {% else %}
+            {% trans "Create subscription" %}
+        {% endif %}
+    </h1>
+
+    <form method="post" class="form-horizontal">
+        {% csrf_token %}
+        {% bootstrap_form form layout='horizontal' %}
+        
+        <div class="form-group submit-group">
+            <button type="submit" class="btn btn-primary btn-save">
+                {% trans "Save" %}
+            </button>
+            <a href="{% url "plugins:eventyay_business:subscriptions.list" %}" class="btn btn-default btn-cancel">
+                {% trans "Cancel" %}
+            </a>
+        </div>
+    </form>
+{% endblock %}

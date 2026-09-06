@@ -178,3 +178,29 @@ class TierArchiveView(AdministratorPermissionRequiredMixin, View):
         messages.success(request, _("Tier archived successfully."))
         return redirect(reverse("plugins:eventyay_business:tiers.list"))
 
+
+from .models import Subscription
+from .forms import SubscriptionAdminForm
+
+class SubscriptionListView(AdministratorPermissionRequiredMixin, ListView):
+    model = Subscription
+    template_name = "eventyay_business/subscriptions/list.html"
+    context_object_name = "subscriptions"
+
+class SubscriptionCreateView(AdministratorPermissionRequiredMixin, CreateView):
+    model = Subscription
+    form_class = SubscriptionAdminForm
+    template_name = "eventyay_business/subscriptions/form.html"
+    
+    def get_success_url(self):
+        messages.success(self.request, _("Subscription created successfully."))
+        return reverse("plugins:eventyay_business:subscriptions.list")
+
+class SubscriptionUpdateView(AdministratorPermissionRequiredMixin, UpdateView):
+    model = Subscription
+    form_class = SubscriptionAdminForm
+    template_name = "eventyay_business/subscriptions/form.html"
+
+    def get_success_url(self):
+        messages.success(self.request, _("Subscription updated successfully."))
+        return reverse("plugins:eventyay_business:subscriptions.list")

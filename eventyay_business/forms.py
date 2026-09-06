@@ -3,7 +3,7 @@ from django.forms import inlineformset_factory
 from django.utils.translation import gettext_lazy as _
 
 from .capabilities import get_capability_choices
-from .models import Tier, TierEntitlement, TierPrice, TierVersion
+from .models import Subscription, SubscriptionStatus, Tier, TierEntitlement, TierPrice, TierVersion
 
 
 class TierForm(forms.ModelForm):
@@ -104,3 +104,37 @@ TierEntitlementFormSet = inlineformset_factory(
     extra=1,
     can_delete=True,
 )
+
+class SubscriptionAdminForm(forms.ModelForm):
+    class Meta:
+        model = Subscription
+        fields = [
+            "organizer",
+            "tier_version",
+            "status",
+            "billing_interval",
+            "currency",
+            "starts_at",
+            "ends_at",
+            "cancel_at",
+            "stripe_customer_id",
+            "stripe_subscription_id",
+        ]
+
+    def clean(self):
+        cleaned_data = super().clean()
+        organizer = cleaned_data.get("organizer")
+        status = cleaned_data.get("status")
+
+        if organizer and status in [SubscriptionStatus.ACTIVE, SubscriptionStatus.PENDING]:
+            qs = Subscription.objects.filter(
+                organizer=organizer, status__in=[SubscriptionStatus.ACTIVE, SubscriptionStatus.PENDING]
+            )
+            if self.instance and self.instance.pk:
+                qs = qs.exclude(pk=self.instance.pk)
+            
+            if qs.exists():
+                raise forms.ValidationError(
+                    _("This organizer already has an active or pending subscription.")
+                )
+        return cleaned_data

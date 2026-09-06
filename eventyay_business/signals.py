@@ -31,7 +31,16 @@ if nav_global:
                     and url.url_name.startswith("tiers.")
                 ),
                 "parent": reverse("eventyay_admin:admin.global.business"),
-            }
+            },
+            {
+                "label": _("Subscriptions"),
+                "url": reverse("plugins:eventyay_business:subscriptions.list"),
+                "active": (
+                    url.namespace == "plugins:eventyay_business"
+                    and url.url_name.startswith("subscriptions.")
+                ),
+                "parent": reverse("eventyay_admin:admin.global.business"),
+            },
         ]
 
 
@@ -42,3 +51,39 @@ if register_entitlements:
         from .capabilities import default_registry
 
         return default_registry.as_dict()
+
+from django.db.models.signals import post_save
+from django.utils.timezone import now
+from eventyay.base.models import Organizer
+
+
+@receiver(post_save, sender=Organizer, dispatch_uid="business_assign_free_tier")
+def auto_assign_free_tier(sender, instance, created, **kwargs):
+    if not created:
+        return
+
+    from .models import Subscription, SubscriptionStatus, Tier, TierVersion
+
+    free_tier, _ = Tier.objects.get_or_create(
+        slug="free",
+        defaults={
+            "name": "Free",
+            "description": "Default free tier",
+            "is_public": True,
+        }
+    )
+    
+    latest_version = free_tier.versions.filter(published_at__isnull=False).order_by("-version").first()
+    if not latest_version:
+        latest_version, _ = TierVersion.objects.get_or_create(
+            tier=free_tier,
+            version=1,
+            defaults={"published_at": now()}
+        )
+    
+    Subscription.objects.create(
+        organizer=instance,
+        tier_version=latest_version,
+        status=SubscriptionStatus.ACTIVE,
+        starts_at=now(),
+    )

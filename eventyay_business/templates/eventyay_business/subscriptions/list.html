@@ -1,0 +1,57 @@
+{% extends "eventyay_admin/base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Subscriptions" %}{% endblock %}
+
+{% block content %}
+    <h1>{% trans "Subscriptions" %}</h1>
+
+    <div class="row mb-3">
+        <div class="col-md-12">
+            <a href="{% url "plugins:eventyay_business:subscriptions.create" %}" class="btn btn-primary">
+                <i class="fa fa-plus"></i> {% trans "Create subscription" %}
+            </a>
+        </div>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-sm table-hover table-striped">
+            <thead>
+                <tr>
+                    <th>{% trans "Organizer" %}</th>
+                    <th>{% trans "Tier Version" %}</th>
+                    <th>{% trans "Status" %}</th>
+                    <th>{% trans "Starts at" %}</th>
+                    <th>{% trans "Ends at" %}</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for sub in subscriptions %}
+                    <tr>
+                        <td>{{ sub.organizer.name }}</td>
+                        <td>{{ sub.tier_version }}</td>
+                        <td>
+                            <span class="badge badge-{% if sub.status == 'active' %}success{% elif sub.status == 'canceled' %}danger{% else %}warning{% endif %}">
+                                {{ sub.get_status_display }}
+                            </span>
+                        </td>
+                        <td>{{ sub.starts_at|date:"SHORT_DATE_FORMAT" }}</td>
+                        <td>{{ sub.ends_at|date:"SHORT_DATE_FORMAT"|default:"-" }}</td>
+                        <td class="text-right">
+                            <a href="{% url "plugins:eventyay_business:subscriptions.edit" pk=sub.pk %}" class="btn btn-default btn-sm">
+                                <i class="fa fa-edit"></i>
+                            </a>
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="6" class="text-center">
+                            {% trans "No subscriptions found." %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% endblock %}
