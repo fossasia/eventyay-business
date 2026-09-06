@@ -1,0 +1,172 @@
+{% extends "pretixcontrol/admin/base.html" %}
+{% load i18n %}
+{% load bootstrap3 %}
+{% load formset_tags %}
+
+{% block title %}
+    {% if object %}
+        {% blocktrans with name=object.name %}Edit Tier: {{ name }}{% endblocktrans %}
+    {% else %}
+        {% trans "Create Tier" %}
+    {% endif %}
+{% endblock %}
+
+{% block content %}
+    <h1>
+        {% if object %}
+            {% blocktrans with name=object.name %}Edit Tier: {{ name }}{% endblocktrans %}
+        {% else %}
+            {% trans "Create Tier" %}
+        {% endif %}
+    </h1>
+    <form action="" method="post" class="form-horizontal">
+        {% csrf_token %}
+        {% bootstrap_form_errors form %}
+
+        <fieldset>
+            <legend>{% trans "General Settings" %}</legend>
+            {% bootstrap_field form.name layout='control' %}
+            {% bootstrap_field form.slug layout='control' %}
+            {% bootstrap_field form.description layout='control' %}
+            {% bootstrap_field form.is_public layout='control' %}
+            {% bootstrap_field form.display_order layout='control' %}
+        </fieldset>
+
+        {% if price_formset %}
+        <fieldset>
+            <legend>{% trans "Prices" %}</legend>
+            <div class="formset" data-formset data-formset-prefix="{{ price_formset.prefix }}">
+                {{ price_formset.management_form }}
+                {% bootstrap_formset_errors price_formset %}
+                <div data-formset-body>
+                    {% for p_form in price_formset %}
+                        <div class="panel panel-default" data-formset-form>
+                            <div class="panel-body">
+                                <div class="row">
+                                    <div class="col-sm-2">{% bootstrap_field p_form.billing_interval layout='inline' %}</div>
+                                    <div class="col-sm-2">{% bootstrap_field p_form.currency layout='inline' %}</div>
+                                    <div class="col-sm-2">{% bootstrap_field p_form.amount layout='inline' %}</div>
+                                    <div class="col-sm-3">{% bootstrap_field p_form.stripe_price_id layout='inline' %}</div>
+                                    <div class="col-sm-2">{% bootstrap_field p_form.active layout='inline' %}</div>
+                                    <div class="col-sm-1 text-right">
+                                        {% if p_form.instance.pk %}
+                                            {% bootstrap_field p_form.DELETE layout='inline' %}
+                                        {% else %}
+                                            <button type="button" class="btn btn-danger" data-formset-delete-button>
+                                                <i class="fa fa-trash"></i>
+                                            </button>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                {% for hidden in p_form.hidden_fields %}
+                                    {{ hidden }}
+                                {% endfor %}
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+                <script type="form-template" data-formset-empty-form>
+                    {% escapescript %}
+                        <div class="panel panel-default" data-formset-form>
+                            <div class="panel-body">
+                                <div class="row">
+                                    <div class="col-sm-2">{% bootstrap_field price_formset.empty_form.billing_interval layout='inline' %}</div>
+                                    <div class="col-sm-2">{% bootstrap_field price_formset.empty_form.currency layout='inline' %}</div>
+                                    <div class="col-sm-2">{% bootstrap_field price_formset.empty_form.amount layout='inline' %}</div>
+                                    <div class="col-sm-3">{% bootstrap_field price_formset.empty_form.stripe_price_id layout='inline' %}</div>
+                                    <div class="col-sm-2">{% bootstrap_field price_formset.empty_form.active layout='inline' %}</div>
+                                    <div class="col-sm-1 text-right">
+                                        <button type="button" class="btn btn-danger" data-formset-delete-button>
+                                            <i class="fa fa-trash"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                {% for hidden in price_formset.empty_form.hidden_fields %}
+                                    {{ hidden }}
+                                {% endfor %}
+                            </div>
+                        </div>
+                    {% endescapescript %}
+                </script>
+                <button type="button" class="btn btn-default" data-formset-add>
+                    <i class="fa fa-plus"></i> {% trans "Add Price" %}
+                </button>
+            </div>
+        </fieldset>
+        {% endif %}
+
+        {% if entitlement_formset %}
+        <fieldset>
+            <legend>{% trans "Entitlements" %}</legend>
+            <div class="formset" data-formset data-formset-prefix="{{ entitlement_formset.prefix }}">
+                {{ entitlement_formset.management_form }}
+                {% bootstrap_formset_errors entitlement_formset %}
+                <div data-formset-body>
+                    {% for e_form in entitlement_formset %}
+                        <div class="panel panel-default" data-formset-form>
+                            <div class="panel-body">
+                                <div class="row">
+                                    <div class="col-sm-2">{% bootstrap_field e_form.capability layout='inline' %}</div>
+                                    <div class="col-sm-2">{% bootstrap_field e_form.value layout='inline' %}</div>
+                                    <div class="col-sm-1">{% bootstrap_field e_form.unit layout='inline' %}</div>
+                                    <div class="col-sm-2">{% bootstrap_field e_form.overage_allowed layout='inline' %}</div>
+                                    <div class="col-sm-2">{% bootstrap_field e_form.overage_price layout='inline' %}</div>
+                                    <div class="col-sm-2">{% bootstrap_field e_form.overage_block_size layout='inline' %}</div>
+                                    <div class="col-sm-1 text-right">
+                                        {% if e_form.instance.pk %}
+                                            {% bootstrap_field e_form.DELETE layout='inline' %}
+                                        {% else %}
+                                            <button type="button" class="btn btn-danger" data-formset-delete-button>
+                                                <i class="fa fa-trash"></i>
+                                            </button>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                {% for hidden in e_form.hidden_fields %}
+                                    {{ hidden }}
+                                {% endfor %}
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+                <script type="form-template" data-formset-empty-form>
+                    {% escapescript %}
+                        <div class="panel panel-default" data-formset-form>
+                            <div class="panel-body">
+                                <div class="row">
+                                    <div class="col-sm-2">{% bootstrap_field entitlement_formset.empty_form.capability layout='inline' %}</div>
+                                    <div class="col-sm-2">{% bootstrap_field entitlement_formset.empty_form.value layout='inline' %}</div>
+                                    <div class="col-sm-1">{% bootstrap_field entitlement_formset.empty_form.unit layout='inline' %}</div>
+                                    <div class="col-sm-2">{% bootstrap_field entitlement_formset.empty_form.overage_allowed layout='inline' %}</div>
+                                    <div class="col-sm-2">{% bootstrap_field entitlement_formset.empty_form.overage_price layout='inline' %}</div>
+                                    <div class="col-sm-2">{% bootstrap_field entitlement_formset.empty_form.overage_block_size layout='inline' %}</div>
+                                    <div class="col-sm-1 text-right">
+                                        <button type="button" class="btn btn-danger" data-formset-delete-button>
+                                            <i class="fa fa-trash"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                {% for hidden in entitlement_formset.empty_form.hidden_fields %}
+                                    {{ hidden }}
+                                {% endfor %}
+                            </div>
+                        </div>
+                    {% endescapescript %}
+                </script>
+                <button type="button" class="btn btn-default" data-formset-add>
+                    <i class="fa fa-plus"></i> {% trans "Add Entitlement" %}
+                </button>
+            </div>
+        </fieldset>
+        {% endif %}
+
+        <div class="form-group submit-group">
+            <button type="submit" class="btn btn-primary btn-save">
+                {% trans "Save" %}
+            </button>
+            <a href="{% url 'plugins:eventyay_business:tiers.list' %}" class="btn btn-default">
+                {% trans "Cancel" %}
+            </a>
+        </div>
+    </form>
+{% endblock %}
