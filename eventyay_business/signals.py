@@ -3,15 +3,21 @@ from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
 try:
-    from eventyay.control.signals import nav_global
+    from eventyay.control.signals import nav_global, nav_organizer
 except ImportError:
     nav_global = None
-
+    nav_organizer = None
 
 try:
-    from eventyay.base.signals import register_entitlements
+    from eventyay.base.entitlements import EntitlementDecision
+except ImportError:
+    EntitlementDecision = None
+
+try:
+    from eventyay.base.signals import register_entitlements, entitlement_check
 except ImportError:
     register_entitlements = None
+    entitlement_check = None
 
 
 if nav_global:
@@ -87,3 +93,73 @@ def auto_assign_free_tier(sender, instance, created, **kwargs):
         status=SubscriptionStatus.ACTIVE,
         starts_at=now(),
     )
+
+
+if entitlement_check and EntitlementDecision:
+
+    @receiver(entitlement_check, dispatch_uid="business_entitlement_check")
+    def enforce_entitlements(sender, capability: str, event=None, quantity: int = 1, **kwargs):
+        from .capabilities import get_capability, CapabilityValueType
+        from .models import Subscription
+        
+        organizer = sender
+        
+        cap_def = get_capability(capability)
+        if not cap_def:
+            return None
+            
+        from django.utils.timezone import now
+        current_time = now()
+        sub = Subscription.objects.filter(
+            organizer=organizer,
+            status="active",
+            starts_at__lte=current_time,
+        ).exclude(
+            ends_at__lt=current_time
+        ).select_related("tier_version").first()
+        
+        value = None
+        if sub and sub.tier_version:
+            ent = sub.tier_version.entitlements.filter(capability=capability).first()
+            if ent:
+                value = ent.get_typed_value()
+                
+        if value is None:
+            value = cap_def.default_value
+            
+        if cap_def.value_type == CapabilityValueType.BOOLEAN:
+            if value:
+                return EntitlementDecision(allowed=True)
+            else:
+                return EntitlementDecision(allowed=False, reason_code="tier_restriction", message="This feature is not available on your current plan.")
+                
+        if cap_def.value_type == CapabilityValueType.INTEGER:
+            if value is not None and quantity > value:
+                return EntitlementDecision(allowed=False, reason_code="tier_limit_exceeded", limit=value, message="You have reached the maximum limit for this feature on your current plan.")
+            return EntitlementDecision(allowed=True, limit=value)
+            
+        return EntitlementDecision(allowed=True)
+
+
+if nav_organizer:
+    @receiver(nav_organizer, dispatch_uid="business_organizer_plan_nav")
+    def business_organizer_plan_nav(sender, request, organizer, **kwargs):
+        url = request.resolver_match
+        if not url:
+            return []
+
+        return [
+            {
+                "label": _("Plan & Billing"),
+                "url": reverse(
+                    "plugins:eventyay_business:organizer.plan",
+                    kwargs={"organizer": organizer.slug},
+                ),
+                "active": (
+                    url.namespace == "plugins:eventyay_business"
+                    and url.url_name == "organizer.plan"
+                ),
+                "icon": "credit-card",
+                "position": 100,
+            }
+        ]

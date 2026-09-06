@@ -204,3 +204,49 @@ class SubscriptionUpdateView(AdministratorPermissionRequiredMixin, UpdateView):
     def get_success_url(self):
         messages.success(self.request, _("Subscription updated successfully."))
         return reverse("plugins:eventyay_business:subscriptions.list")
+
+from eventyay.control.permissions import OrganizerPermissionRequiredMixin
+from eventyay.control.views.organizer_views.organizer_detail_view_mixin import OrganizerDetailViewMixin
+from django.views.generic import TemplateView
+from .capabilities import get_all_capabilities
+
+class OrganizerPlanView(OrganizerPermissionRequiredMixin, OrganizerDetailViewMixin, TemplateView):
+    permission = "can_change_organizer_settings"
+    template_name = "eventyay_business/organizer/plan.html"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        organizer = self.request.organizer
+        from .models import Subscription
+        
+        from django.utils.timezone import now
+        current_time = now()
+        sub = Subscription.objects.filter(
+            organizer=organizer,
+            status="active",
+            starts_at__lte=current_time,
+        ).exclude(
+            ends_at__lt=current_time
+        ).select_related('tier_version__tier').first()
+        
+        ctx['subscription'] = sub
+        
+        # Build a complete picture of effective entitlements
+        effective_entitlements = []
+        all_caps = get_all_capabilities()
+        
+        override_dict = {}
+        if sub and sub.tier_version:
+            for ent in sub.tier_version.entitlements.all():
+                override_dict[ent.capability] = ent.get_typed_value()
+                
+        for cap in all_caps:
+            val = override_dict.get(cap.name, cap.default_value)
+            effective_entitlements.append({
+                'capability': cap,
+                'effective_value': val,
+                'is_overridden': cap.name in override_dict
+            })
+            
+        ctx['effective_entitlements'] = sorted(effective_entitlements, key=lambda x: x['capability'].category)
+        return ctx
