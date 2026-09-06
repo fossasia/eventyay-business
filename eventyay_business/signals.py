@@ -62,24 +62,23 @@ def auto_assign_free_tier(sender, instance, created, **kwargs):
     if not created:
         return
 
-    from .models import Subscription, SubscriptionStatus, Tier
+    from .models import Subscription, SubscriptionStatus, Tier, TierVersion
 
-    free_tier = Tier.objects.filter(slug="free").first()
-    if not free_tier:
-        free_tier = Tier.objects.create(
-            slug="free",
-            name="Free",
-            description="Default free tier",
-            is_public=True,
-        )
+    free_tier, _ = Tier.objects.get_or_create(
+        slug="free",
+        defaults={
+            "name": "Free",
+            "description": "Default free tier",
+            "is_public": True,
+        }
+    )
     
-    latest_version = free_tier.versions.order_by("-version").first()
+    latest_version = free_tier.versions.filter(published_at__isnull=False).order_by("-version").first()
     if not latest_version:
-        from .models import TierVersion
-        latest_version = TierVersion.objects.create(
+        latest_version, _ = TierVersion.objects.get_or_create(
             tier=free_tier,
             version=1,
-            published_at=now()
+            defaults={"published_at": now()}
         )
     
     Subscription.objects.create(

@@ -120,3 +120,21 @@ class SubscriptionAdminForm(forms.ModelForm):
             "stripe_customer_id",
             "stripe_subscription_id",
         ]
+
+    def clean(self):
+        cleaned_data = super().clean()
+        organizer = cleaned_data.get("organizer")
+        status = cleaned_data.get("status")
+
+        if organizer and status in [SubscriptionStatus.ACTIVE, SubscriptionStatus.PENDING]:
+            qs = Subscription.objects.filter(
+                organizer=organizer, status__in=[SubscriptionStatus.ACTIVE, SubscriptionStatus.PENDING]
+            )
+            if self.instance and self.instance.pk:
+                qs = qs.exclude(pk=self.instance.pk)
+            
+            if qs.exists():
+                raise forms.ValidationError(
+                    _("This organizer already has an active or pending subscription.")
+                )
+        return cleaned_data

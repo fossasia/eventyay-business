@@ -9,24 +9,26 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         # Fetch or create free tier
-        free_tier = Tier.objects.filter(slug="free").first()
-        if not free_tier:
-            free_tier = Tier.objects.create(
-                slug="free",
-                name="Free",
-                description="Default free tier",
-                is_public=True,
-            )
+        free_tier, created = Tier.objects.get_or_create(
+            slug="free",
+            defaults={
+                "name": "Free",
+                "description": "Default free tier",
+                "is_public": True,
+            }
+        )
+        if created:
             self.stdout.write(self.style.SUCCESS('Created default "Free" tier.'))
 
-        latest_version = free_tier.versions.order_by("-version").first()
+        latest_version = free_tier.versions.filter(published_at__isnull=False).order_by("-version").first()
         if not latest_version:
-            latest_version = TierVersion.objects.create(
+            latest_version, v_created = TierVersion.objects.get_or_create(
                 tier=free_tier,
                 version=1,
-                published_at=now()
+                defaults={"published_at": now()}
             )
-            self.stdout.write(self.style.SUCCESS('Created default TierVersion for "Free".'))
+            if v_created:
+                self.stdout.write(self.style.SUCCESS('Created default published TierVersion for "Free".'))
 
         organizers_without_subs = Organizer.objects.filter(subscriptions__isnull=True)
         count = organizers_without_subs.count()
