@@ -1,0 +1,80 @@
+{% extends "pretixcontrol/organizers/base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Plan & Usage" %}{% endblock %}
+
+{% block inner %}
+    <h1>{% trans "Plan & Usage" %}</h1>
+    
+    <div class="panel panel-default">
+        <div class="panel-heading">
+            <h3 class="panel-title">{% trans "Current Subscription" %}</h3>
+        </div>
+        <div class="panel-body">
+            {% if subscription %}
+                <p>
+                    <strong>{% trans "Tier:" %}</strong> {{ subscription.tier_version.tier.name }} (v{{ subscription.tier_version.version }})<br>
+                    <strong>{% trans "Status:" %}</strong> {{ subscription.get_status_display }}<br>
+                    <strong>{% trans "Started:" %}</strong> {{ subscription.starts_at|date:"SHORT_DATE_FORMAT" }}
+                </p>
+                <p class="text-muted">
+                    {{ subscription.tier_version.tier.description }}
+                </p>
+            {% else %}
+                <div class="alert alert-warning">
+                    {% trans "No active subscription found. You are currently operating without an assigned plan." %}
+                </div>
+            {% endif %}
+        </div>
+    </div>
+    
+    <div class="panel panel-default">
+        <div class="panel-heading">
+            <h3 class="panel-title">{% trans "Your Capabilities & Limits" %}</h3>
+        </div>
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>{% trans "Category" %}</th>
+                    <th>{% trans "Feature" %}</th>
+                    <th>{% trans "Limit / Access" %}</th>
+                    <th>{% trans "Type" %}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in effective_entitlements %}
+                    <tr>
+                        <td>{{ item.capability.category }}</td>
+                        <td>
+                            <strong>{{ item.capability.label }}</strong>
+                            <div class="help-block text-muted" style="margin: 0; font-size: 12px;">
+                                {{ item.capability.description }}
+                            </div>
+                        </td>
+                        <td>
+                            {% if item.capability.value_type == "boolean" %}
+                                {% if item.effective_value %}
+                                    <span class="label label-success">{% trans "Enabled" %}</span>
+                                {% else %}
+                                    <span class="label label-danger">{% trans "Disabled" %}</span>
+                                {% endif %}
+                            {% else %}
+                                <strong>{{ item.effective_value }}</strong>
+                                {% if item.capability.unit %} {{ item.capability.unit }}{% endif %}
+                            {% endif %}
+                            
+                            {% if item.is_overridden %}
+                                <span class="label label-info" title="Custom limit set for this tier" style="margin-left: 5px;">Custom</span>
+                            {% endif %}
+                        </td>
+                        <td><code>{{ item.capability.name }}</code></td>
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="4">{% trans "No capabilities defined in the system." %}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% endblock %}

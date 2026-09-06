@@ -3,9 +3,10 @@ from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
 try:
-    from eventyay.control.signals import nav_global
+    from eventyay.control.signals import nav_global, nav_organizer
 except ImportError:
     nav_global = None
+    nav_organizer = None
 
 try:
     from eventyay.base.entitlements import EntitlementDecision
@@ -133,3 +134,27 @@ if entitlement_check and EntitlementDecision:
             return EntitlementDecision(allowed=True, limit=value)
             
         return EntitlementDecision(allowed=True)
+
+
+if nav_organizer:
+    @receiver(nav_organizer, dispatch_uid="business_organizer_plan_nav")
+    def business_organizer_plan_nav(sender, request, organizer, **kwargs):
+        url = request.resolver_match
+        if not url:
+            return []
+
+        return [
+            {
+                "label": _("Plan & Billing"),
+                "url": reverse(
+                    "plugins:eventyay_business:organizer.plan",
+                    kwargs={"organizer": organizer.slug},
+                ),
+                "active": (
+                    url.namespace == "plugins:eventyay_business"
+                    and url.url_name == "organizer.plan"
+                ),
+                "icon": "credit-card",
+                "position": 100,
+            }
+        ]

@@ -3,6 +3,7 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    # Global Admin URLs
     path("admin/global/business/tiers/", views.TierListView.as_view(), name="tiers.list"),
     path("admin/global/business/tiers/create/", views.TierCreateView.as_view(), name="tiers.create"),
     path("admin/global/business/tiers/<int:pk>/", views.TierDetailView.as_view(), name="tiers.detail"),
@@ -14,4 +15,7 @@ urlpatterns = [
     path("admin/global/business/subscriptions/", views.SubscriptionListView.as_view(), name="subscriptions.list"),
     path("admin/global/business/subscriptions/create/", views.SubscriptionCreateView.as_view(), name="subscriptions.create"),
     path("admin/global/business/subscriptions/<int:pk>/edit/", views.SubscriptionUpdateView.as_view(), name="subscriptions.edit"),
+    
+    # Organizer URLs
+    path("control/organizer/<str:organizer>/business/plan/", views.OrganizerPlanView.as_view(), name="organizer.plan"),
 ]
