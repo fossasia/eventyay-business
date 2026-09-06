@@ -121,7 +121,7 @@ class TierEntitlement(models.Model):
         verbose_name=_("Tier version"),
     )
     capability = models.CharField(max_length=100, verbose_name=_("Capability"))
-    value = models.IntegerField(null=True, blank=True, verbose_name=_("Value"))
+    value = models.CharField(max_length=100, null=True, blank=True, verbose_name=_("Value"))
     unit = models.CharField(max_length=50, blank=True, verbose_name=_("Unit"))
     overage_allowed = models.BooleanField(
         default=False, verbose_name=_("Overage allowed")
@@ -135,6 +135,27 @@ class TierEntitlement(models.Model):
     overage_block_size = models.PositiveIntegerField(
         null=True, blank=True, verbose_name=_("Overage block size")
     )
+
+    def get_typed_value(self):
+        """
+        Returns the typed Python representation of value based on capability metadata.
+        """
+        if self.value is None or self.value == "":
+            return None
+        from .capabilities import CapabilityValueType, get_capability
+
+        cap = get_capability(self.capability)
+        if not cap:
+            return self.value
+        if cap.value_type == CapabilityValueType.BOOLEAN:
+            return str(self.value).lower() in ("true", "1", "yes")
+        if cap.value_type == CapabilityValueType.INTEGER:
+            return int(self.value)
+        if cap.value_type in (CapabilityValueType.DECIMAL, CapabilityValueType.MONEY):
+            from decimal import Decimal
+
+            return Decimal(self.value)
+        return self.value
 
     class Meta:
         ordering = ["tier_version", "capability"]
