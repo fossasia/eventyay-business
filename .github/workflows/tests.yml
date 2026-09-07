@@ -17,28 +17,72 @@ jobs:
   test:
     runs-on: ubuntu-latest
     name: Tests
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: eventyay-db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout eventyay-business plugin
+        uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Set up Python 3.12
+
+      - name: Clone eventyay
+        run: |
+          git clone --depth 1 --branch dev https://github.com/fossasia/eventyay.git ../eventyay
+
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: 3.12
-      - uses: actions/cache@v4
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v2
         with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/setup.py') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
+          enable-cache: true
+
       - name: Install system dependencies
-        run: sudo apt update && sudo apt-get install -y gettext
-      - name: Install eventyay
+        run: sudo apt-get update && sudo apt-get install -y gettext libjpeg-dev zlib1g-dev libpq-dev
+
+      - name: Set up eventyay environment
         run: |
-          git clone --depth 1 -b dev https://github.com/fossasia/eventyay.git ../eventyay
-          pip3 install -e ../eventyay/app
-      - name: Install Dependencies
-        run: pip3 install pytest pytest-django -Ue .
+          cd ../eventyay/app
+          uv sync --all-extras --all-groups
+          uv pip install -e "../../$(basename "$GITHUB_WORKSPACE")"
+
       - name: Run checks
-        run: PYTHONPATH=. py.test tests
+        env:
+          EVY_RUNNING_ENVIRONMENT: testing
+          EVY_POSTGRES_HOST: localhost
+          EVY_POSTGRES_PORT: 5432
+          EVY_POSTGRES_USER: postgres
+          EVY_POSTGRES_PASSWORD: postgres
+          EVY_POSTGRES_DB: eventyay-db
+          DJANGO_SETTINGS_MODULE: eventyay.config.settings
+          PYTHONPATH: ${{ github.workspace }}/../eventyay/app
+        run: |
+          cd ../eventyay/app
+          . .venv/bin/activate
+          cd ../../eventyay-business
+          pytest tests
 
