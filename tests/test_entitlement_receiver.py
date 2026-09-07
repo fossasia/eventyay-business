@@ -1,8 +1,8 @@
 import pytest
 from django.utils.timezone import now
-
 from eventyay.base.entitlements import check_entitlement
 from eventyay.base.models import Organizer
+
 from eventyay_business.capabilities import (
     Capability,
     CapabilityValueType,
