@@ -38,8 +38,16 @@ def record_usage(
                 occurred_at=now(),
             )
             return record
-    except IntegrityError:
-        logger.info(
-            f"Usage record with idempotency key {idempotency_key} already exists for organizer {organizer.slug}."
-        )
-        return None
+    except IntegrityError as exc:
+        cause = getattr(exc, "__cause__", None)
+        diag = getattr(cause, "diag", None) if cause else None
+        constraint_name = getattr(diag, "constraint_name", None) if diag else None
+
+        if constraint_name == "unique_usage_idempotency_per_organizer":
+            logger.info(
+                f"Usage record with idempotency key {idempotency_key} already exists for organizer {organizer.slug}."
+            )
+            return None
+
+        # Re-raise all other integrity errors
+        raise
