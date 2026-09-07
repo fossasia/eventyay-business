@@ -34,7 +34,7 @@ jobs:
       - name: Install system dependencies
         run: sudo apt update && sudo apt-get install -y gettext
       - name: Install eventyay
-        run: pip3 install "git+https://github.com/fossasia/eventyay.git@019682dad5b69b95f33902b37c849608c5abccd5#egg=eventyay-unified&subdirectory=app"
+        run: pip3 install "git+https://github.com/fossasia/eventyay.git@dev#egg=eventyay-unified&subdirectory=app"
       - name: Install Dependencies
         run: pip3 install pytest pytest-django -Ue .
       - name: Run checks
