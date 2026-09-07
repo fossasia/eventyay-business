@@ -1,5 +1,5 @@
 try:
-    from eventyay.config.settings import *
+    from eventyay.config.settings import *  # noqa: F403, F401
 except ImportError:
     pass
 

@@ -3,7 +3,14 @@ from django.forms import inlineformset_factory
 from django.utils.translation import gettext_lazy as _
 
 from .capabilities import get_capability_choices
-from .models import Subscription, SubscriptionStatus, Tier, TierEntitlement, TierPrice, TierVersion
+from .models import (
+    Subscription,
+    SubscriptionStatus,
+    Tier,
+    TierEntitlement,
+    TierPrice,
+    TierVersion,
+)
 
 
 class TierForm(forms.ModelForm):
@@ -60,7 +67,10 @@ class TierEntitlementForm(forms.ModelForm):
                                 _("Value must be a valid whole number (integer).")
                             ),
                         )
-                elif cap.value_type in (CapabilityValueType.DECIMAL, CapabilityValueType.MONEY):
+                elif cap.value_type in (
+                    CapabilityValueType.DECIMAL,
+                    CapabilityValueType.MONEY,
+                ):
                     from decimal import Decimal, InvalidOperation
 
                     try:
@@ -100,10 +110,19 @@ TierEntitlementFormSet = inlineformset_factory(
     TierVersion,
     TierEntitlement,
     form=TierEntitlementForm,
-    fields=["capability", "value", "unit", "overage_allowed", "overage_price", "currency", "overage_block_size"],
+    fields=[
+        "capability",
+        "value",
+        "unit",
+        "overage_allowed",
+        "overage_price",
+        "currency",
+        "overage_block_size",
+    ],
     extra=1,
     can_delete=True,
 )
+
 
 class SubscriptionAdminForm(forms.ModelForm):
     class Meta:
@@ -126,13 +145,17 @@ class SubscriptionAdminForm(forms.ModelForm):
         organizer = cleaned_data.get("organizer")
         status = cleaned_data.get("status")
 
-        if organizer and status in [SubscriptionStatus.ACTIVE, SubscriptionStatus.PENDING]:
+        if organizer and status in [
+            SubscriptionStatus.ACTIVE,
+            SubscriptionStatus.PENDING,
+        ]:
             qs = Subscription.objects.filter(
-                organizer=organizer, status__in=[SubscriptionStatus.ACTIVE, SubscriptionStatus.PENDING]
+                organizer=organizer,
+                status__in=[SubscriptionStatus.ACTIVE, SubscriptionStatus.PENDING],
             )
             if self.instance and self.instance.pk:
                 qs = qs.exclude(pk=self.instance.pk)
-            
+
             if qs.exists():
                 raise forms.ValidationError(
                     _("This organizer already has an active or pending subscription.")

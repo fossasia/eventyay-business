@@ -68,7 +68,9 @@ class TierVersion(models.Model):
         constraints = [
             models.CheckConstraint(
                 name="tierversion_effective_dates",
-                condition=models.Q(effective_until__isnull=True) | models.Q(effective_from__isnull=True) | models.Q(effective_until__gt=models.F("effective_from")),
+                condition=models.Q(effective_until__isnull=True)
+                | models.Q(effective_from__isnull=True)
+                | models.Q(effective_until__gt=models.F("effective_from")),
             )
         ]
 
@@ -89,7 +91,9 @@ class TierPrice(models.Model):
         verbose_name=_("Tier version"),
     )
     billing_interval = models.CharField(
-        max_length=20, choices=BillingInterval.choices, verbose_name=_("Billing interval")
+        max_length=20,
+        choices=BillingInterval.choices,
+        verbose_name=_("Billing interval"),
     )
     currency = models.CharField(max_length=3, verbose_name=_("Currency"))
     amount = models.DecimalField(
@@ -121,13 +125,19 @@ class TierEntitlement(models.Model):
         verbose_name=_("Tier version"),
     )
     capability = models.CharField(max_length=100, verbose_name=_("Capability"))
-    value = models.CharField(max_length=100, null=True, blank=True, verbose_name=_("Value"))
+    value = models.CharField(
+        max_length=100, null=True, blank=True, verbose_name=_("Value")
+    )
     unit = models.CharField(max_length=50, blank=True, verbose_name=_("Unit"))
     overage_allowed = models.BooleanField(
         default=False, verbose_name=_("Overage allowed")
     )
     overage_price = models.DecimalField(
-        max_digits=10, decimal_places=2, null=True, blank=True, verbose_name=_("Overage price")
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name=_("Overage price"),
     )
     currency = models.CharField(
         max_length=3, blank=True, null=True, verbose_name=_("Overage currency")
@@ -165,13 +175,16 @@ class TierEntitlement(models.Model):
         constraints = [
             models.CheckConstraint(
                 name="tierentitlement_overage_price_nonnegative",
-                condition=models.Q(overage_price__isnull=True) | models.Q(overage_price__gte=0),
+                condition=models.Q(overage_price__isnull=True)
+                | models.Q(overage_price__gte=0),
             ),
             models.CheckConstraint(
                 name="tierentitlement_overage_block_positive",
-                condition=models.Q(overage_block_size__isnull=True) | models.Q(overage_block_size__gt=0),
-            )
+                condition=models.Q(overage_block_size__isnull=True)
+                | models.Q(overage_block_size__gt=0),
+            ),
         ]
+
 
 class SubscriptionStatus(models.TextChoices):
     PENDING = "pending", _("Pending")

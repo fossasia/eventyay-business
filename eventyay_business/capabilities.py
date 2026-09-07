@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from enum import Enum
 from typing import Any
 
+from dataclasses import dataclass, field
 from django.utils.translation import gettext_lazy as _
+from enum import Enum
 
 
 class CapabilityValueType(str, Enum):
@@ -67,7 +67,9 @@ class CapabilityRegistry:
             raise ValueError(f"Capability '{capability.name}' is already registered.")
         self._capabilities[capability.name] = capability
 
-    def register_all(self, capabilities: list[Capability], override: bool = False) -> None:
+    def register_all(
+        self, capabilities: list[Capability], override: bool = False
+    ) -> None:
         for cap in capabilities:
             self.register(cap, override=override)
 
@@ -90,7 +92,10 @@ class CapabilityRegistry:
         """
         Returns choices suitable for Django form fields grouped by category or sorted by name.
         """
-        return [(cap.name, f"{cap.name} ({cap.label})") for cap in sorted(self._capabilities.values(), key=lambda c: c.name)]
+        return [
+            (cap.name, f"{cap.name} ({cap.label})")
+            for cap in sorted(self._capabilities.values(), key=lambda c: c.name)
+        ]
 
     def as_dict(self) -> dict[str, dict[str, Any]]:
         """
@@ -139,7 +144,9 @@ STANDARD_CAPABILITIES = [
     Capability(
         name="email.bulk.monthly",
         label=_("Monthly Bulk Emails"),
-        description=_("Monthly allowance of organizer-initiated bulk announcement emails"),
+        description=_(
+            "Monthly allowance of organizer-initiated bulk announcement emails"
+        ),
         value_type=CapabilityValueType.INTEGER,
         category="Email",
         unit="emails",
@@ -149,7 +156,9 @@ STANDARD_CAPABILITIES = [
     Capability(
         name="organizer.full_admins",
         label=_("Full Administrator Seats"),
-        description=_("Maximum number of full team administrators allowed for the organizer"),
+        description=_(
+            "Maximum number of full team administrators allowed for the organizer"
+        ),
         value_type=CapabilityValueType.INTEGER,
         category="Organization",
         unit="admins",
@@ -203,7 +212,9 @@ STANDARD_CAPABILITIES = [
     Capability(
         name="registration.free_overage_price",
         label=_("Free Registration Overage Price"),
-        description=_("Price charged per free registration exceeding the included allowance"),
+        description=_(
+            "Price charged per free registration exceeding the included allowance"
+        ),
         value_type=CapabilityValueType.MONEY,
         category="Registration",
         unit="per registration",
@@ -213,7 +224,9 @@ STANDARD_CAPABILITIES = [
     Capability(
         name="support.priority",
         label=_("Priority Support"),
-        description=_("Access to dedicated priority support and expedited SLA response"),
+        description=_(
+            "Access to dedicated priority support and expedited SLA response"
+        ),
         value_type=CapabilityValueType.BOOLEAN,
         category="Support",
         default_value=False,

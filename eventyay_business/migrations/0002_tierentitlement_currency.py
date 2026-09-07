@@ -6,13 +6,15 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('eventyay_business', '0001_initial'),
+        ("eventyay_business", "0001_initial"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='tierentitlement',
-            name='currency',
-            field=models.CharField(blank=True, max_length=3, null=True, verbose_name='Overage currency'),
+            model_name="tierentitlement",
+            name="currency",
+            field=models.CharField(
+                blank=True, max_length=3, null=True, verbose_name="Overage currency"
+            ),
         ),
     ]

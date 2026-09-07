@@ -162,7 +162,9 @@ def test_tier_entitlement_typed_value():
     assert ent_dec.get_typed_value() == Decimal("2.5")
 
     # Money capability
-    ent_money = TierEntitlement(capability="registration.free_overage_price", value="0.50")
+    ent_money = TierEntitlement(
+        capability="registration.free_overage_price", value="0.50"
+    )
     assert ent_money.get_typed_value() == Decimal("0.50")
 
     # Boolean capability
@@ -186,7 +188,10 @@ def test_tier_entitlement_form_validation():
 
     # Invalid decimal for commerce.platform_fee_percent
     form_invalid = TierEntitlementForm()
-    form_invalid.cleaned_data = {"capability": "commerce.platform_fee_percent", "value": "not-a-number"}
+    form_invalid.cleaned_data = {
+        "capability": "commerce.platform_fee_percent",
+        "value": "not-a-number",
+    }
     form_invalid.clean()
     assert "value" in form_invalid.errors
 
@@ -199,6 +204,9 @@ def test_tier_entitlement_form_validation():
 
     # Invalid integer for organizer.full_admins
     form_int_invalid = TierEntitlementForm()
-    form_int_invalid.cleaned_data = {"capability": "organizer.full_admins", "value": "2.5"}
+    form_int_invalid.cleaned_data = {
+        "capability": "organizer.full_admins",
+        "value": "2.5",
+    }
     form_int_invalid.clean()
     assert "value" in form_int_invalid.errors

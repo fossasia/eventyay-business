@@ -6,13 +6,15 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('eventyay_business', '0002_tierentitlement_currency'),
+        ("eventyay_business", "0002_tierentitlement_currency"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='tierentitlement',
-            name='value',
-            field=models.CharField(blank=True, max_length=100, null=True, verbose_name='Value'),
+            model_name="tierentitlement",
+            name="value",
+            field=models.CharField(
+                blank=True, max_length=100, null=True, verbose_name="Value"
+            ),
         ),
     ]
