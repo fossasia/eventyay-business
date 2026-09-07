@@ -14,10 +14,15 @@ except ImportError:
     EntitlementDecision = None
 
 try:
-    from eventyay.base.signals import entitlement_check, register_entitlements
+    from eventyay.base.signals import (
+        entitlement_check,
+        entitlement_usage_recorded,
+        register_entitlements,
+    )
 except ImportError:
     register_entitlements = None
     entitlement_check = None
+    entitlement_usage_recorded = None
 
 
 if nav_global:
@@ -182,3 +187,39 @@ if nav_organizer:
                 "position": 100,
             }
         ]
+
+
+if entitlement_usage_recorded:
+
+    @receiver(
+        entitlement_usage_recorded, dispatch_uid="business_entitlement_usage_recorded"
+    )
+    def handle_usage_recorded(
+        sender,
+        capability: str,
+        quantity: float,
+        unit: str,
+        source_type: str,
+        source_id: str,
+        idempotency_key: str,
+        event=None,
+        metadata=None,
+        **kwargs
+    ):
+        from .services import record_usage
+
+        organizer = sender
+
+        # We process usage asynchronously if possible, but for now we record it instantly.
+        # Idempotency prevents duplicates from multiple identical signal dispatches.
+        record_usage(
+            organizer=organizer,
+            event=event,
+            capability=capability,
+            quantity=quantity,
+            unit=unit,
+            source_type=source_type,
+            source_id=source_id,
+            idempotency_key=idempotency_key,
+            metadata=metadata,
+        )

@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 
 
@@ -252,3 +253,46 @@ class Subscription(models.Model):
 
     def __str__(self):
         return f"Subscription for {self.organizer} ({self.status})"
+
+
+class UsageRecord(models.Model):
+    organizer = models.ForeignKey(
+        "base.Organizer",
+        on_delete=models.CASCADE,
+        related_name="usage_records",
+        verbose_name=_("Organizer"),
+    )
+    event = models.ForeignKey(
+        "base.Event",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="usage_records",
+        verbose_name=_("Event"),
+    )
+    capability = models.CharField(max_length=100, verbose_name=_("Capability"))
+    quantity = models.DecimalField(
+        max_digits=10, decimal_places=2, default=1, verbose_name=_("Quantity")
+    )
+    unit = models.CharField(max_length=50, blank=True, verbose_name=_("Unit"))
+    occurred_at = models.DateTimeField(default=now, verbose_name=_("Occurred at"))
+    source_type = models.CharField(max_length=100, verbose_name=_("Source type"))
+    source_id = models.CharField(max_length=255, verbose_name=_("Source ID"))
+    idempotency_key = models.CharField(
+        max_length=255, verbose_name=_("Idempotency key")
+    )
+    metadata = models.JSONField(default=dict, blank=True, verbose_name=_("Metadata"))
+
+    class Meta:
+        ordering = ["-occurred_at", "-id"]
+        verbose_name = _("Usage record")
+        verbose_name_plural = _("Usage records")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["organizer", "idempotency_key"],
+                name="unique_usage_idempotency_per_organizer",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.quantity} {self.unit} of {self.capability} by {self.organizer}"
