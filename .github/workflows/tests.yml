@@ -5,11 +5,11 @@ permissions:
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, dev ]
     paths-ignore:
       - 'eventyay_business/locale/**'
   pull_request:
-    branches: [ main, master ]
+    branches: [ main, master, dev ]
     paths-ignore:
       - 'eventyay_business/locale/**'
 
