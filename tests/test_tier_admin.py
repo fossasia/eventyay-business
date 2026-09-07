@@ -5,8 +5,13 @@ from eventyay_business.models import Tier, TierStatus, TierVersion
 
 
 @pytest.fixture
-def business_admin_client(admin_client):
-    # Depending on Eventyay setup, admin_client might just work.
+def business_admin_client(admin_client, admin_user):
+    import time
+    session = admin_client.session
+    t1 = int(time.time()) - 5
+    session["pretix_auth_login_time"] = t1
+    session.save()
+    admin_client.post("/control/sudo/")
     return admin_client
 
 
