@@ -6,12 +6,18 @@ from eventyay_business.models import Tier, TierStatus, TierVersion
 
 @pytest.fixture
 def business_admin_client(admin_client, admin_user):
-    import time
+    from eventyay.base.models.auth import StaffSession
+
     session = admin_client.session
-    t1 = int(time.time()) - 5
-    session["pretix_auth_login_time"] = t1
     session.save()
-    admin_client.post("/control/sudo/")
+    StaffSession.objects.create(
+        user=admin_user,
+        session_key=session.session_key,
+        comment="test",
+    )
+    # Ensure user has is_staff = True (pytest-django's admin_user might only have is_superuser)
+    admin_user.is_staff = True
+    admin_user.save()
     return admin_client
 
 
