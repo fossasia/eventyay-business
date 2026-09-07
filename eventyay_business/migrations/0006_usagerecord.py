@@ -8,10 +8,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        (
-            "base",
-            "0071_rename_base_gmailo_event_i_6f0d0d_idx_base_gmailo_event_i_133776_idx_and_more",
-        ),
+        ("base", "0001_initial"),
         ("eventyay_business", "0005_auto_assign_free_tier"),
     ]
 
