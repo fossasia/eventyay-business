@@ -38,5 +38,5 @@ jobs:
       - name: Install Dependencies
         run: pip3 install pytest pytest-django -Ue .
       - name: Run checks
-        run: py.test tests
+        run: PYTHONPATH=. py.test tests
 
