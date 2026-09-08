@@ -139,6 +139,12 @@ class SubscriptionAdminForm(forms.ModelForm):
             "stripe_customer_id",
             "stripe_subscription_id",
         ]
+        from eventyay.base.forms.widgets import SplitDateTimePickerWidget
+        widgets = {
+            "starts_at": SplitDateTimePickerWidget(),
+            "ends_at": SplitDateTimePickerWidget(),
+            "cancel_at": SplitDateTimePickerWidget(),
+        }
 
     def clean(self):
         cleaned_data = super().clean()
