@@ -18,6 +18,11 @@ urlpatterns = [
         name="tiers.detail",
     ),
     path(
+        "admin/global/business/tiers/<int:pk>/versions/<int:version_pk>/",
+        views.TierVersionDetailView.as_view(),
+        name="tiers.version_detail",
+    ),
+    path(
         "admin/global/business/tiers/<int:pk>/edit/",
         views.TierUpdateView.as_view(),
         name="tiers.edit",

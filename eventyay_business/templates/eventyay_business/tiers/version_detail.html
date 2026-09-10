@@ -1,0 +1,136 @@
+{% extends "pretixcontrol/admin/base.html" %}
+{% load i18n %}
+
+{% block title %}
+    {{ tier.name }} — {% trans "Version" %} v{{ version.version }}
+{% endblock %}
+
+{% block content %}
+    <h1>
+        {{ tier.name }}
+        <small>
+            {% trans "Version" %} v{{ version.version }}
+            {% if version.published_at %}
+                <span class="label label-success">{% trans "Published" %}</span>
+            {% else %}
+                <span class="label label-warning">{% trans "Draft" %}</span>
+            {% endif %}
+        </small>
+    </h1>
+
+    <p>
+        <a href="{% url 'plugins:eventyay_business:tiers.detail' pk=tier.pk %}"
+           class="btn btn-default btn-sm">
+            <i class="fa fa-fw fa-arrow-left"></i> {% trans "Back to Tier" %}
+        </a>
+    </p>
+
+    <div class="row">
+        <div class="col-md-8">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <h3 class="panel-title">{% trans "Version Info" %}</h3>
+                </div>
+                <div class="panel-body">
+                    <dl class="dl-horizontal">
+                        <dt>{% trans "Version" %}</dt>
+                        <dd>v{{ version.version }}</dd>
+                        <dt>{% trans "Status" %}</dt>
+                        <dd>
+                            {% if version.published_at %}
+                                {% trans "Published" %} {{ version.published_at|date:"SHORT_DATETIME_FORMAT" }}
+                            {% else %}
+                                {% trans "Draft (unpublished)" %}
+                            {% endif %}
+                        </dd>
+                        <dt>{% trans "Created by" %}</dt>
+                        <dd>{{ version.created_by|default:"-" }}</dd>
+                    </dl>
+                </div>
+            </div>
+
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <h3 class="panel-title">{% trans "Prices" %}</h3>
+                </div>
+                <div class="panel-body">
+                    {% if version.prices.all %}
+                        <table class="table table-condensed">
+                            <thead>
+                                <tr>
+                                    <th>{% trans "Interval" %}</th>
+                                    <th>{% trans "Amount" %}</th>
+                                    <th>{% trans "Active" %}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for price in version.prices.all %}
+                                <tr>
+                                    <td>{{ price.get_billing_interval_display }}</td>
+                                    <td>{{ price.currency }} {{ price.amount }}</td>
+                                    <td>{{ price.active|yesno:"Yes,No" }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    {% else %}
+                        <p class="text-muted">{% trans "No prices defined for this version." %}</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <h3 class="panel-title">{% trans "Entitlements" %}</h3>
+                </div>
+                <div class="panel-body">
+                    {% if version.entitlements.all %}
+                        <table class="table table-condensed">
+                            <thead>
+                                <tr>
+                                    <th>{% trans "Capability" %}</th>
+                                    <th>{% trans "Value" %}</th>
+                                    <th>{% trans "Overage Allowed" %}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for ent in version.entitlements.all %}
+                                <tr>
+                                    <td>{{ ent.capability }}</td>
+                                    <td>{{ ent.value|default:"-" }} {{ ent.unit }}</td>
+                                    <td>
+                                        {% if ent.overage_allowed %}
+                                            {% trans "Yes" %} ({{ ent.currency|default:"" }} {{ ent.overage_price|default:"0" }} / {{ ent.overage_block_size|default:"1" }})
+                                        {% else %}
+                                            {% trans "No" %}
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    {% else %}
+                        <p class="text-muted">{% trans "No entitlements defined for this version." %}</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <h3 class="panel-title">{% trans "Subscribers" %}</h3>
+                </div>
+                <div class="panel-body">
+                    <p>
+                        <strong>{% trans "Active / Pending:" %}</strong>
+                        {{ version.subscriptions.count }}
+                    </p>
+                    <p class="text-muted small">
+                        {% trans "Count of subscriptions currently on this version." %}
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}

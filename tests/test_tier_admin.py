@@ -298,3 +298,47 @@ def test_tier_publish_view_without_migrate_subscribers(
 
     sub.refresh_from_db()
     assert sub.tier_version == v1
+
+
+@pytest.mark.django_db
+def test_tier_version_detail_view(business_admin_client, sample_tier):
+    version = sample_tier.versions.first()
+    url = reverse(
+        "plugins:eventyay_business:tiers.version_detail",
+        kwargs={"pk": sample_tier.pk, "version_pk": version.pk},
+    )
+    response = business_admin_client.get(url)
+    assert response.status_code == 200
+    content = response.content.decode()
+    assert f"v{version.version}" in content
+    assert sample_tier.name in content
+
+
+@pytest.mark.django_db
+def test_tier_version_detail_view_wrong_tier(business_admin_client, sample_tier):
+    other_tier = Tier.objects.create(
+        name="Other", slug="other-vd", status=TierStatus.DRAFT
+    )
+    version = sample_tier.versions.first()
+    url = reverse(
+        "plugins:eventyay_business:tiers.version_detail",
+        kwargs={"pk": other_tier.pk, "version_pk": version.pk},
+    )
+    response = business_admin_client.get(url)
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_tier_detail_version_history_links(business_admin_client, sample_tier):
+    """Version history items in detail page should link to tiers.version_detail."""
+    version = sample_tier.versions.first()
+    expected_url = reverse(
+        "plugins:eventyay_business:tiers.version_detail",
+        kwargs={"pk": sample_tier.pk, "version_pk": version.pk},
+    )
+    url = reverse(
+        "plugins:eventyay_business:tiers.detail", kwargs={"pk": sample_tier.pk}
+    )
+    response = business_admin_client.get(url)
+    assert response.status_code == 200
+    assert expected_url in response.content.decode()

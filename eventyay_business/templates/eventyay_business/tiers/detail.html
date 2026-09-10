@@ -167,7 +167,8 @@
                 </div>
                 <div class="list-group">
                     {% for version in tier.versions.all %}
-                        <div class="list-group-item">
+                        <a href="{% url 'plugins:eventyay_business:tiers.version_detail' pk=tier.pk version_pk=version.pk %}"
+                           class="list-group-item">
                             <h4 class="list-group-item-heading">
                                 v{{ version.version }}
                                 {% if version.published_at %}
@@ -179,7 +180,7 @@
                             <p class="list-group-item-text">
                                 {{ version.prices.count }} {% trans "prices" %}, {{ version.entitlements.count }} {% trans "entitlements" %}
                             </p>
-                        </div>
+                        </a>
                     {% endfor %}
                 </div>
             </div>

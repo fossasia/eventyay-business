@@ -8,11 +8,19 @@ from django.views.generic import (
     CreateView,
     DetailView,
     ListView,
+    TemplateView,
     UpdateView,
     View,
 )
-from eventyay.control.permissions import AdministratorPermissionRequiredMixin
+from eventyay.control.permissions import (
+    AdministratorPermissionRequiredMixin,
+    OrganizerPermissionRequiredMixin,
+)
+from eventyay.control.views.organizer_views.organizer_detail_view_mixin import (
+    OrganizerDetailViewMixin,
+)
 
+from .capabilities import get_all_capabilities
 from .forms import (
     SubscriptionAdminForm,
     TierEntitlementFormSet,
@@ -163,6 +171,24 @@ class TierDetailView(AdministratorPermissionRequiredMixin, DetailView):
         return context
 
 
+class TierVersionDetailView(AdministratorPermissionRequiredMixin, DetailView):
+    """Show all details for a specific historical TierVersion."""
+
+    model = TierVersion
+    template_name = "eventyay_business/tiers/version_detail.html"
+    context_object_name = "version"
+    pk_url_kwarg = "version_pk"
+
+    def get_object(self, queryset=None):
+        tier = get_object_or_404(Tier, pk=self.kwargs["pk"])
+        return get_object_or_404(TierVersion, pk=self.kwargs["version_pk"], tier=tier)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["tier"] = self.object.tier
+        return context
+
+
 class TierNewDraftView(AdministratorPermissionRequiredMixin, View):
     """Creates a new DRAFT TierVersion from the latest PUBLISHED version."""
 
@@ -284,13 +310,6 @@ class SubscriptionUpdateView(AdministratorPermissionRequiredMixin, UpdateView):
         return reverse("plugins:eventyay_business:subscriptions.list")
 
 
-from django.views.generic import TemplateView
-from eventyay.control.permissions import OrganizerPermissionRequiredMixin
-from eventyay.control.views.organizer_views.organizer_detail_view_mixin import (
-    OrganizerDetailViewMixin,
-)
-
-from .capabilities import get_all_capabilities
 
 
 class OrganizerPlanView(
