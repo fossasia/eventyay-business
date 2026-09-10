@@ -186,6 +186,10 @@ class TierVersionDetailView(AdministratorPermissionRequiredMixin, DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["tier"] = self.object.tier
+        context["active_subscriber_count"] = Subscription.objects.filter(
+            tier_version=self.object,
+            status__in=[SubscriptionStatus.ACTIVE, SubscriptionStatus.PENDING],
+        ).count()
         return context
 
 
