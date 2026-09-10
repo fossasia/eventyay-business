@@ -352,7 +352,11 @@ def test_organizer_plan_view_audience_split():
     organizer_entitlements = []
     developer_entitlements = []
     for cap in get_all_capabilities():
-        entry = {"capability": cap, "effective_value": cap.default_value, "is_overridden": False}
+        entry = {
+            "capability": cap,
+            "effective_value": cap.default_value,
+            "is_overridden": False,
+        }
         audience = cap.metadata.get("audience", "organizer")
         if audience == "developer":
             developer_entitlements.append(entry)
