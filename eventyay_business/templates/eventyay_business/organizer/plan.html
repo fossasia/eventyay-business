@@ -5,7 +5,7 @@
 
 {% block inner %}
     <h1>{% trans "Plan & Usage" %}</h1>
-    
+
     <div class="panel panel-default">
         <div class="panel-heading">
             <h3 class="panel-title">{% trans "Current Subscription" %}</h3>
@@ -13,13 +13,13 @@
         <div class="panel-body">
             {% if subscription %}
                 <p>
-                    <strong>{% trans "Tier:" %}</strong> {{ subscription.tier_version.tier.name }} (v{{ subscription.tier_version.version }})<br>
+                    <strong>{% trans "Plan:" %}</strong> {{ subscription.tier_version.tier.name }} (v{{ subscription.tier_version.version }})<br>
                     <strong>{% trans "Status:" %}</strong> {{ subscription.get_status_display }}<br>
                     <strong>{% trans "Started:" %}</strong> {{ subscription.starts_at|date:"SHORT_DATE_FORMAT" }}
                 </p>
-                <p class="text-muted">
-                    {{ subscription.tier_version.tier.description }}
-                </p>
+                {% if subscription.tier_version.tier.description %}
+                    <p class="text-muted">{{ subscription.tier_version.tier.description }}</p>
+                {% endif %}
             {% else %}
                 <div class="alert alert-warning">
                     {% trans "No active subscription found. You are currently operating without an assigned plan." %}
@@ -27,54 +27,131 @@
             {% endif %}
         </div>
     </div>
-    
-    <div class="panel panel-default">
-        <div class="panel-heading">
-            <h3 class="panel-title">{% trans "Your Capabilities & Limits" %}</h3>
-        </div>
-        <table class="table table-striped">
-            <thead>
-                <tr>
-                    <th>{% trans "Category" %}</th>
-                    <th>{% trans "Feature" %}</th>
-                    <th>{% trans "Limit / Access" %}</th>
-                    <th>{% trans "Type" %}</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for item in effective_entitlements %}
+
+    {# ── Organiser Section ── #}
+    <details open>
+        <summary class="panel panel-default" style="list-style: none; cursor: pointer;">
+            <div class="panel-heading" style="display: flex; justify-content: space-between; align-items: center;">
+                <h3 class="panel-title" style="margin: 0;">
+                    <i class="fa fa-fw fa-building-o"></i>
+                    {% trans "Your Organisation's Features" %}
+                </h3>
+                <span class="text-muted small details-toggle-hint">
+                    <span class="when-open">{% trans "Click to collapse" %}</span>
+                    <span class="when-closed" style="display:none;">{% trans "Click to expand" %}</span>
+                </span>
+            </div>
+        </summary>
+        <div class="panel panel-default" style="margin-top: -1px; border-top: 0;">
+            <p class="panel-body text-muted" style="margin: 0; padding: 10px 15px; border-bottom: 1px solid #ddd;">
+                {% trans "These are the features and limits included in your current plan. They control what your team and attendees can do." %}
+            </p>
+            <table class="table table-striped" style="margin: 0;">
+                <thead>
                     <tr>
-                        <td>{{ item.capability.category }}</td>
-                        <td>
-                            <strong>{{ item.capability.label }}</strong>
-                            <div class="help-block text-muted" style="margin: 0; font-size: 12px;">
-                                {{ item.capability.description }}
-                            </div>
-                        </td>
-                        <td>
-                            {% if item.capability.value_type == "boolean" %}
-                                {% if item.effective_value %}
-                                    <span class="label label-success">{% trans "Enabled" %}</span>
+                        <th style="width: 14%;">{% trans "Category" %}</th>
+                        <th>{% trans "Feature" %}</th>
+                        <th style="width: 20%;">{% trans "Your Limit / Access" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in organizer_entitlements %}
+                        <tr>
+                            <td class="text-muted">{{ item.capability.category }}</td>
+                            <td>
+                                <strong>{{ item.capability.label }}</strong>
+                                <div class="help-block text-muted" style="margin: 2px 0 0; font-size: 12px;">
+                                    {{ item.capability.description }}
+                                </div>
+                            </td>
+                            <td>
+                                {% if item.capability.value_type == "boolean" %}
+                                    {% if item.effective_value %}
+                                        <span class="label label-success">{% trans "Enabled" %}</span>
+                                    {% else %}
+                                        <span class="label label-danger">{% trans "Disabled" %}</span>
+                                    {% endif %}
                                 {% else %}
-                                    <span class="label label-danger">{% trans "Disabled" %}</span>
+                                    <strong>{{ item.effective_value }}</strong>
+                                    {% if item.capability.unit %} {{ item.capability.unit }}{% endif %}
                                 {% endif %}
-                            {% else %}
-                                <strong>{{ item.effective_value }}</strong>
-                                {% if item.capability.unit %} {{ item.capability.unit }}{% endif %}
-                            {% endif %}
-                            
-                            {% if item.is_overridden %}
-                                <span class="label label-info" title="Custom limit set for this tier" style="margin-left: 5px;">Custom</span>
-                            {% endif %}
-                        </td>
-                        <td><code>{{ item.capability.name }}</code></td>
-                    </tr>
-                {% empty %}
+                                {% if item.is_overridden %}
+                                    <span class="label label-info" title="{% trans "Custom limit set for your plan" %}" style="margin-left: 4px;">{% trans "Custom" %}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr>
+                            <td colspan="3" class="text-muted">{% trans "No organiser features defined." %}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </details>
+
+    {# ── Developer Section ── #}
+    <details style="margin-top: 20px;">
+        <summary class="panel panel-default" style="list-style: none; cursor: pointer;">
+            <div class="panel-heading" style="display: flex; justify-content: space-between; align-items: center;">
+                <h3 class="panel-title" style="margin: 0;">
+                    <i class="fa fa-fw fa-code"></i>
+                    {% trans "Developer & API Access" %}
+                </h3>
+                <span class="text-muted small details-toggle-hint">
+                    <span class="when-open">{% trans "Click to collapse" %}</span>
+                    <span class="when-closed" style="display:none;">{% trans "Click to expand" %}</span>
+                </span>
+            </div>
+        </summary>
+        <div class="panel panel-default" style="margin-top: -1px; border-top: 0;">
+            <p class="panel-body text-muted" style="margin: 0; padding: 10px 15px; border-bottom: 1px solid #ddd;">
+                {% trans "These settings apply if you connect third-party tools or build integrations using the Eventyay REST API or webhooks." %}
+            </p>
+            <table class="table table-striped" style="margin: 0;">
+                <thead>
                     <tr>
-                        <td colspan="4">{% trans "No capabilities defined in the system." %}</td>
+                        <th style="width: 14%;">{% trans "Category" %}</th>
+                        <th>{% trans "Feature" %}</th>
+                        <th style="width: 20%;">{% trans "Your Access" %}</th>
+                        <th style="width: 22%;" class="text-muted">{% trans "Technical name" %}</th>
                     </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
+                </thead>
+                <tbody>
+                    {% for item in developer_entitlements %}
+                        <tr>
+                            <td class="text-muted">{{ item.capability.category }}</td>
+                            <td>
+                                <strong>{{ item.capability.label }}</strong>
+                                <div class="help-block text-muted" style="margin: 2px 0 0; font-size: 12px;">
+                                    {{ item.capability.description }}
+                                </div>
+                            </td>
+                            <td>
+                                {% if item.capability.value_type == "boolean" %}
+                                    {% if item.effective_value %}
+                                        <span class="label label-success">{% trans "Enabled" %}</span>
+                                    {% else %}
+                                        <span class="label label-danger">{% trans "Disabled" %}</span>
+                                    {% endif %}
+                                {% else %}
+                                    <strong>{{ item.effective_value }}</strong>
+                                    {% if item.capability.unit %} {{ item.capability.unit }}{% endif %}
+                                {% endif %}
+                                {% if item.is_overridden %}
+                                    <span class="label label-info" title="{% trans "Custom limit set for your plan" %}" style="margin-left: 4px;">{% trans "Custom" %}</span>
+                                {% endif %}
+                            </td>
+                            <td><code class="text-muted">{{ item.capability.name }}</code></td>
+                        </tr>
+                    {% empty %}
+                        <tr>
+                            <td colspan="4" class="text-muted">{% trans "No developer features defined." %}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </details>
+
 {% endblock %}

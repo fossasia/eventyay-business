@@ -110,126 +110,155 @@ STANDARD_CAPABILITIES = [
     Capability(
         name="video.youtube",
         label=_("YouTube Streaming"),
-        description=_("Enable YouTube live streaming integration for events"),
+        description=_("Stream your events live on YouTube to reach a wider audience"),
         value_type=CapabilityValueType.BOOLEAN,
         category="Video",
         default_value=True,
+        metadata={"audience": "organizer"},
     ),
     Capability(
         name="video.jitsi",
-        label=_("Jitsi Video"),
-        description=_("Enable integrated Jitsi video meeting rooms"),
+        label=_("Jitsi Video Rooms"),
+        description=_(
+            "Host live video sessions and Q&As directly inside your event using Jitsi"
+        ),
         value_type=CapabilityValueType.BOOLEAN,
         category="Video",
         default_value=True,
+        metadata={"audience": "organizer"},
     ),
     Capability(
         name="video.jitsi.concurrent_rooms",
-        label=_("Jitsi Concurrent Rooms"),
-        description=_("Maximum number of concurrent Jitsi video breakout rooms"),
+        label=_("Simultaneous Video Rooms"),
+        description=_(
+            "How many Jitsi video rooms can be running at the same time for your event"
+        ),
         value_type=CapabilityValueType.INTEGER,
         category="Video",
         unit="rooms",
         default_value=1,
+        metadata={"audience": "organizer"},
     ),
     Capability(
         name="video.loungemesh",
-        label=_("Loungemesh Networking"),
-        description=_("Enable Loungemesh interactive spatial networking"),
+        label=_("Spatial Networking Lounge"),
+        description=_(
+            "Give attendees an interactive spatial space to network and mingle between sessions"
+        ),
         value_type=CapabilityValueType.BOOLEAN,
         category="Video",
         default_value=False,
+        metadata={"audience": "organizer"},
     ),
     # Email Communications
     Capability(
         name="email.bulk.monthly",
         label=_("Monthly Bulk Emails"),
         description=_(
-            "Monthly allowance of organizer-initiated bulk announcement emails"
+            "Number of announcement emails you can send to your attendees each month"
         ),
         value_type=CapabilityValueType.INTEGER,
         category="Email",
         unit="emails",
         default_value=1000,
+        metadata={"audience": "organizer"},
     ),
     # Team & Organization
     Capability(
         name="organizer.full_admins",
-        label=_("Full Administrator Seats"),
+        label=_("Team Admin Seats"),
         description=_(
-            "Maximum number of full team administrators allowed for the organizer"
+            "Maximum number of team members who can be granted full administrator access"
         ),
         value_type=CapabilityValueType.INTEGER,
-        category="Organization",
+        category="Organisation",
         unit="admins",
         default_value=2,
+        metadata={"audience": "organizer"},
     ),
     # Developer & API
     Capability(
         name="api.read",
         label=_("API Read Access"),
-        description=_("Access to read data via REST APIs"),
+        description=_(
+            "Allows your integrations to read event, order, and attendee data via the REST API"
+        ),
         value_type=CapabilityValueType.BOOLEAN,
-        category="API",
+        category="Developer & API",
         default_value=True,
+        metadata={"audience": "developer"},
     ),
     Capability(
         name="api.write",
         label=_("API Write Access"),
-        description=_("Access to create and modify data via REST APIs"),
+        description=_(
+            "Allows your integrations to create and update data via the REST API"
+        ),
         value_type=CapabilityValueType.BOOLEAN,
-        category="API",
+        category="Developer & API",
         default_value=False,
+        metadata={"audience": "developer"},
     ),
     Capability(
         name="api.webhooks",
-        label=_("Webhooks Delivery"),
-        description=_("Real-time webhook notifications for order and ticket events"),
+        label=_("Webhook Delivery"),
+        description=_(
+            "Receive real-time HTTP notifications when orders, tickets, or attendee records change"
+        ),
         value_type=CapabilityValueType.BOOLEAN,
-        category="API",
+        category="Developer & API",
         default_value=False,
+        metadata={"audience": "developer"},
     ),
     # Commerce & Fees
     Capability(
         name="commerce.platform_fee_percent",
-        label=_("Platform Fee Percentage"),
-        description=_("Percentage platform fee applied to paid ticket transactions"),
+        label=_("Platform Fee"),
+        description=_(
+            "Percentage fee applied by the platform on each paid ticket transaction"
+        ),
         value_type=CapabilityValueType.DECIMAL,
         category="Commerce",
         unit="%",
         default_value=0.0,
+        metadata={"audience": "organizer"},
     ),
     # Registration & Ticketing
     Capability(
         name="registration.free_allowance_per_event",
-        label=_("Free Registrations Allowance"),
-        description=_("Included number of free ticket registrations per event"),
+        label=_("Free Ticket Allowance"),
+        description=_(
+            "Number of free registrations included per event before any overage charges apply"
+        ),
         value_type=CapabilityValueType.INTEGER,
         category="Registration",
         unit="registrations",
         default_value=100,
+        metadata={"audience": "organizer"},
     ),
     Capability(
         name="registration.free_overage_price",
-        label=_("Free Registration Overage Price"),
+        label=_("Free Ticket Overage Price"),
         description=_(
-            "Price charged per free registration exceeding the included allowance"
+            "Price charged per free registration once your included allowance is exceeded"
         ),
         value_type=CapabilityValueType.MONEY,
         category="Registration",
         unit="per registration",
         default_value=0.0,
+        metadata={"audience": "organizer"},
     ),
     # Customer Support
     Capability(
         name="support.priority",
         label=_("Priority Support"),
         description=_(
-            "Access to dedicated priority support and expedited SLA response"
+            "Access to a dedicated support queue with faster response times and SLA guarantees"
         ),
         value_type=CapabilityValueType.BOOLEAN,
         category="Support",
         default_value=False,
+        metadata={"audience": "organizer"},
     ),
 ]
 

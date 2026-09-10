@@ -210,3 +210,18 @@ def test_tier_entitlement_form_validation():
     }
     form_int_invalid.clean()
     assert "value" in form_int_invalid.errors
+
+
+def test_capability_audience_metadata():
+    """All standard capabilities must have an audience tag; API caps must be developer."""
+    developer_caps = {"api.read", "api.write", "api.webhooks"}
+    for cap in STANDARD_CAPABILITIES:
+        audience = cap.metadata.get("audience")
+        assert audience in (
+            "organizer",
+            "developer",
+        ), f"{cap.name} missing valid audience tag"
+        if cap.name in developer_caps:
+            assert audience == "developer", f"{cap.name} should be developer audience"
+        else:
+            assert audience == "organizer", f"{cap.name} should be organizer audience"
