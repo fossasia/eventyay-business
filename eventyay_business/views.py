@@ -310,8 +310,6 @@ class SubscriptionUpdateView(AdministratorPermissionRequiredMixin, UpdateView):
         return reverse("plugins:eventyay_business:subscriptions.list")
 
 
-
-
 class OrganizerPlanView(
     OrganizerPermissionRequiredMixin, OrganizerDetailViewMixin, TemplateView
 ):
