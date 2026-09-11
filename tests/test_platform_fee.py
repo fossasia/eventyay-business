@@ -107,3 +107,53 @@ def test_platform_fee_zero_percent(organizer_with_fee_tier):
 
     # Should not create a usage record for 0% fee
     assert UsageRecord.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_platform_fee_currency_conversion(organizer_with_fee_tier):
+    from eventyay.base.models import Event
+    from eventyay.base.settings import GlobalSettingsObject
+
+    gs = GlobalSettingsObject()
+    gs.settings.ecb_rates_date = "2026-09-11"
+    # Event is USD, Subscription is EUR
+    # 1 EUR = 1.10 USD
+    gs.settings.ecb_rates_dict = {"EUR": "1.0000", "USD": "1.1000"}
+
+    sub = Subscription.objects.get(organizer=organizer_with_fee_tier)
+    sub.currency = "EUR"
+    sub.save()
+
+    event = Event.objects.create(
+        organizer=organizer_with_fee_tier,
+        name="Test Event 3",
+        slug="test-event-3",
+        currency="USD",
+        date_from=now(),
+    )
+
+    order = MagicMock()
+    order.code = "CONVERT"
+    order.total = Decimal("110.00")
+
+    pos1 = MagicMock()
+    pos1.price = Decimal("110.00")
+    pos1.tax_value = Decimal("0.00")
+
+    order.positions.all.return_value = [pos1]
+
+    record_platform_fee_on_order_paid(sender=event, order=order)
+
+    assert UsageRecord.objects.count() == 1
+    record = UsageRecord.objects.first()
+
+    assert record.unit == "USD"
+    # Base = 110. Fee = 110 * 5% = 5.50 USD.
+    assert record.quantity == Decimal("5.50")
+
+    # 1 USD = 1/1.10 EUR = 0.9091 EUR
+    # Converted fee = 5.50 * 0.9091 = 5.00 EUR
+    assert record.metadata["billing_currency"] == "EUR"
+    assert record.metadata["exchange_rate"] == "0.9091"
+    assert record.metadata["exchange_rate_date"] == "2026-09-11"
+    assert record.metadata["billing_currency_fee_amount"] == "5.00"

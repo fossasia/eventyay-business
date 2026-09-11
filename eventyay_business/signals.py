@@ -347,6 +347,31 @@ if order_paid:
         if fee_amount <= Decimal("0.0"):
             return
 
+        metadata = {
+            "fee_base": str(fee_base),
+            "fee_percent": str(fee_percent),
+            "order_total": str(order.total),
+            "currency": event.currency,
+        }
+
+        if sub.currency and sub.currency != event.currency:
+            from eventyay.base.settings import GlobalSettingsObject
+            gs = GlobalSettingsObject()
+            rates_dict = gs.settings.get("ecb_rates_dict", as_type=dict)
+            rates_date = gs.settings.get("ecb_rates_date")
+            
+            if rates_dict and event.currency in rates_dict and sub.currency in rates_dict:
+                from decimal import ROUND_HALF_UP
+                rate = (
+                    Decimal(rates_dict[sub.currency]) / Decimal(rates_dict[event.currency])
+                ).quantize(Decimal("0.0001"), ROUND_HALF_UP)
+                
+                converted_fee = (fee_amount * rate).quantize(Decimal("0.01"))
+                metadata["billing_currency"] = sub.currency
+                metadata["exchange_rate"] = str(rate)
+                metadata["exchange_rate_date"] = str(rates_date)
+                metadata["billing_currency_fee_amount"] = str(converted_fee)
+
         UsageRecord.objects.create(
             organizer=organizer,
             event=event,
@@ -357,10 +382,5 @@ if order_paid:
             source_id=order.code,
             idempotency_key=f"order_{order.code}_platform_fee",
             occurred_at=current_time,
-            metadata={
-                "fee_base": str(fee_base),
-                "fee_percent": str(fee_percent),
-                "order_total": str(order.total),
-                "currency": event.currency,
-            },
+            metadata=metadata,
         )
