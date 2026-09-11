@@ -68,7 +68,7 @@
                                 <tr>
                                     <td>{{ price.get_billing_interval_display }}</td>
                                     <td>{{ price.currency }} {{ price.amount }}</td>
-                                    <td>{{ price.active|yesno:"Yes,No" }}</td>
+                                    <td>{% if price.active %}{% trans "Yes" %}{% else %}{% trans "No" %}{% endif %}</td>
                                 </tr>
                                 {% endfor %}
                             </tbody>

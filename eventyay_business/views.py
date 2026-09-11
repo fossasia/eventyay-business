@@ -323,9 +323,6 @@ class OrganizerPlanView(
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         organizer = self.request.organizer
-        from django.utils.timezone import now
-
-        from .models import Subscription
 
         current_time = now()
         sub = (
@@ -341,26 +338,32 @@ class OrganizerPlanView(
 
         ctx["subscription"] = sub
 
-        # Build a complete picture of effective entitlements
-        effective_entitlements = []
-        all_caps = get_all_capabilities()
-
+        # Build effective entitlement values from the active subscription override
         override_dict = {}
         if sub and sub.tier_version:
             for ent in sub.tier_version.entitlements.all():
                 override_dict[ent.capability] = ent.get_typed_value()
 
-        for cap in all_caps:
-            val = override_dict.get(cap.name, cap.default_value)
-            effective_entitlements.append(
-                {
-                    "capability": cap,
-                    "effective_value": val,
-                    "is_overridden": cap.name in override_dict,
-                }
-            )
+        organizer_entitlements = []
+        developer_entitlements = []
 
-        ctx["effective_entitlements"] = sorted(
-            effective_entitlements, key=lambda x: x["capability"].category
+        for cap in get_all_capabilities():
+            val = override_dict.get(cap.name, cap.default_value)
+            entry = {
+                "capability": cap,
+                "effective_value": val,
+                "is_overridden": cap.name in override_dict,
+            }
+            audience = cap.metadata.get("audience", "organizer")
+            if audience == "developer":
+                developer_entitlements.append(entry)
+            else:
+                organizer_entitlements.append(entry)
+
+        ctx["organizer_entitlements"] = sorted(
+            organizer_entitlements, key=lambda x: x["capability"].category
+        )
+        ctx["developer_entitlements"] = sorted(
+            developer_entitlements, key=lambda x: x["capability"].category
         )
         return ctx

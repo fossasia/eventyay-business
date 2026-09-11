@@ -342,3 +342,42 @@ def test_tier_detail_version_history_links(business_admin_client, sample_tier):
     response = business_admin_client.get(url)
     assert response.status_code == 200
     assert expected_url in response.content.decode()
+
+
+from django.test import override_settings
+
+
+@pytest.mark.django_db
+@override_settings(SITE_URL="https://testserver")
+def test_organizer_plan_view_audience_split(business_admin_client):
+    """organizer_entitlements and developer_entitlements are split correctly by audience."""
+    from django.urls import reverse
+    from eventyay.base.models import Organizer
+
+    org = Organizer.objects.create(name="Plan Test Org", slug="plan-test-org")
+    url = reverse(
+        "plugins:eventyay_business:organizer.plan",
+        kwargs={"organizer": org.slug},
+    )
+
+    response = business_admin_client.get(url)
+    assert response.status_code == 200
+
+    organizer_entitlements = response.context["organizer_entitlements"]
+    developer_entitlements = response.context["developer_entitlements"]
+
+    organizer_names = {e["capability"].name for e in organizer_entitlements}
+    developer_names = {e["capability"].name for e in developer_entitlements}
+
+    # API caps must be in developer bucket only
+    assert "api.read" in developer_names
+    assert "api.write" in developer_names
+    assert "api.webhooks" in developer_names
+    assert "api.read" not in organizer_names
+    assert "api.write" not in organizer_names
+
+    # Organiser caps must not bleed into developer bucket
+    assert "video.youtube" in organizer_names
+    assert "email.bulk.monthly" in organizer_names
+    assert "video.youtube" not in developer_names
+    assert "email.bulk.monthly" not in developer_names
