@@ -344,24 +344,23 @@ def test_tier_detail_version_history_links(business_admin_client, sample_tier):
     assert expected_url in response.content.decode()
 
 
-def test_organizer_plan_view_audience_split():
+@pytest.mark.django_db
+def test_organizer_plan_view_audience_split(business_admin_client):
     """organizer_entitlements and developer_entitlements are split correctly by audience."""
-    from eventyay_business.capabilities import get_all_capabilities
+    from eventyay.base.models import Organizer
+    from django.urls import reverse
 
-    # Replicate the splitting logic from OrganizerPlanView.get_context_data
-    organizer_entitlements = []
-    developer_entitlements = []
-    for cap in get_all_capabilities():
-        entry = {
-            "capability": cap,
-            "effective_value": cap.default_value,
-            "is_overridden": False,
-        }
-        audience = cap.metadata.get("audience", "organizer")
-        if audience == "developer":
-            developer_entitlements.append(entry)
-        else:
-            organizer_entitlements.append(entry)
+    org = Organizer.objects.create(name="Plan Test Org", slug="plan-test-org")
+    url = reverse(
+        "plugins:eventyay_business:organizer.plan",
+        kwargs={"organizer": org.slug},
+    )
+    
+    response = business_admin_client.get(url)
+    assert response.status_code == 200
+
+    organizer_entitlements = response.context["organizer_entitlements"]
+    developer_entitlements = response.context["developer_entitlements"]
 
     organizer_names = {e["capability"].name for e in organizer_entitlements}
     developer_names = {e["capability"].name for e in developer_entitlements}
