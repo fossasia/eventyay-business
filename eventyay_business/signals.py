@@ -1,5 +1,6 @@
 import logging
 from django.db import IntegrityError
+from django.db.models import Sum
 from django.dispatch import receiver
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
@@ -199,8 +200,6 @@ if entitlement_check and EntitlementDecision:
         if cap_def.value_type == CapabilityValueType.INTEGER:
             total_quantity = quantity
             if capability.endswith(".monthly"):
-                from django.db.models import Sum
-
                 from .models import UsageRecord
 
                 usage_agg = UsageRecord.objects.filter(
