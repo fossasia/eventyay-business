@@ -344,7 +344,11 @@ def test_tier_detail_version_history_links(business_admin_client, sample_tier):
     assert expected_url in response.content.decode()
 
 
+from django.test import override_settings
+
+
 @pytest.mark.django_db
+@override_settings(ALLOWED_HOSTS=["*"])
 def test_organizer_plan_view_audience_split(business_admin_client):
     """organizer_entitlements and developer_entitlements are split correctly by audience."""
     from django.urls import reverse
