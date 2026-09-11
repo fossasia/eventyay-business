@@ -28,6 +28,14 @@
         </div>
     </div>
 
+    <style>
+        /* Explicitly disable any browser or framework animations on the expandable sections */
+        details, details summary, details > div {
+            transition: none !important;
+            animation: none !important;
+        }
+    </style>
+
     {# ── Organiser Section ── #}
     <details open>
         <summary class="panel panel-default" style="list-style: none; cursor: pointer;">
