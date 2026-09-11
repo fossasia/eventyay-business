@@ -26,14 +26,18 @@
                 </div>
             {% endif %}
         </div>
-    </div>
-
     <style>
         /* Explicitly disable any browser or framework animations on the expandable sections */
-        details, details summary, details > div {
+        details, details *, details summary, details > div {
             transition: none !important;
             animation: none !important;
         }
+        
+        /* Toggle text based on open state */
+        details:not([open]) .when-open { display: none !important; }
+        details[open] .when-closed { display: none !important; }
+        details:not([open]) .when-closed { display: inline !important; }
+        details[open] .when-open { display: inline !important; }
     </style>
 
     {# ── Organiser Section ── #}

@@ -356,7 +356,7 @@ def test_organizer_plan_view_audience_split(business_admin_client):
         kwargs={"organizer": org.slug},
     )
     
-    response = business_admin_client.get(url)
+    response = business_admin_client.get(url, follow=True)
     assert response.status_code == 200
 
     organizer_entitlements = response.context["organizer_entitlements"]
