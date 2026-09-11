@@ -348,7 +348,7 @@ from django.test import override_settings
 
 
 @pytest.mark.django_db
-@override_settings(ALLOWED_HOSTS=["*"])
+@override_settings(SITE_URL="https://testserver")
 def test_organizer_plan_view_audience_split(business_admin_client):
     """organizer_entitlements and developer_entitlements are split correctly by audience."""
     from django.urls import reverse
@@ -360,7 +360,7 @@ def test_organizer_plan_view_audience_split(business_admin_client):
         kwargs={"organizer": org.slug},
     )
 
-    response = business_admin_client.get(url, follow=True)
+    response = business_admin_client.get(url)
     assert response.status_code == 200
 
     organizer_entitlements = response.context["organizer_entitlements"]
