@@ -1,6 +1,10 @@
+import logging
+from django.db import IntegrityError
 from django.dispatch import receiver
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
+
+logger = logging.getLogger(__name__)
 
 try:
     from eventyay.control.signals import nav_global, nav_organizer
@@ -295,14 +299,45 @@ if order_paid:
         event = sender
         organizer = event.organizer
 
-        current_time = now()
+        import datetime
+
+        payment_date = kwargs.get("payment_date")
+        if not isinstance(payment_date, (datetime.date, datetime.datetime)):
+            payment_date = None
+
+        if not payment_date:
+            payment = kwargs.get("payment")
+            cand = getattr(payment, "payment_date", None)
+            if isinstance(cand, (datetime.date, datetime.datetime)):
+                payment_date = cand
+
+        if not payment_date and hasattr(order, "payments"):
+            try:
+                confirmed_payment = (
+                    order.payments.filter(state="confirmed")
+                    .order_by("-payment_date")
+                    .first()
+                )
+                cand = getattr(confirmed_payment, "payment_date", None)
+                if isinstance(cand, (datetime.date, datetime.datetime)):
+                    payment_date = cand
+            except Exception:
+                pass
+
+        if not payment_date:
+            cand = getattr(order, "datetime", None)
+            if isinstance(cand, (datetime.date, datetime.datetime)):
+                payment_date = cand
+            else:
+                payment_date = now()
+
         sub = (
             Subscription.objects.filter(
                 organizer=organizer,
                 status="active",
-                starts_at__lte=current_time,
+                starts_at__lte=payment_date,
             )
-            .exclude(ends_at__lt=current_time)
+            .exclude(ends_at__lt=payment_date)
             .select_related("tier_version")
             .first()
         )
@@ -361,33 +396,45 @@ if order_paid:
             rates_dict = gs.settings.get("ecb_rates_dict", as_type=dict)
             rates_date = gs.settings.get("ecb_rates_date")
 
-            if (
+            if not (
                 rates_dict
                 and event.currency in rates_dict
                 and sub.currency in rates_dict
             ):
-                from decimal import ROUND_HALF_UP
+                logger.warning(
+                    "Exchange rate unavailable for converting platform fee from %s to %s for order %s. Stopping fee persistence.",
+                    event.currency,
+                    sub.currency,
+                    order.code,
+                )
+                return
 
-                rate = (
-                    Decimal(rates_dict[sub.currency])
-                    / Decimal(rates_dict[event.currency])
-                ).quantize(Decimal("0.0001"), ROUND_HALF_UP)
+            from decimal import ROUND_HALF_UP
 
-                converted_fee = (fee_amount * rate).quantize(Decimal("0.01"))
-                metadata["billing_currency"] = sub.currency
-                metadata["exchange_rate"] = str(rate)
-                metadata["exchange_rate_date"] = str(rates_date)
-                metadata["billing_currency_fee_amount"] = str(converted_fee)
+            rate = (
+                Decimal(rates_dict[sub.currency]) / Decimal(rates_dict[event.currency])
+            ).quantize(Decimal("0.0001"), ROUND_HALF_UP)
 
-        UsageRecord.objects.create(
-            organizer=organizer,
-            event=event,
-            capability="commerce.platform_fee_percent",
-            quantity=fee_amount,
-            unit=event.currency,
-            source_type="order",
-            source_id=order.code,
-            idempotency_key=f"order_{order.code}_platform_fee",
-            occurred_at=current_time,
-            metadata=metadata,
-        )
+            converted_fee = (fee_amount * rate).quantize(Decimal("0.01"))
+            metadata["billing_currency"] = sub.currency
+            metadata["exchange_rate"] = str(rate)
+            metadata["exchange_rate_date"] = str(rates_date)
+            metadata["billing_currency_fee_amount"] = str(converted_fee)
+
+        try:
+            UsageRecord.objects.get_or_create(
+                organizer=organizer,
+                idempotency_key=f"order_{order.code}_platform_fee",
+                defaults={
+                    "event": event,
+                    "capability": "commerce.platform_fee_percent",
+                    "quantity": fee_amount,
+                    "unit": event.currency,
+                    "source_type": "order",
+                    "source_id": order.code,
+                    "occurred_at": payment_date,
+                    "metadata": metadata,
+                },
+            )
+        except IntegrityError:
+            pass

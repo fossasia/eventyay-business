@@ -157,3 +157,109 @@ def test_platform_fee_currency_conversion(organizer_with_fee_tier):
     assert record.metadata["exchange_rate"] == "0.9091"
     assert record.metadata["exchange_rate_date"] == "2026-09-11"
     assert record.metadata["billing_currency_fee_amount"] == "5.00"
+
+
+@pytest.mark.django_db
+def test_platform_fee_idempotent_repeated_delivery(organizer_with_fee_tier):
+    from eventyay.base.models import Event
+
+    event = Event.objects.create(
+        organizer=organizer_with_fee_tier,
+        name="Test Event Repeat",
+        slug="test-event-repeat",
+        currency="USD",
+        date_from=now(),
+    )
+
+    order = MagicMock()
+    order.code = "REPEAT123"
+    order.total = Decimal("100.00")
+    pos = MagicMock(price=Decimal("100.00"), tax_value=Decimal("0.00"))
+    order.positions.all.return_value = [pos]
+
+    # Invoke twice to test idempotent processing
+    record_platform_fee_on_order_paid(sender=event, order=order)
+    record_platform_fee_on_order_paid(sender=event, order=order)
+
+    assert (
+        UsageRecord.objects.filter(
+            idempotency_key="order_REPEAT123_platform_fee"
+        ).count()
+        == 1
+    )
+
+
+@pytest.mark.django_db
+def test_platform_fee_currency_conversion_missing_rates_stops_persistence(
+    organizer_with_fee_tier,
+):
+    from eventyay.base.models import Event
+    from eventyay.base.settings import GlobalSettingsObject
+
+    gs = GlobalSettingsObject()
+    gs.settings.ecb_rates_date = "2026-09-11"
+    # Event is JPY, Subscription is EUR, but JPY is missing from rates
+    gs.settings.ecb_rates_dict = {"EUR": "1.0000", "USD": "1.1000"}
+
+    sub = Subscription.objects.get(organizer=organizer_with_fee_tier)
+    sub.currency = "EUR"
+    sub.save()
+
+    event = Event.objects.create(
+        organizer=organizer_with_fee_tier,
+        name="Test Event JPY",
+        slug="test-event-jpy",
+        currency="JPY",
+        date_from=now(),
+    )
+
+    order = MagicMock()
+    order.code = "MISSINGRATE"
+    order.total = Decimal("10000.00")
+    pos = MagicMock(price=Decimal("10000.00"), tax_value=Decimal("0.00"))
+    order.positions.all.return_value = [pos]
+
+    record_platform_fee_on_order_paid(sender=event, order=order)
+
+    # Persistence must stop when exchange rate is unavailable
+    assert (
+        UsageRecord.objects.filter(
+            idempotency_key="order_MISSINGRATE_platform_fee"
+        ).count()
+        == 0
+    )
+
+
+@pytest.mark.django_db
+def test_platform_fee_uses_payment_timestamp(organizer_with_fee_tier):
+    import datetime
+    from django.utils.timezone import make_aware
+    from eventyay.base.models import Event
+
+    event = Event.objects.create(
+        organizer=organizer_with_fee_tier,
+        name="Test Event Payment Date",
+        slug="test-event-payment-date",
+        currency="USD",
+        date_from=now(),
+    )
+
+    confirmed_date = make_aware(datetime.datetime(2026, 8, 15, 10, 0, 0))
+
+    sub = Subscription.objects.get(organizer=organizer_with_fee_tier)
+    sub.starts_at = confirmed_date - datetime.timedelta(days=1)
+    sub.save()
+
+    order = MagicMock()
+    order.code = "PAYDATE"
+    order.total = Decimal("100.00")
+    pos = MagicMock(price=Decimal("100.00"), tax_value=Decimal("0.00"))
+    order.positions.all.return_value = [pos]
+
+    payment = MagicMock()
+    payment.payment_date = confirmed_date
+
+    record_platform_fee_on_order_paid(sender=event, order=order, payment=payment)
+
+    record = UsageRecord.objects.get(idempotency_key="order_PAYDATE_platform_fee")
+    assert record.occurred_at == confirmed_date
