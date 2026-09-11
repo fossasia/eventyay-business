@@ -18,11 +18,13 @@ try:
         entitlement_check,
         entitlement_usage_recorded,
         register_entitlements,
+        order_paid,
     )
 except ImportError:
     register_entitlements = None
     entitlement_check = None
     entitlement_usage_recorded = None
+    order_paid = None
 
 
 if nav_global:
@@ -260,7 +262,7 @@ if entitlement_usage_recorded:
         idempotency_key: str,
         event=None,
         metadata=None,
-        **kwargs
+        **kwargs,
     ):
         from .services import record_usage
 
@@ -278,4 +280,86 @@ if entitlement_usage_recorded:
             source_id=source_id,
             idempotency_key=idempotency_key,
             metadata=metadata,
+        )
+
+
+if order_paid:
+
+    @receiver(order_paid, dispatch_uid="business_order_paid_fee")
+    def record_platform_fee_on_order_paid(sender, order, **kwargs):
+        from .models import Subscription, UsageRecord
+        from decimal import Decimal
+        from django.utils.timezone import now
+
+        event = sender
+        organizer = event.organizer
+
+        current_time = now()
+        sub = (
+            Subscription.objects.filter(
+                organizer=organizer,
+                status="active",
+                starts_at__lte=current_time,
+            )
+            .exclude(ends_at__lt=current_time)
+            .select_related("tier_version")
+            .first()
+        )
+
+        if not sub or not sub.tier_version:
+            return
+
+        from .capabilities import get_capability
+        
+        cap_def = get_capability("commerce.platform_fee_percent")
+        if not cap_def:
+            return
+
+        ent = sub.tier_version.entitlements.filter(
+            capability="commerce.platform_fee_percent"
+        ).first()
+
+        if ent:
+            fee_percent = ent.get_typed_value()
+        else:
+            fee_percent = cap_def.default_value
+
+        if not fee_percent or fee_percent <= Decimal("0.0"):
+            return
+
+        # Calculate fee base: sum of all active positions (price - tax)
+        # Excludes shipping, payment fees (which are OrderFee objects)
+        fee_base = Decimal("0.0")
+        # In Eventyay, order.positions is the default manager that excludes canceled positions
+        for pos in order.positions.all():
+            # some old data might have None for tax_value, default to 0
+            tax = pos.tax_value or Decimal("0.0")
+            fee_base += pos.price - tax
+
+        if fee_base <= Decimal("0.0"):
+            return
+
+        fee_amount = (fee_base * fee_percent / Decimal("100.0")).quantize(
+            Decimal("0.01")
+        )
+
+        if fee_amount <= Decimal("0.0"):
+            return
+
+        UsageRecord.objects.create(
+            organizer=organizer,
+            event=event,
+            capability="commerce.platform_fee_percent",
+            quantity=fee_amount,
+            unit=event.currency,
+            source_type="order",
+            source_id=order.code,
+            idempotency_key=f"order_{order.code}_platform_fee",
+            occurred_at=current_time,
+            metadata={
+                "fee_base": str(fee_base),
+                "fee_percent": str(fee_percent),
+                "order_total": str(order.total),
+                "currency": event.currency,
+            },
         )
