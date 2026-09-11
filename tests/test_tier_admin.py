@@ -51,8 +51,8 @@ def test_tier_create_view(business_admin_client):
     response = business_admin_client.post(
         url,
         {
-            "name": "Enterprise",
-            "slug": "enterprise",
+            "name": "Custom Enterprise",
+            "slug": "custom-enterprise",
             "description": "Top tier",
             "is_public": "on",
             "display_order": "1",
@@ -60,7 +60,7 @@ def test_tier_create_view(business_admin_client):
     )
     assert response.status_code == 302
 
-    tier = Tier.objects.get(slug="enterprise")
+    tier = Tier.objects.get(slug="custom-enterprise")
     assert tier.versions.count() == 1
     version = tier.versions.first()
     assert version.version == 1
