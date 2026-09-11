@@ -347,15 +347,15 @@ def test_tier_detail_version_history_links(business_admin_client, sample_tier):
 @pytest.mark.django_db
 def test_organizer_plan_view_audience_split(business_admin_client):
     """organizer_entitlements and developer_entitlements are split correctly by audience."""
-    from eventyay.base.models import Organizer
     from django.urls import reverse
+    from eventyay.base.models import Organizer
 
     org = Organizer.objects.create(name="Plan Test Org", slug="plan-test-org")
     url = reverse(
         "plugins:eventyay_business:organizer.plan",
         kwargs={"organizer": org.slug},
     )
-    
+
     response = business_admin_client.get(url, follow=True)
     assert response.status_code == 200
 
