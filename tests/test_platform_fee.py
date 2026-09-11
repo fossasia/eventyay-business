@@ -1,13 +1,13 @@
 import pytest
 from decimal import Decimal
-from unittest.mock import MagicMock
 from django.utils.timezone import now
+from unittest.mock import MagicMock
 
 from eventyay_business.models import (
     Subscription,
     Tier,
-    TierVersion,
     TierEntitlement,
+    TierVersion,
     UsageRecord,
 )
 from eventyay_business.signals import record_platform_fee_on_order_paid

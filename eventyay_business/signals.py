@@ -17,8 +17,8 @@ try:
     from eventyay.base.signals import (
         entitlement_check,
         entitlement_usage_recorded,
-        register_entitlements,
         order_paid,
+        register_entitlements,
     )
 except ImportError:
     register_entitlements = None
@@ -287,9 +287,10 @@ if order_paid:
 
     @receiver(order_paid, dispatch_uid="business_order_paid_fee")
     def record_platform_fee_on_order_paid(sender, order, **kwargs):
-        from .models import Subscription, UsageRecord
         from decimal import Decimal
         from django.utils.timezone import now
+
+        from .models import Subscription, UsageRecord
 
         event = sender
         organizer = event.organizer
@@ -310,7 +311,7 @@ if order_paid:
             return
 
         from .capabilities import get_capability
-        
+
         cap_def = get_capability("commerce.platform_fee_percent")
         if not cap_def:
             return
