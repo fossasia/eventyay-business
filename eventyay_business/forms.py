@@ -14,8 +14,12 @@ from .models import (
 
 try:
     from eventyay.base.forms.widgets import SplitDateTimePickerWidget
+    from eventyay.control.forms import SplitDateTimeField
 except ImportError:
-    from django.forms import SplitDateTimeWidget as SplitDateTimePickerWidget
+    from django.forms import (
+        SplitDateTimeField,
+        SplitDateTimeWidget as SplitDateTimePickerWidget,
+    )
 
 
 class TierForm(forms.ModelForm):
@@ -144,6 +148,11 @@ class SubscriptionAdminForm(forms.ModelForm):
             "stripe_customer_id",
             "stripe_subscription_id",
         ]
+        field_classes = {
+            "starts_at": SplitDateTimeField,
+            "ends_at": SplitDateTimeField,
+            "cancel_at": SplitDateTimeField,
+        }
         widgets = {
             "starts_at": SplitDateTimePickerWidget(),
             "ends_at": SplitDateTimePickerWidget(),
