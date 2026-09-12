@@ -15,10 +15,43 @@
         </div>
         <div class="panel-body">
             {% if subscription %}
+                {% if subscription.has_scheduled_downgrade %}
+                    <div class="alert alert-info clearfix">
+                        <form method="post" action="{% url 'plugins:eventyay_business:organizer.plan.cancel_downgrade' organizer=request.organizer.slug %}" class="pull-right" style="margin-top: -2px;">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-primary btn-sm">
+                                <i class="fa fa-undo"></i> {% trans "Keep Current Plan" %}
+                            </button>
+                        </form>
+                        <i class="fa fa-clock-o"></i>
+                        <strong>{% trans "Scheduled Plan Change:" %}</strong>
+                        {% blocktrans with target_tier=subscription.pending_tier_version.tier.name change_date=subscription.pending_change_at|date:"SHORT_DATE_FORMAT" %}
+                            Your subscription will downgrade to {{ target_tier }} on {{ change_date }}. Until then, your current plan entitlements remain active.
+                        {% endblocktrans %}
+                    </div>
+                {% endif %}
+
+                {% if subscription.status == "past_due" %}
+                    <div class="alert alert-danger">
+                        <i class="fa fa-exclamation-triangle"></i>
+                        <strong>{% trans "Payment Past Due:" %}</strong>
+                        {% if subscription.is_in_grace_period %}
+                            {% blocktrans with end_date=subscription.grace_period_ends_at|date:"SHORT_DATE_FORMAT" days=subscription.grace_period_days %}
+                                Your recent renewal payment failed. You are in a {{ days }}-day grace period ending on {{ end_date }}. Your features remain active, but please update your payment method to avoid service interruption.
+                            {% endblocktrans %}
+                        {% else %}
+                            {% trans "Your grace period has expired. Please update your payment method immediately to restore full plan features." %}
+                        {% endif %}
+                    </div>
+                {% endif %}
+
                 <p>
                     <strong>{% trans "Plan:" %}</strong> {{ subscription.tier_version.tier.name }} (v{{ subscription.tier_version.version }})<br>
                     <strong>{% trans "Status:" %}</strong> {{ subscription.get_status_display }}<br>
                     <strong>{% trans "Started:" %}</strong> {{ subscription.starts_at|date:"SHORT_DATE_FORMAT" }}
+                    {% if subscription.ends_at %}
+                        <br><strong>{% trans "Renews / Ends:" %}</strong> {{ subscription.ends_at|date:"SHORT_DATE_FORMAT" }}
+                    {% endif %}
                 </p>
                 {% if subscription.tier_version.tier.description %}
                     <p class="text-muted">{{ subscription.tier_version.tier.description }}</p>

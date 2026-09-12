@@ -1,6 +1,6 @@
 import logging
 from django.db import IntegrityError
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.dispatch import Signal, receiver
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
@@ -11,6 +11,8 @@ addon_canceled = Signal()
 addon_expired = Signal()
 addon_purchased = Signal()
 subscription_purchased = Signal()
+subscription_downgraded = Signal()
+subscription_expired = Signal()
 
 try:
     from eventyay.control.signals import (
@@ -175,7 +177,14 @@ if entitlement_check and EntitlementDecision:
         sender, capability: str, event=None, quantity: int = 1, **kwargs
     ):
         from .capabilities import CapabilityValueType, get_capability
-        from .models import Subscription
+        from .models import Subscription, SubscriptionStatus
+
+        # Platform administrators always retain access
+        user = kwargs.get("user")
+        if user and (
+            getattr(user, "is_staff", False) or getattr(user, "is_superuser", False)
+        ):
+            return EntitlementDecision(allowed=True)
 
         organizer = sender
 
@@ -189,13 +198,25 @@ if entitlement_check and EntitlementDecision:
         sub = (
             Subscription.objects.filter(
                 organizer=organizer,
-                status="active",
+                status__in=[SubscriptionStatus.ACTIVE, SubscriptionStatus.PAST_DUE],
                 starts_at__lte=current_time,
             )
-            .exclude(ends_at__lt=current_time)
+            .filter(
+                Q(ends_at__isnull=True)
+                | Q(ends_at__gte=current_time)
+                | Q(status=SubscriptionStatus.PAST_DUE)
+            )
             .select_related("tier_version")
             .first()
         )
+
+        # If past_due, check if still within grace period
+        if (
+            sub
+            and sub.status == SubscriptionStatus.PAST_DUE
+            and not sub.is_in_grace_period()
+        ):
+            sub = None
 
         value = None
         if sub and sub.tier_version:
@@ -205,8 +226,6 @@ if entitlement_check and EntitlementDecision:
 
         if value is None:
             value = cap_def.default_value
-
-        from django.db.models import Q
 
         from .models import AddonStatus, EventAddon, OrganizerAddon
 

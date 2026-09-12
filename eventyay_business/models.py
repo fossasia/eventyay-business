@@ -1,3 +1,6 @@
+from typing import Optional
+
+from datetime import datetime, timedelta
 from django.conf import settings
 from django.db import models
 from django.utils.timezone import now
@@ -239,6 +242,31 @@ class Subscription(models.Model):
     configuration_snapshot = models.JSONField(
         default=dict, blank=True, verbose_name=_("Configuration snapshot")
     )
+    pending_tier_version = models.ForeignKey(
+        TierVersion,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="pending_subscriptions",
+        verbose_name=_("Pending tier version"),
+    )
+    pending_billing_interval = models.CharField(
+        max_length=20,
+        choices=BillingInterval.choices,
+        null=True,
+        blank=True,
+        verbose_name=_("Pending billing interval"),
+    )
+    pending_change_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name=_("Pending change at"),
+    )
+    past_due_since = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name=_("Past due since"),
+    )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("Created at"))
     updated_at = models.DateTimeField(auto_now=True, verbose_name=_("Updated at"))
 
@@ -254,8 +282,54 @@ class Subscription(models.Model):
             )
         ]
 
+    def save(self, *args, **kwargs):
+        if self.status == SubscriptionStatus.PAST_DUE and not self.past_due_since:
+            self.past_due_since = now()
+            if "update_fields" in kwargs and kwargs["update_fields"] is not None:
+                kwargs["update_fields"] = set(kwargs["update_fields"]) | {
+                    "past_due_since"
+                }
+        elif self.status == SubscriptionStatus.ACTIVE and self.past_due_since:
+            self.past_due_since = None
+            if "update_fields" in kwargs and kwargs["update_fields"] is not None:
+                kwargs["update_fields"] = set(kwargs["update_fields"]) | {
+                    "past_due_since"
+                }
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"Subscription for {self.organizer} ({self.status})"
+
+    @property
+    def has_scheduled_downgrade(self) -> bool:
+        return (
+            self.pending_tier_version is not None
+            and self.status == SubscriptionStatus.ACTIVE
+        )
+
+    @property
+    def grace_period_days(self) -> int:
+        from .services import get_grace_period_days
+
+        return get_grace_period_days(self)
+
+    def is_in_grace_period(self, grace_days: Optional[int] = None) -> bool:
+        if self.status != SubscriptionStatus.PAST_DUE:
+            return False
+        if not self.past_due_since:
+            return False
+        if grace_days is None:
+            grace_days = self.grace_period_days
+        return now() <= self.past_due_since + timedelta(days=grace_days)
+
+    def grace_period_ends_at(
+        self, grace_days: Optional[int] = None
+    ) -> Optional[datetime]:
+        if self.status != SubscriptionStatus.PAST_DUE or not self.past_due_since:
+            return None
+        if grace_days is None:
+            grace_days = self.grace_period_days
+        return self.past_due_since + timedelta(days=grace_days)
 
 
 class UsageRecord(models.Model):

@@ -1,5 +1,6 @@
 import logging
 from django.db import transaction
+from django.db.models import Q
 from django.dispatch import receiver
 from django.utils.timezone import now
 
@@ -175,3 +176,117 @@ if periodic_task:
     @receiver(periodic_task, dispatch_uid="business_expire_addon_assignments")
     def periodic_expire_addon_assignments(sender, **kwargs):
         return expire_addon_assignments()
+
+
+def manage_subscription_lifecycles():
+    """
+    Scans subscriptions to:
+    1. Apply scheduled downgrades where pending_tier_version is set and pending_change_at <= now().
+    2. Expire past-due subscriptions where the configured grace period has ended.
+    Invalidates entitlement cache and emits lifecycle signals.
+    """
+    from .models import Subscription, SubscriptionStatus
+    from .services import invalidate_entitlement_cache
+    from .signals import subscription_downgraded, subscription_expired
+
+    current_time = now()
+    downgraded_count = 0
+    expired_count = 0
+
+    with scopes_disabled():
+        # 1. Apply scheduled downgrades
+        scheduled = list(
+            Subscription.objects.filter(
+                status=SubscriptionStatus.ACTIVE,
+                pending_tier_version__isnull=False,
+            )
+            .filter(
+                Q(pending_change_at__isnull=True)
+                | Q(pending_change_at__lte=current_time)
+            )
+            .select_related("organizer", "pending_tier_version")
+        )
+        for item in scheduled:
+            with transaction.atomic():
+                locked_sub = (
+                    Subscription.objects.select_for_update()
+                    .filter(pk=item.pk, status=SubscriptionStatus.ACTIVE)
+                    .first()
+                )
+                if not locked_sub or not locked_sub.pending_tier_version:
+                    continue
+                if (
+                    locked_sub.pending_change_at
+                    and locked_sub.pending_change_at > current_time
+                ):
+                    continue
+
+                locked_sub.tier_version = locked_sub.pending_tier_version
+                if locked_sub.pending_billing_interval:
+                    locked_sub.billing_interval = locked_sub.pending_billing_interval
+                locked_sub.pending_tier_version = None
+                locked_sub.pending_billing_interval = None
+                locked_sub.pending_change_at = None
+                locked_sub.save()
+
+                downgraded_count += 1
+                organizer = locked_sub.organizer
+                sub_instance = locked_sub
+                transaction.on_commit(
+                    lambda org=organizer, inst=sub_instance: (
+                        invalidate_entitlement_cache(organizer=org),
+                        subscription_downgraded.send(
+                            sender=Subscription, instance=inst
+                        ),
+                    )
+                )
+
+        # 2. Expire past-due subscriptions whose grace period has ended
+        past_due_subs = list(
+            Subscription.objects.filter(
+                status=SubscriptionStatus.PAST_DUE,
+            ).select_related("organizer", "tier_version")
+        )
+        for item in past_due_subs:
+            if item.is_in_grace_period():
+                continue
+            with transaction.atomic():
+                locked_sub = (
+                    Subscription.objects.select_for_update()
+                    .filter(pk=item.pk, status=SubscriptionStatus.PAST_DUE)
+                    .first()
+                )
+                if not locked_sub or locked_sub.is_in_grace_period():
+                    continue
+
+                locked_sub.status = SubscriptionStatus.EXPIRED
+                locked_sub.save()
+
+                expired_count += 1
+                organizer = locked_sub.organizer
+                sub_instance = locked_sub
+                transaction.on_commit(
+                    lambda org=organizer, inst=sub_instance: (
+                        invalidate_entitlement_cache(organizer=org),
+                        subscription_expired.send(sender=Subscription, instance=inst),
+                    )
+                )
+
+    logger.info(
+        "manage_subscription_lifecycles completed: %d downgraded, %d expired",
+        downgraded_count,
+        expired_count,
+    )
+    return {"downgraded": downgraded_count, "expired": expired_count}
+
+
+@app.task(name="eventyay_business.manage_subscription_lifecycles")
+def manage_subscription_lifecycles_task():
+    return manage_subscription_lifecycles()
+
+
+if periodic_task:
+
+    @receiver(periodic_task, dispatch_uid="business_manage_subscription_lifecycles")
+    def periodic_manage_subscription_lifecycles(sender, **kwargs):
+        return manage_subscription_lifecycles()

@@ -210,3 +210,53 @@ def log_addon_lifecycle_action(instance, action: str, user=None, data=None):
             logger.debug(
                 "Failed to create LogEntry for %s on %s", action, target, exc_info=True
             )
+
+
+def get_grace_period_days(subscription=None) -> int:
+    """
+    Returns the configured grace period in days for past-due subscriptions.
+    Hierarchy:
+    1. subscription.configuration_snapshot["grace_period_days"]
+    2. subscription.tier_version.configuration_snapshot["grace_period_days"]
+    3. settings.EVENTYAY_BUSINESS_GRACE_PERIOD_DAYS
+    4. GlobalSettingsObject().settings.get("business_grace_period_days")
+    5. Default fallback: 7 days
+    """
+    if subscription:
+        sub_snapshot = getattr(subscription, "configuration_snapshot", None)
+        if isinstance(sub_snapshot, dict) and "grace_period_days" in sub_snapshot:
+            try:
+                return int(sub_snapshot["grace_period_days"])
+            except (ValueError, TypeError):
+                pass
+
+        tier_ver = getattr(subscription, "tier_version", None)
+        ver_snapshot = (
+            getattr(tier_ver, "configuration_snapshot", None) if tier_ver else None
+        )
+        if isinstance(ver_snapshot, dict) and "grace_period_days" in ver_snapshot:
+            try:
+                return int(ver_snapshot["grace_period_days"])
+            except (ValueError, TypeError):
+                pass
+
+    from django.conf import settings
+
+    val = getattr(settings, "EVENTYAY_BUSINESS_GRACE_PERIOD_DAYS", None)
+    if val is not None:
+        try:
+            return int(val)
+        except (ValueError, TypeError):
+            pass
+
+    try:
+        from eventyay.base.settings import GlobalSettingsObject
+
+        gs = GlobalSettingsObject()
+        gs_val = gs.settings.get("business_grace_period_days", as_type=int)
+        if gs_val is not None:
+            return int(gs_val)
+    except Exception:
+        pass
+
+    return 7

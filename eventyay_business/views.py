@@ -2,6 +2,7 @@ import logging
 from decimal import Decimal
 from django.contrib import messages
 from django.db import transaction
+from django.db.models import Q, Sum
 
 logger = logging.getLogger(__name__)
 from django.shortcuts import get_object_or_404, redirect
@@ -17,7 +18,7 @@ from django.views.generic import (
     UpdateView,
     View,
 )
-from eventyay.base.models import Event, Organizer
+from eventyay.base.models import Event, Organizer, User
 from eventyay.control.permissions import (
     AdministratorPermissionRequiredMixin,
     EventPermissionRequiredMixin,
@@ -43,6 +44,7 @@ from .models import (
     AddonAssignmentScope,
     AddonDefinition,
     AddonStatus,
+    BillingInterval,
     EventAddon,
     OrganizerAddon,
     Subscription,
@@ -51,6 +53,7 @@ from .models import (
     TierPrice,
     TierStatus,
     TierVersion,
+    UsageRecord,
 )
 from .services import (
     invalidate_entitlement_cache,
@@ -58,11 +61,17 @@ from .services import (
     migrate_addon_assignments,
     migrate_tier_subscribers,
 )
-from .signals import addon_canceled, subscription_purchased
+from .signals import (
+    addon_canceled,
+    subscription_downgraded,
+    subscription_purchased,
+)
 from .stripe_service import (
     create_addon_checkout_session,
     create_subscription_checkout_session,
+    get_stripe_secret_key_safe,
     is_stripe_configured,
+    sync_tier_price_to_stripe,
 )
 
 
@@ -357,11 +366,15 @@ class OrganizerPlanView(
         sub = (
             Subscription.objects.filter(
                 organizer=organizer,
-                status="active",
+                status__in=[SubscriptionStatus.ACTIVE, SubscriptionStatus.PAST_DUE],
                 starts_at__lte=current_time,
             )
-            .exclude(ends_at__lt=current_time)
-            .select_related("tier_version__tier")
+            .filter(
+                Q(ends_at__isnull=True)
+                | Q(ends_at__gte=current_time)
+                | Q(status=SubscriptionStatus.PAST_DUE)
+            )
+            .select_related("tier_version__tier", "pending_tier_version__tier")
             .first()
         )
 
@@ -542,6 +555,230 @@ class OrganizerPlanUpgradeView(
         if amount is None:
             amount = getattr(tier_price, "price", Decimal("0.00"))
 
+        active_sub = (
+            Subscription.objects.filter(
+                organizer=organizer, status=SubscriptionStatus.ACTIVE
+            )
+            .select_related("tier_version__tier")
+            .first()
+        )
+
+        # Determine if this is a downgrade
+        is_downgrade = False
+        current_amount = Decimal("0.00")
+        if active_sub and active_sub.tier_version:
+            current_tier = active_sub.tier_version.tier
+            target_tier = tier_price.tier_version.tier
+
+            curr_price = (
+                active_sub.tier_version.prices.filter(
+                    billing_interval=active_sub.billing_interval, active=True
+                ).first()
+                or active_sub.tier_version.prices.filter(active=True).first()
+            )
+            if curr_price:
+                current_amount = getattr(curr_price, "amount", None) or getattr(
+                    curr_price, "price", Decimal("0.00")
+                )
+
+            if target_tier.display_order < current_tier.display_order:
+                is_downgrade = True
+            elif target_tier.display_order > current_tier.display_order:
+                is_downgrade = False
+            else:
+                # Same tier display order (e.g. interval change or same tier level)
+                if active_sub.billing_interval != tier_price.billing_interval:
+                    norm_target = (
+                        amount / Decimal("12")
+                        if tier_price.billing_interval
+                        in ("annual", "year", BillingInterval.ANNUAL)
+                        else amount
+                    )
+                    norm_current = (
+                        current_amount / Decimal("12")
+                        if active_sub.billing_interval
+                        in ("annual", "year", BillingInterval.ANNUAL)
+                        else current_amount
+                    )
+                    if norm_target < norm_current or (
+                        amount == 0 and current_amount > 0
+                    ):
+                        is_downgrade = True
+                    else:
+                        is_downgrade = False
+                else:
+                    if amount < current_amount or (amount == 0 and current_amount > 0):
+                        is_downgrade = True
+                    else:
+                        is_downgrade = False
+
+        if is_downgrade and active_sub:
+            # Check resource usage against new limits to warn without deleting data
+            from .capabilities import default_registry
+
+            current_time = now()
+            for ent in tier_price.tier_version.entitlements.all():
+                target_limit = ent.get_typed_value()
+                if target_limit is None or not isinstance(target_limit, int):
+                    continue
+
+                current_usage = None
+                cap_def = default_registry.get(ent.capability)
+                cap_label = cap_def.name if cap_def else ent.capability
+
+                if ent.capability == "organizer.full_admins":
+                    current_usage = (
+                        User.objects.filter(
+                            teams__organizer=organizer,
+                            teams__can_change_organizer_settings=True,
+                        )
+                        .distinct()
+                        .count()
+                    )
+                elif ent.capability.endswith(".monthly"):
+                    usage_agg = UsageRecord.objects.filter(
+                        organizer=organizer,
+                        capability=ent.capability,
+                        occurred_at__year=current_time.year,
+                        occurred_at__month=current_time.month,
+                    ).aggregate(total=Sum("quantity"))
+                    current_usage = usage_agg["total"] or 0
+
+                if current_usage is not None and current_usage > target_limit:
+                    messages.warning(
+                        request,
+                        _(
+                            "Your organisation currently has %(current)d for %(feature)s, "
+                            "which exceeds the limit of %(limit)d on %(tier)s. Existing "
+                            "data will not be deleted, but you will not be able to "
+                            "add or use additional capacity until usage is within limits."
+                        )
+                        % {
+                            "current": current_usage,
+                            "feature": cap_label,
+                            "limit": target_limit,
+                            "tier": tier_price.tier_version.tier.name,
+                        },
+                    )
+
+            # If Stripe subscription is linked, reconcile with Stripe before committing local state
+            if active_sub.stripe_subscription_id and is_stripe_configured():
+                try:
+                    import stripe
+
+                    secret_key = get_stripe_secret_key_safe()
+                    if secret_key:
+                        stripe.api_key = secret_key
+                        if amount == 0:
+                            # Paid-to-Free downgrade
+                            stripe.Subscription.modify(
+                                active_sub.stripe_subscription_id,
+                                cancel_at_period_end=True,
+                            )
+                        else:
+                            # Paid-to-Paid downgrade
+                            stripe_sub = stripe.Subscription.retrieve(
+                                active_sub.stripe_subscription_id
+                            )
+                            items = (stripe_sub.get("items") or {}).get("data", [])
+                            target_price_id = (
+                                tier_price.stripe_price_id
+                                or sync_tier_price_to_stripe(tier_price)
+                            )
+                            if items and target_price_id:
+                                stripe.Subscription.modify(
+                                    active_sub.stripe_subscription_id,
+                                    cancel_at_period_end=False,
+                                    proration_behavior="none",
+                                    items=[
+                                        {"id": items[0]["id"], "price": target_price_id}
+                                    ],
+                                )
+                except Exception as exc:
+                    logger.error(
+                        "Failed to update Stripe subscription for downgrade: %s",
+                        exc,
+                    )
+                    messages.error(
+                        request,
+                        _("Failed to update subscription with payment provider: %s")
+                        % str(exc),
+                    )
+                    return redirect(
+                        "plugins:eventyay_business:organizer.plan",
+                        organizer=organizer.slug,
+                    )
+
+            # Apply downgrade: immediate if active subscription has no ends_at, else schedule for renewal
+            with transaction.atomic():
+                sub_locked = (
+                    Subscription.objects.select_for_update()
+                    .filter(pk=active_sub.pk)
+                    .first()
+                )
+                if not sub_locked:
+                    messages.error(request, _("Subscription not found."))
+                    return redirect(
+                        "plugins:eventyay_business:organizer.plan",
+                        organizer=organizer.slug,
+                    )
+
+                if sub_locked.ends_at:
+                    sub_locked.pending_tier_version = tier_price.tier_version
+                    sub_locked.pending_billing_interval = tier_price.billing_interval
+                    sub_locked.pending_change_at = sub_locked.ends_at
+                    sub_locked.save(
+                        update_fields=[
+                            "pending_tier_version",
+                            "pending_billing_interval",
+                            "pending_change_at",
+                            "updated_at",
+                        ]
+                    )
+                    is_immediate = False
+                else:
+                    sub_locked.tier_version = tier_price.tier_version
+                    sub_locked.billing_interval = tier_price.billing_interval
+                    sub_locked.pending_tier_version = None
+                    sub_locked.pending_billing_interval = None
+                    sub_locked.pending_change_at = None
+                    sub_locked.save()
+                    is_immediate = True
+                    org_ref = organizer
+                    inst_ref = sub_locked
+                    transaction.on_commit(
+                        lambda org=org_ref, inst=inst_ref: (
+                            invalidate_entitlement_cache(organizer=org),
+                            subscription_downgraded.send(
+                                sender=Subscription, instance=inst
+                            ),
+                        )
+                    )
+
+            if is_immediate:
+                messages.success(
+                    request,
+                    _("Your plan has been changed to %(tier)s.")
+                    % {"tier": tier_price.tier_version.tier.name},
+                )
+            else:
+                renewal_str = active_sub.ends_at.strftime("%b %d, %Y")
+                messages.success(
+                    request,
+                    _(
+                        "Your plan downgrade to %(tier)s has been scheduled for %(renewal)s. "
+                        "Your current plan features will remain active until then."
+                    )
+                    % {
+                        "tier": tier_price.tier_version.tier.name,
+                        "renewal": renewal_str,
+                    },
+                )
+            return redirect(
+                "plugins:eventyay_business:organizer.plan",
+                organizer=organizer.slug,
+            )
+
         if amount > 0 and is_stripe_configured():
             success_url = request.build_absolute_uri(
                 reverse(
@@ -625,6 +862,83 @@ class OrganizerPlanUpgradeView(
         )
         return redirect(
             "plugins:eventyay_business:organizer.plan", organizer=organizer.slug
+        )
+
+
+class OrganizerPlanCancelDowngradeView(
+    OrganizerPermissionRequiredMixin, OrganizerDetailViewMixin, View
+):
+    permission = "can_change_organizer_settings"
+
+    def post(self, request, *args, **kwargs):
+        organizer = request.organizer
+        active_sub = Subscription.objects.filter(
+            organizer=organizer, status=SubscriptionStatus.ACTIVE
+        ).first()
+        if not active_sub or not active_sub.pending_tier_version:
+            messages.info(request, _("No scheduled downgrade found."))
+            return redirect(
+                "plugins:eventyay_business:organizer.plan",
+                organizer=organizer.slug,
+            )
+
+        if active_sub.stripe_subscription_id and is_stripe_configured():
+            try:
+                import stripe
+
+                secret_key = get_stripe_secret_key_safe()
+                if secret_key:
+                    stripe.api_key = secret_key
+                    stripe.Subscription.modify(
+                        active_sub.stripe_subscription_id,
+                        cancel_at_period_end=False,
+                    )
+            except Exception as exc:
+                logger.error("Failed to cancel Stripe scheduled downgrade: %s", exc)
+                messages.error(
+                    request,
+                    _("Failed to cancel scheduled downgrade with payment provider: %s")
+                    % str(exc),
+                )
+                return redirect(
+                    "plugins:eventyay_business:organizer.plan",
+                    organizer=organizer.slug,
+                )
+
+        with transaction.atomic():
+            sub_locked = (
+                Subscription.objects.select_for_update()
+                .filter(pk=active_sub.pk)
+                .first()
+            )
+            if not sub_locked:
+                messages.error(request, _("Subscription not found."))
+                return redirect(
+                    "plugins:eventyay_business:organizer.plan",
+                    organizer=organizer.slug,
+                )
+            sub_locked.pending_tier_version = None
+            sub_locked.pending_billing_interval = None
+            sub_locked.pending_change_at = None
+            sub_locked.save(
+                update_fields=[
+                    "pending_tier_version",
+                    "pending_billing_interval",
+                    "pending_change_at",
+                    "updated_at",
+                ]
+            )
+
+        messages.success(
+            request,
+            _(
+                "Your scheduled plan downgrade has been canceled. Your current plan "
+                "will continue renewing normally."
+            ),
+        )
+        return redirect(
+            "plugins:eventyay_business:organizer.plan",
+            organizer=organizer.slug,
         )
 
 
