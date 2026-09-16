@@ -90,8 +90,18 @@
                             <tbody>
                                 {% for ent in latest_version.entitlements.all %}
                                 <tr>
-                                    <td>{{ ent.capability }}</td>
-                                    <td>{{ ent.value|default:"-" }} {{ ent.unit }}</td>
+                                    <td>
+                                        <strong>{{ ent.capability_label }}</strong>
+                                        <br><small class="text-muted"><code>{{ ent.capability }}</code></small>
+                                        {% if ent.capability_description %}
+                                            <div class="help-block text-muted" style="margin: 2px 0 0; font-size: 11px;">
+                                                {{ ent.capability_description }}
+                                            </div>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <strong>{{ ent.formatted_display_value }}</strong>
+                                    </td>
                                     <td>
                                         {% if ent.overage_allowed %}
                                             {% trans "Yes" %} ({{ ent.currency|default:"" }} {{ ent.overage_price|default:"0" }} / {{ ent.overage_block_size|default:"1" }})

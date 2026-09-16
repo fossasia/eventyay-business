@@ -381,3 +381,116 @@ def test_organizer_plan_view_audience_split(business_admin_client):
     assert "email.bulk.monthly" in organizer_names
     assert "video.youtube" not in developer_names
     assert "email.bulk.monthly" not in developer_names
+
+
+@pytest.mark.django_db
+def test_tier_entitlement_display_properties():
+    from eventyay_business.models import Tier, TierEntitlement, TierStatus
+
+    tier = Tier.objects.create(
+        name="Pro Plan", slug="pro-plan", status=TierStatus.PUBLISHED
+    )
+    version = tier.versions.create(version=1)
+
+    ent_fee = TierEntitlement.objects.create(
+        tier_version=version,
+        capability="commerce.platform_fee_percent",
+        value="2.5",
+        unit="%",
+    )
+    assert ent_fee.capability_label == "Platform Fee"
+    assert "Percentage fee applied" in ent_fee.capability_description
+    assert ent_fee.capability_audience == "organizer"
+    assert ent_fee.formatted_display_value == "2.5%"
+    assert not ent_fee.is_boolean
+
+    ent_api = TierEntitlement.objects.create(
+        tier_version=version,
+        capability="api.read",
+        value="true",
+    )
+    assert ent_api.capability_label == "API Read Access"
+    assert ent_api.capability_audience == "developer"
+    assert ent_api.is_boolean is True
+    assert ent_api.is_enabled is True
+    assert ent_api.formatted_display_value == "Included"
+
+    ent_overage = TierEntitlement.objects.create(
+        tier_version=version,
+        capability="registration.free_overage_price",
+        value="0.50",
+        currency="EUR",
+    )
+    assert "0.50 EUR / registration" in ent_overage.formatted_display_value
+
+
+@pytest.mark.django_db
+@override_settings(SITE_URL="https://testserver")
+def test_organizer_plan_upgrade_view_audience_split(business_admin_client):
+    from django.utils.timezone import now
+    from eventyay.base.models import Organizer
+
+    from eventyay_business.models import Tier, TierEntitlement, TierPrice, TierStatus
+
+    org = Organizer.objects.create(name="Upgrade Test Org", slug="upgrade-test-org")
+
+    tier = Tier.objects.create(
+        name="Enterprise Plan",
+        slug="enterprise",
+        status=TierStatus.PUBLISHED,
+        is_public=True,
+        description="High capacity events for large teams.",
+    )
+    version = tier.versions.create(version=1, published_at=now())
+    TierPrice.objects.create(
+        tier_version=version,
+        billing_interval="monthly",
+        amount=100,
+        currency="EUR",
+        active=True,
+    )
+
+    TierEntitlement.objects.create(
+        tier_version=version,
+        capability="commerce.platform_fee_percent",
+        value="1.5",
+    )
+    TierEntitlement.objects.create(
+        tier_version=version,
+        capability="api.write",
+        value="true",
+    )
+
+    # Also create a tier with no entitlements to test the placeholder state
+    tier_empty = Tier.objects.create(
+        name="Basic Plan",
+        slug="basic",
+        status=TierStatus.PUBLISHED,
+        is_public=True,
+    )
+    tier_empty.versions.create(version=1, published_at=now())
+
+    url = reverse(
+        "plugins:eventyay_business:organizer.plan.upgrade",
+        kwargs={"organizer": org.slug},
+    )
+    resp = business_admin_client.get(url)
+    assert resp.status_code == 200
+
+    tier_item = next(
+        item for item in resp.context["tier_list"] if item["tier"].id == tier.id
+    )
+    org_caps = {f.capability for f in tier_item["organizer_features"]}
+    dev_caps = {f.capability for f in tier_item["developer_features"]}
+
+    assert "commerce.platform_fee_percent" in org_caps
+    assert "api.write" in dev_caps
+    assert "api.write" not in org_caps
+
+    # Verify template rendered human labels, descriptions, and placeholder
+    content = resp.content.decode()
+    assert "Platform Fee" in content
+    assert (
+        "Developer &amp; API Access" in content or "Developer & API Access" in content
+    )
+    assert "Standard Platform Limits" in content

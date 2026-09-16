@@ -175,6 +175,97 @@ class TierEntitlement(models.Model):
             return Decimal(self.value)
         return self.value
 
+    @property
+    def capability_def(self):
+        from .capabilities import get_capability
+
+        return get_capability(self.capability)
+
+    @property
+    def capability_label(self):
+        cap = self.capability_def
+        if cap and cap.label:
+            return cap.label
+        return self.capability.replace("_", " ").replace(".", " → ").title()
+
+    @property
+    def capability_description(self):
+        cap = self.capability_def
+        return cap.description if cap else ""
+
+    @property
+    def capability_category(self):
+        cap = self.capability_def
+        return cap.category if cap else "General"
+
+    @property
+    def capability_audience(self):
+        cap = self.capability_def
+        return cap.metadata.get("audience", "organizer") if cap else "organizer"
+
+    @property
+    def is_boolean(self):
+        from .capabilities import CapabilityValueType
+
+        cap = self.capability_def
+        if cap and cap.value_type == CapabilityValueType.BOOLEAN:
+            return True
+        return str(self.value).lower() in ("true", "false")
+
+    @property
+    def is_enabled(self):
+        if self.is_boolean:
+            return str(self.value).lower() in ("true", "1", "yes")
+        return bool(self.value)
+
+    @property
+    def formatted_display_value(self):
+        from decimal import Decimal
+        from django.utils.translation import gettext as _
+
+        cap = self.capability_def
+        if self.is_boolean:
+            return _("Included") if self.is_enabled else _("Not included")
+
+        if not self.value and self.value != 0 and self.value != "0":
+            return _("Included")
+
+        val_str = str(self.value).strip()
+        unit = (self.unit or (cap.unit if cap else "")).strip()
+
+        if cap and cap.name == "commerce.platform_fee_percent":
+            try:
+                if Decimal(val_str) == Decimal("0.0"):
+                    return _("0% (No platform fee)")
+            except Exception:
+                pass
+            return f"{val_str}%"
+
+        if cap and cap.name == "registration.free_overage_price":
+            try:
+                if Decimal(val_str) == Decimal("0.0"):
+                    return _("Free (No overage fee)")
+            except Exception:
+                pass
+            currency = self.currency or "EUR"
+            return f"{val_str} {currency} / registration"
+
+        if cap and cap.name == "registration.free_allowance_per_event":
+            return f"{val_str} registrations / event"
+
+        if cap and cap.name == "organizer.full_admins":
+            return f"{val_str} admin seats"
+
+        if cap and cap.name == "email.bulk.monthly":
+            return f"{val_str} emails / month"
+
+        if cap and cap.name == "video.jitsi.concurrent_rooms":
+            return f"{val_str} rooms"
+
+        if unit:
+            return f"{val_str} {unit}"
+        return val_str
+
     class Meta:
         ordering = ["tier_version", "capability"]
         verbose_name = _("Tier entitlement")

@@ -529,6 +529,12 @@ class OrganizerPlanUpgradeView(
                 )
             )
             entitlements = list(latest_version.entitlements.all())
+            organizer_features = [
+                ent for ent in entitlements if ent.capability_audience != "developer"
+            ]
+            developer_features = [
+                ent for ent in entitlements if ent.capability_audience == "developer"
+            ]
             is_current = (
                 active_sub is not None
                 and active_sub.tier_version is not None
@@ -540,6 +546,8 @@ class OrganizerPlanUpgradeView(
                     "version": latest_version,
                     "prices": prices,
                     "entitlements": entitlements,
+                    "organizer_features": organizer_features,
+                    "developer_features": developer_features,
                     "is_current": is_current,
                 }
             )
