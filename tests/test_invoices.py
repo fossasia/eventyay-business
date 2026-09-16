@@ -5,6 +5,7 @@ from django.test import override_settings
 from django.utils.timezone import make_aware, now
 from eventyay.base.models import Event, Organizer, User
 from eventyay.base.models.auth import StaffSession
+from eventyay.base.settings import GlobalSettingsObject
 from unittest.mock import patch
 
 from eventyay_business.invoicing_service import (
@@ -15,12 +16,14 @@ from eventyay_business.invoicing_service import (
 )
 from eventyay_business.models import (
     AddonDefinition,
+    AddonStatus,
     BusinessInvoice,
     BusinessInvoiceStatus,
     EventAddon,
     InvoiceLineType,
     OrganizerAddon,
     Subscription,
+    SubscriptionStatus,
     Tier,
     TierEntitlement,
     TierPrice,
@@ -494,3 +497,133 @@ def test_admin_invoice_views(business_admin_client, test_setup):
     assert resp.status_code == 200
     assert invoice.invoice_number.encode() in resp.content
     assert b"Pro Tier" in resp.content
+
+
+@pytest.mark.django_db
+def test_canceled_and_inactive_subscription_and_addons_excluded(test_setup):
+    org, tier, version, event = test_setup
+    period_start = make_aware(datetime(2026, 8, 1, 0, 0, 0))
+    period_end = make_aware(datetime(2026, 8, 31, 23, 59, 59))
+
+    # 1. Canceled subscription should not be billed
+    sub = Subscription.objects.get(organizer=org)
+    sub.status = SubscriptionStatus.CANCELED
+    sub.save()
+
+    # 2. Inactive/canceled addon should not be billed
+    addon_def = AddonDefinition.objects.create(
+        slug="canceled-storage",
+        name="Canceled Storage",
+        price=Decimal("15.00"),
+        currency="EUR",
+        capability="storage.extra_gb",
+    )
+    OrganizerAddon.objects.create(
+        organizer=org,
+        addon=addon_def,
+        status=AddonStatus.CANCELED,
+        starts_at=make_aware(datetime(2026, 7, 1, 0, 0, 0)),
+        canceled_at=make_aware(datetime(2026, 7, 15, 0, 0, 0)),
+    )
+
+    # 3. Addon canceled before the billing period start should not be billed
+    addon_def2 = AddonDefinition.objects.create(
+        slug="old-addon",
+        name="Old Addon",
+        price=Decimal("20.00"),
+        currency="EUR",
+        capability="custom_domain",
+    )
+    OrganizerAddon.objects.create(
+        organizer=org,
+        addon=addon_def2,
+        status=AddonStatus.ACTIVE,
+        starts_at=make_aware(datetime(2026, 6, 1, 0, 0, 0)),
+        cancel_at=make_aware(datetime(2026, 7, 31, 23, 59, 59)),
+    )
+
+    inv = generate_business_invoice_for_organizer(org, period_start, period_end)
+    assert inv is None
+
+
+@pytest.mark.django_db
+def test_platform_fee_ecb_conversion_and_missing_rate(test_setup):
+    org, tier, version, event = test_setup
+    period_start = make_aware(datetime(2026, 8, 1, 0, 0, 0))
+    period_end = make_aware(datetime(2026, 8, 31, 23, 59, 59))
+
+    # Remove subscription fee to isolate platform fee lines
+    sub = Subscription.objects.get(organizer=org)
+    sub.status = SubscriptionStatus.CANCELED
+    sub.save()
+
+    # Create event with USD
+    usd_event = Event.objects.create(
+        organizer=org,
+        name="USD Summit",
+        slug="usd-summit",
+        currency="USD",
+        date_from=now(),
+    )
+
+    # Usage record for platform fee: 12.00 USD
+    UsageRecord.objects.create(
+        organizer=org,
+        event=usd_event,
+        capability="commerce.platform_fee_percent",
+        quantity=Decimal("12.00"),
+        unit="USD",
+        occurred_at=make_aware(datetime(2026, 8, 10, 12, 0, 0)),
+        source_type="order",
+        source_id="ORD-USD-1",
+        idempotency_key="fee-usd-1",
+        metadata={"currency": "USD", "fee_base": "120.00", "fee_percent": "10.0"},
+    )
+
+    gs = GlobalSettingsObject()
+
+    # Case A: Missing exchange rate -> record skipped, no invoice generated
+    gs.settings.ecb_rates_dict = {"EUR": "1.0000"}  # USD missing
+    inv_none = generate_business_invoice_for_organizer(
+        org, period_start, period_end, currency="EUR"
+    )
+    assert inv_none is None
+
+    # Case B: Exchange rate present: 1 EUR = 1.20 USD -> 12.00 USD = 10.00 EUR
+    gs.settings.ecb_rates_dict = {"EUR": "1.0000", "USD": "1.2000"}
+    inv = generate_business_invoice_for_organizer(
+        org, period_start, period_end, currency="EUR"
+    )
+    assert inv is not None
+    assert inv.currency == "EUR"
+    assert inv.total == Decimal("10.00")
+    line = inv.lines.first()
+    assert line.line_type == InvoiceLineType.PLATFORM_FEE
+    assert line.amount == Decimal("10.00")
+
+
+@pytest.mark.django_db
+def test_concurrent_invoice_generation_integrity_handling(test_setup):
+    from django.db import IntegrityError
+
+    org, _, _, _ = test_setup
+    period_start = make_aware(datetime(2026, 8, 1, 0, 0, 0))
+    period_end = make_aware(datetime(2026, 8, 31, 23, 59, 59))
+
+    # Pre-create invoice
+    existing_inv = generate_business_invoice_for_organizer(
+        org, period_start, period_end
+    )
+    assert existing_inv is not None
+
+    # Simulate concurrency: second caller hits IntegrityError on create
+    with patch(
+        "eventyay_business.invoicing_service.BusinessInvoice.objects.create"
+    ) as mock_create:
+        mock_create.side_effect = IntegrityError(
+            "duplicate key value violates unique constraint"
+        )
+        raced_inv = generate_business_invoice_for_organizer(
+            org, period_start, period_end
+        )
+        assert raced_inv == existing_inv

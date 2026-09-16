@@ -1,11 +1,14 @@
 import logging
 from datetime import datetime
 from decimal import Decimal
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils.timezone import is_aware, make_aware, now
+from eventyay.base.models import Organizer
+from eventyay.base.settings import GlobalSettingsObject
 
 from .models import (
+    AddonStatus,
     BillingInterval,
     BusinessInvoice,
     BusinessInvoiceLine,
@@ -30,6 +33,7 @@ def generate_invoice_number(organizer, period_start: datetime) -> str:
     prefix = f"INV-{period_str}-{organizer.pk:04d}-"
 
     with transaction.atomic():
+        Organizer.objects.select_for_update().filter(pk=organizer.pk).first()
         last_invoice = (
             BusinessInvoice.objects.filter(invoice_number__startswith=prefix)
             .order_by("-invoice_number")
@@ -106,12 +110,14 @@ def generate_business_invoice_for_organizer(
         Subscription.objects.filter(
             organizer=organizer,
             starts_at__lte=end_date,
+            status__in=[SubscriptionStatus.ACTIVE, SubscriptionStatus.PAST_DUE],
         )
         .filter(
             Q(ends_at__isnull=True)
             | Q(ends_at__gte=start_date)
             | Q(status=SubscriptionStatus.PAST_DUE)
         )
+        .filter(Q(cancel_at__isnull=True) | Q(cancel_at__gte=start_date))
         .select_related("tier_version__tier")
         .order_by("-starts_at")
         .first()
@@ -169,9 +175,12 @@ def generate_business_invoice_for_organizer(
     org_addons = (
         OrganizerAddon.objects.filter(
             organizer=organizer,
+            status=AddonStatus.ACTIVE,
             starts_at__lte=end_date,
         )
         .filter(Q(ends_at__isnull=True) | Q(ends_at__gte=start_date))
+        .filter(Q(cancel_at__isnull=True) | Q(cancel_at__gte=start_date))
+        .filter(Q(canceled_at__isnull=True) | Q(canceled_at__gte=start_date))
         .select_related("addon")
     )
 
@@ -206,9 +215,12 @@ def generate_business_invoice_for_organizer(
     event_addons = (
         EventAddon.objects.filter(
             event__organizer=organizer,
+            status=AddonStatus.ACTIVE,
             starts_at__lte=end_date,
         )
         .filter(Q(ends_at__isnull=True) | Q(ends_at__gte=start_date))
+        .filter(Q(cancel_at__isnull=True) | Q(cancel_at__gte=start_date))
+        .filter(Q(canceled_at__isnull=True) | Q(canceled_at__gte=start_date))
         .select_related("addon", "event")
     )
 
@@ -253,17 +265,51 @@ def generate_business_invoice_for_organizer(
         ev = rec.event
         events_fee_map.setdefault(ev, []).append(rec)
 
+    gs = GlobalSettingsObject()
+    rates_dict = gs.settings.get("ecb_rates_dict", as_type=dict)
+
     for ev, recs in events_fee_map.items():
         total_event_fee = Decimal("0.00")
         record_details = []
 
         for r in recs:
             meta = r.metadata or {}
+            rec_currency = meta.get("currency", r.unit)
             converted = meta.get("billing_currency_fee_amount")
+
             if converted and meta.get("billing_currency") == billing_currency:
                 fee_val = Decimal(str(converted))
-            else:
+            elif rec_currency == billing_currency:
                 fee_val = Decimal(str(r.quantity))
+            elif (
+                rates_dict
+                and rec_currency in rates_dict
+                and billing_currency in rates_dict
+            ):
+                try:
+                    rate = Decimal(str(rates_dict[billing_currency])) / Decimal(
+                        str(rates_dict[rec_currency])
+                    )
+                    fee_val = (Decimal(str(r.quantity)) * rate).quantize(
+                        Decimal("0.01")
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to convert platform fee %s from %s to %s: %s",
+                        r.source_id,
+                        rec_currency,
+                        billing_currency,
+                        exc,
+                    )
+                    continue
+            else:
+                logger.warning(
+                    "Exchange rate unavailable to convert platform fee %s from %s to %s. Skipping record.",
+                    r.source_id,
+                    rec_currency,
+                    billing_currency,
+                )
+                continue
 
             total_event_fee += fee_val
             record_details.append(
@@ -276,23 +322,23 @@ def generate_business_invoice_for_organizer(
                 }
             )
 
-        if total_event_fee > Decimal("0.00"):
+        if total_event_fee > Decimal("0.00") and record_details:
             event_name = ev.name if ev else "General"
             lines_data.append(
                 {
                     "line_type": InvoiceLineType.PLATFORM_FEE,
                     "event": ev,
                     "description": f"Ticket platform transaction fees ({event_name})",
-                    "quantity": Decimal(len(recs)),
-                    "unit_price": (total_event_fee / Decimal(len(recs))).quantize(
-                        Decimal("0.01")
-                    ),
+                    "quantity": Decimal(len(record_details)),
+                    "unit_price": (
+                        total_event_fee / Decimal(len(record_details))
+                    ).quantize(Decimal("0.01")),
                     "amount": total_event_fee.quantize(Decimal("0.01")),
                     "tier_version": active_sub.tier_version if active_sub else None,
                     "addon": None,
                     "usage_reference": f"platform_fees_event_{ev.slug if ev else 'org'}",
                     "calculation_metadata": {
-                        "orders_count": len(recs),
+                        "orders_count": len(record_details),
                         "total_fees": str(total_event_fee),
                         "billing_currency": billing_currency,
                         "fee_records": record_details,
@@ -379,44 +425,65 @@ def generate_business_invoice_for_organizer(
     total = subtotal + tax
 
     # 9. Persist Invoice and Lines atomically
-    with transaction.atomic():
-        invoice_number = generate_invoice_number(organizer, start_date)
+    try:
+        with transaction.atomic():
+            Organizer.objects.select_for_update().filter(pk=organizer.pk).first()
 
-        invoice = BusinessInvoice.objects.create(
+            # Re-check idempotency inside lock to prevent race conditions
+            existing = BusinessInvoice.objects.filter(
+                organizer=organizer,
+                billing_period_start=start_date,
+                billing_period_end=end_date,
+            ).first()
+            if existing:
+                return existing
+
+            invoice_number = generate_invoice_number(organizer, start_date)
+
+            invoice = BusinessInvoice.objects.create(
+                organizer=organizer,
+                invoice_number=invoice_number,
+                billing_period_start=start_date,
+                billing_period_end=end_date,
+                currency=billing_currency,
+                status=(
+                    BusinessInvoiceStatus.OPEN
+                    if total > Decimal("0.00")
+                    else BusinessInvoiceStatus.PAID
+                ),
+                subtotal=subtotal,
+                tax=tax,
+                total=total,
+            )
+
+            line_objects = [
+                BusinessInvoiceLine(
+                    invoice=invoice,
+                    event=data["event"],
+                    line_type=data["line_type"],
+                    description=data["description"],
+                    quantity=data["quantity"],
+                    unit_price=data["unit_price"],
+                    amount=data["amount"],
+                    tier_version=data["tier_version"],
+                    addon=data["addon"],
+                    usage_reference=data["usage_reference"],
+                    calculation_metadata=data["calculation_metadata"],
+                )
+                for data in lines_data
+            ]
+            BusinessInvoiceLine.objects.bulk_create(line_objects)
+
+        return invoice
+    except IntegrityError:
+        existing = BusinessInvoice.objects.filter(
             organizer=organizer,
-            invoice_number=invoice_number,
             billing_period_start=start_date,
             billing_period_end=end_date,
-            currency=billing_currency,
-            status=(
-                BusinessInvoiceStatus.OPEN
-                if total > Decimal("0.00")
-                else BusinessInvoiceStatus.PAID
-            ),
-            subtotal=subtotal,
-            tax=tax,
-            total=total,
-        )
-
-        line_objects = [
-            BusinessInvoiceLine(
-                invoice=invoice,
-                event=data["event"],
-                line_type=data["line_type"],
-                description=data["description"],
-                quantity=data["quantity"],
-                unit_price=data["unit_price"],
-                amount=data["amount"],
-                tier_version=data["tier_version"],
-                addon=data["addon"],
-                usage_reference=data["usage_reference"],
-                calculation_metadata=data["calculation_metadata"],
-            )
-            for data in lines_data
-        ]
-        BusinessInvoiceLine.objects.bulk_create(line_objects)
-
-    return invoice
+        ).first()
+        if existing:
+            return existing
+        raise
 
 
 def generate_all_business_invoices(
