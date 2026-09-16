@@ -8,6 +8,7 @@ from eventyay.base.models import Organizer
 from eventyay.base.settings import GlobalSettingsObject
 
 from .models import (
+    AddonPricingMode,
     AddonStatus,
     BillingInterval,
     BusinessInvoice,
@@ -96,340 +97,12 @@ def generate_business_invoice_for_organizer(
     overages for an organizer across a billing period into a BusinessInvoice with
     itemized BusinessInvoiceLine records.
     """
-    # 1. Check idempotency: if invoice already exists for this exact cycle, return it.
-    existing = BusinessInvoice.objects.filter(
-        organizer=organizer,
-        billing_period_start=start_date,
-        billing_period_end=end_date,
-    ).first()
-    if existing:
-        return existing
-
-    # 2. Determine billing currency and active subscription
-    active_sub = (
-        Subscription.objects.filter(
-            organizer=organizer,
-            starts_at__lte=end_date,
-            status__in=[SubscriptionStatus.ACTIVE, SubscriptionStatus.PAST_DUE],
-        )
-        .filter(
-            Q(ends_at__isnull=True)
-            | Q(ends_at__gte=start_date)
-            | Q(status=SubscriptionStatus.PAST_DUE)
-        )
-        .filter(Q(cancel_at__isnull=True) | Q(cancel_at__gte=start_date))
-        .select_related("tier_version__tier")
-        .order_by("-starts_at")
-        .first()
-    )
-
-    billing_currency = (
-        currency or (active_sub.currency if active_sub else None) or "EUR"
-    )
-
-    lines_data = []
-
-    # 3. Aggregate Subscription Plan Fee
-    if active_sub and active_sub.tier_version:
-        tier_ver = active_sub.tier_version
-        tier = tier_ver.tier
-
-        # Find matching active price
-        interval = active_sub.billing_interval or BillingInterval.MONTHLY
-        matching_price = (
-            tier_ver.prices.filter(
-                active=True,
-                billing_interval=interval,
-                currency=billing_currency,
-            ).first()
-            or tier_ver.prices.filter(active=True, billing_interval=interval).first()
-            or tier_ver.prices.filter(active=True).first()
-        )
-
-        if matching_price and matching_price.amount > Decimal("0.00"):
-            lines_data.append(
-                {
-                    "line_type": InvoiceLineType.SUBSCRIPTION,
-                    "event": None,
-                    "description": f"Plan Subscription: {tier.name} ({matching_price.get_billing_interval_display()})",
-                    "quantity": Decimal("1.00"),
-                    "unit_price": matching_price.amount,
-                    "amount": matching_price.amount,
-                    "tier_version": tier_ver,
-                    "addon": None,
-                    "usage_reference": f"subscription_{active_sub.pk}",
-                    "calculation_metadata": {
-                        "subscription_id": active_sub.pk,
-                        "tier_slug": tier.slug,
-                        "tier_name": tier.name,
-                        "tier_version": tier_ver.version,
-                        "billing_interval": str(interval),
-                        "price_currency": matching_price.currency,
-                        "price_amount": str(matching_price.amount),
-                    },
-                }
-            )
-
-    # 4. Aggregate Active Add-ons
-    # 4a. Organizer-level add-ons
-    org_addons = (
-        OrganizerAddon.objects.filter(
-            organizer=organizer,
-            status=AddonStatus.ACTIVE,
-            starts_at__lte=end_date,
-        )
-        .filter(Q(ends_at__isnull=True) | Q(ends_at__gte=start_date))
-        .filter(Q(cancel_at__isnull=True) | Q(cancel_at__gte=start_date))
-        .filter(Q(canceled_at__isnull=True) | Q(canceled_at__gte=start_date))
-        .select_related("addon")
-    )
-
-    for oa in org_addons:
-        price = oa.price if oa.price is not None else oa.addon.price
-        qty = Decimal(oa.quantity or 1)
-        if price and price > Decimal("0.00"):
-            line_amount = (price * qty).quantize(Decimal("0.01"))
-            lines_data.append(
-                {
-                    "line_type": InvoiceLineType.ADDON,
-                    "event": None,
-                    "description": f"Add-on: {oa.addon.name} (Organisation)",
-                    "quantity": qty,
-                    "unit_price": price,
-                    "amount": line_amount,
-                    "tier_version": None,
-                    "addon": oa.addon,
-                    "usage_reference": f"organizer_addon_{oa.pk}",
-                    "calculation_metadata": {
-                        "organizer_addon_id": oa.pk,
-                        "addon_id": oa.addon.pk,
-                        "addon_name": oa.addon.name,
-                        "pricing_mode": str(oa.addon.pricing_mode),
-                        "quantity": int(qty),
-                        "unit_price": str(price),
-                    },
-                }
-            )
-
-    # 4b. Event-level add-ons
-    event_addons = (
-        EventAddon.objects.filter(
-            event__organizer=organizer,
-            status=AddonStatus.ACTIVE,
-            starts_at__lte=end_date,
-        )
-        .filter(Q(ends_at__isnull=True) | Q(ends_at__gte=start_date))
-        .filter(Q(cancel_at__isnull=True) | Q(cancel_at__gte=start_date))
-        .filter(Q(canceled_at__isnull=True) | Q(canceled_at__gte=start_date))
-        .select_related("addon", "event")
-    )
-
-    for ea in event_addons:
-        price = ea.price if ea.price is not None else ea.addon.price
-        qty = Decimal(ea.quantity or 1)
-        if price and price > Decimal("0.00"):
-            line_amount = (price * qty).quantize(Decimal("0.01"))
-            lines_data.append(
-                {
-                    "line_type": InvoiceLineType.ADDON,
-                    "event": ea.event,
-                    "description": f"Add-on: {ea.addon.name} (Event: {ea.event.name})",
-                    "quantity": qty,
-                    "unit_price": price,
-                    "amount": line_amount,
-                    "tier_version": None,
-                    "addon": ea.addon,
-                    "usage_reference": f"event_addon_{ea.pk}",
-                    "calculation_metadata": {
-                        "event_addon_id": ea.pk,
-                        "event_slug": ea.event.slug,
-                        "addon_id": ea.addon.pk,
-                        "addon_name": ea.addon.name,
-                        "pricing_mode": str(ea.addon.pricing_mode),
-                        "quantity": int(qty),
-                        "unit_price": str(price),
-                    },
-                }
-            )
-
-    # 5. Aggregate Paid-Order Platform Fees
-    fee_records = UsageRecord.objects.filter(
-        organizer=organizer,
-        capability="commerce.platform_fee_percent",
-        occurred_at__gte=start_date,
-        occurred_at__lte=end_date,
-    ).select_related("event")
-
-    events_fee_map = {}
-    for rec in fee_records:
-        ev = rec.event
-        events_fee_map.setdefault(ev, []).append(rec)
-
-    gs = GlobalSettingsObject()
-    rates_dict = gs.settings.get("ecb_rates_dict", as_type=dict)
-
-    for ev, recs in events_fee_map.items():
-        total_event_fee = Decimal("0.00")
-        record_details = []
-
-        for r in recs:
-            meta = r.metadata or {}
-            rec_currency = meta.get("currency", r.unit)
-            converted = meta.get("billing_currency_fee_amount")
-
-            if converted and meta.get("billing_currency") == billing_currency:
-                fee_val = Decimal(str(converted))
-            elif rec_currency == billing_currency:
-                fee_val = Decimal(str(r.quantity))
-            elif (
-                rates_dict
-                and rec_currency in rates_dict
-                and billing_currency in rates_dict
-            ):
-                try:
-                    rate = Decimal(str(rates_dict[billing_currency])) / Decimal(
-                        str(rates_dict[rec_currency])
-                    )
-                    fee_val = (Decimal(str(r.quantity)) * rate).quantize(
-                        Decimal("0.01")
-                    )
-                except Exception as exc:
-                    logger.warning(
-                        "Failed to convert platform fee %s from %s to %s: %s",
-                        r.source_id,
-                        rec_currency,
-                        billing_currency,
-                        exc,
-                    )
-                    continue
-            else:
-                logger.warning(
-                    "Exchange rate unavailable to convert platform fee %s from %s to %s. Skipping record.",
-                    r.source_id,
-                    rec_currency,
-                    billing_currency,
-                )
-                continue
-
-            total_event_fee += fee_val
-            record_details.append(
-                {
-                    "source_id": r.source_id,
-                    "fee_amount": str(fee_val),
-                    "currency": meta.get("currency", r.unit),
-                    "fee_base": meta.get("fee_base"),
-                    "fee_percent": meta.get("fee_percent"),
-                }
-            )
-
-        if total_event_fee > Decimal("0.00") and record_details:
-            event_name = ev.name if ev else "General"
-            lines_data.append(
-                {
-                    "line_type": InvoiceLineType.PLATFORM_FEE,
-                    "event": ev,
-                    "description": f"Ticket platform transaction fees ({event_name})",
-                    "quantity": Decimal(len(record_details)),
-                    "unit_price": (
-                        total_event_fee / Decimal(len(record_details))
-                    ).quantize(Decimal("0.01")),
-                    "amount": total_event_fee.quantize(Decimal("0.01")),
-                    "tier_version": active_sub.tier_version if active_sub else None,
-                    "addon": None,
-                    "usage_reference": f"platform_fees_event_{ev.slug if ev else 'org'}",
-                    "calculation_metadata": {
-                        "orders_count": len(record_details),
-                        "total_fees": str(total_event_fee),
-                        "billing_currency": billing_currency,
-                        "fee_records": record_details,
-                    },
-                }
-            )
-
-    # 6. Aggregate Free Registration Overages
-    free_reg_records = UsageRecord.objects.filter(
-        organizer=organizer,
-        capability="registration.free_allowance_per_event",
-        occurred_at__gte=start_date,
-        occurred_at__lte=end_date,
-    ).select_related("event")
-
-    events_reg_map = {}
-    for rec in free_reg_records:
-        ev = rec.event
-        events_reg_map.setdefault(ev, []).append(rec)
-
-    allowance = 100
-    overage_price = Decimal("0.00")
-    if active_sub and active_sub.tier_version:
-        t_ver = active_sub.tier_version
-        allowance_ent = t_ver.entitlements.filter(
-            capability="registration.free_allowance_per_event"
-        ).first()
-        if allowance_ent and allowance_ent.value:
-            try:
-                allowance = int(allowance_ent.value)
-            except (ValueError, TypeError):
-                allowance = 100
-
-        overage_ent = t_ver.entitlements.filter(
-            capability="registration.free_overage_price"
-        ).first()
-        if overage_ent and overage_ent.value:
-            try:
-                overage_price = Decimal(str(overage_ent.value))
-            except Exception:
-                overage_price = Decimal("0.00")
-
-    for ev, recs in events_reg_map.items():
-        total_free_registrations = sum(Decimal(str(r.quantity)) for r in recs)
-        overage_quantity = max(
-            Decimal("0.00"), total_free_registrations - Decimal(allowance)
-        )
-
-        if overage_quantity > Decimal("0.00") and overage_price > Decimal("0.00"):
-            overage_amount = (overage_quantity * overage_price).quantize(
-                Decimal("0.01")
-            )
-            event_name = ev.name if ev else "General"
-            lines_data.append(
-                {
-                    "line_type": InvoiceLineType.REGISTRATION_OVERAGE,
-                    "event": ev,
-                    "description": (
-                        f"Free ticket registration overage ({event_name}): "
-                        f"{int(overage_quantity)} registrations beyond {allowance} allowance"
-                    ),
-                    "quantity": overage_quantity,
-                    "unit_price": overage_price,
-                    "amount": overage_amount,
-                    "tier_version": active_sub.tier_version if active_sub else None,
-                    "addon": None,
-                    "usage_reference": f"registration_overage_event_{ev.slug if ev else 'org'}",
-                    "calculation_metadata": {
-                        "total_free_registrations": int(total_free_registrations),
-                        "included_allowance": allowance,
-                        "overage_units": int(overage_quantity),
-                        "unit_overage_price": str(overage_price),
-                    },
-                }
-            )
-
-    # 7. If no lines and empty invoices not permitted, return None
-    if not lines_data and not allow_empty:
-        return None
-
-    # 8. Compute invoice totals
-    subtotal = sum((item["amount"] for item in lines_data), Decimal("0.00"))
-    tax = Decimal("0.00")
-    total = subtotal + tax
-
-    # 9. Persist Invoice and Lines atomically
     try:
         with transaction.atomic():
+            # Acquire exclusive row-level lock on organizer to serialize concurrent requests per organizer
             Organizer.objects.select_for_update().filter(pk=organizer.pk).first()
 
-            # Re-check idempotency inside lock to prevent race conditions
+            # 1. Check idempotency: if invoice already exists for this exact cycle, return it.
             existing = BusinessInvoice.objects.filter(
                 organizer=organizer,
                 billing_period_start=start_date,
@@ -438,6 +111,499 @@ def generate_business_invoice_for_organizer(
             if existing:
                 return existing
 
+            gs = GlobalSettingsObject()
+            rates_dict = gs.settings.get("ecb_rates_dict", as_type=dict)
+
+            # 2. Determine billing currency and active subscription
+            sub_filter = (
+                Q(status__in=[SubscriptionStatus.ACTIVE, SubscriptionStatus.PAST_DUE])
+                & (Q(ends_at__isnull=True) | Q(ends_at__gte=start_date))
+                & (Q(cancel_at__isnull=True) | Q(cancel_at__gte=start_date))
+            ) | (
+                Q(status__in=[SubscriptionStatus.CANCELED, SubscriptionStatus.EXPIRED])
+                & (
+                    (Q(ends_at__isnull=False) & Q(ends_at__gte=start_date))
+                    | (Q(cancel_at__isnull=False) & Q(cancel_at__gte=start_date))
+                )
+            )
+            active_sub = (
+                Subscription.objects.filter(
+                    organizer=organizer,
+                    starts_at__lte=end_date,
+                )
+                .filter(sub_filter)
+                .select_related("tier_version__tier")
+                .order_by("-starts_at")
+                .first()
+            )
+
+            billing_currency = (
+                currency or (active_sub.currency if active_sub else None) or "EUR"
+            )
+
+            lines_data = []
+
+            # 3. Aggregate Subscription Plan Fee
+            if active_sub and active_sub.tier_version:
+                tier_ver = active_sub.tier_version
+                tier = tier_ver.tier
+                interval = active_sub.billing_interval or BillingInterval.MONTHLY
+
+                is_billable_period = True
+                service_period_start = start_date
+                service_period_end = end_date
+
+                if interval == BillingInterval.ANNUAL:
+                    sub_start = active_sub.starts_at
+                    is_renewal_period = False
+                    for test_year in (
+                        start_date.year,
+                        start_date.year - 1,
+                        start_date.year + 1,
+                    ):
+                        try:
+                            anniversary = sub_start.replace(year=test_year)
+                        except ValueError:
+                            anniversary = sub_start.replace(year=test_year, day=28)
+
+                        if (
+                            start_date <= anniversary <= end_date
+                            and anniversary >= sub_start
+                        ):
+                            is_renewal_period = True
+                            service_period_start = anniversary
+                            try:
+                                service_period_end = anniversary.replace(
+                                    year=anniversary.year + 1
+                                )
+                            except ValueError:
+                                service_period_end = anniversary.replace(
+                                    year=anniversary.year + 1, day=28
+                                )
+                            break
+
+                    is_billable_period = is_renewal_period
+
+                if is_billable_period:
+                    price_obj = (
+                        tier_ver.prices.filter(
+                            active=True,
+                            billing_interval=interval,
+                            currency=billing_currency,
+                        ).first()
+                        or tier_ver.prices.filter(
+                            active=True, billing_interval=interval
+                        ).first()
+                        or tier_ver.prices.filter(active=True).first()
+                    )
+
+                    if price_obj:
+                        sub_rate = None
+                        sub_currency = price_obj.currency
+                        if sub_currency == billing_currency:
+                            sub_amount = price_obj.amount
+                        elif (
+                            rates_dict
+                            and sub_currency in rates_dict
+                            and billing_currency in rates_dict
+                        ):
+                            try:
+                                rate = Decimal(
+                                    str(rates_dict[billing_currency])
+                                ) / Decimal(str(rates_dict[sub_currency]))
+                                sub_amount = (price_obj.amount * rate).quantize(
+                                    Decimal("0.01")
+                                )
+                                sub_rate = str(rate.quantize(Decimal("0.0001")))
+                            except Exception:
+                                sub_amount = Decimal("0.00")
+                        else:
+                            logger.warning(
+                                "Subscription price currency %s mismatch with billing currency %s and no exchange rate available. Skipping subscription line.",
+                                sub_currency,
+                                billing_currency,
+                            )
+                            sub_amount = Decimal("0.00")
+
+                        if sub_amount > Decimal("0.00"):
+                            lines_data.append(
+                                {
+                                    "line_type": InvoiceLineType.SUBSCRIPTION,
+                                    "event": None,
+                                    "description": f"Plan Subscription: {tier.name} ({price_obj.get_billing_interval_display()})",
+                                    "quantity": Decimal("1.00"),
+                                    "unit_price": sub_amount,
+                                    "amount": sub_amount,
+                                    "tier_version": tier_ver,
+                                    "addon": None,
+                                    "usage_reference": f"subscription_{active_sub.pk}",
+                                    "calculation_metadata": {
+                                        "subscription_id": active_sub.pk,
+                                        "tier_slug": tier.slug,
+                                        "tier_name": tier.name,
+                                        "tier_version": tier_ver.version,
+                                        "billing_interval": str(interval),
+                                        "price_currency": price_obj.currency,
+                                        "price_amount": str(price_obj.amount),
+                                        "service_period_start": service_period_start.isoformat(),
+                                        "service_period_end": service_period_end.isoformat(),
+                                        "exchange_rate": sub_rate,
+                                    },
+                                }
+                            )
+
+            # 4. Aggregate Active Add-ons
+            recurring_filter = (
+                Q(addon__pricing_mode=AddonPricingMode.RECURRING)
+                & (
+                    (
+                        Q(status__in=[AddonStatus.ACTIVE, AddonStatus.PAST_DUE])
+                        & (Q(ends_at__isnull=True) | Q(ends_at__gte=start_date))
+                        & (Q(cancel_at__isnull=True) | Q(cancel_at__gte=start_date))
+                        & (Q(canceled_at__isnull=True) | Q(canceled_at__gte=start_date))
+                    )
+                    | (
+                        Q(status__in=[AddonStatus.CANCELED, AddonStatus.EXPIRED])
+                        & (
+                            (Q(ends_at__isnull=False) & Q(ends_at__gte=start_date))
+                            | (
+                                Q(cancel_at__isnull=False)
+                                & Q(cancel_at__gte=start_date)
+                            )
+                            | (
+                                Q(canceled_at__isnull=False)
+                                & Q(canceled_at__gte=start_date)
+                            )
+                        )
+                    )
+                )
+                & Q(starts_at__lte=end_date)
+            )
+            onetime_filter = (
+                Q(addon__pricing_mode=AddonPricingMode.ONE_TIME)
+                & Q(starts_at__gte=start_date)
+                & Q(starts_at__lte=end_date)
+                & ~Q(status=AddonStatus.CANCELED)
+            )
+            addon_filter = recurring_filter | onetime_filter
+
+            billed_period_str = (
+                f"{start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
+            )
+
+            # 4a. Organizer-level add-ons
+            org_addons = (
+                OrganizerAddon.objects.filter(organizer=organizer)
+                .filter(addon_filter)
+                .select_related("addon")
+            )
+
+            for oa in org_addons:
+                raw_price = oa.price if oa.price is not None else oa.addon.price
+                addon_currency = oa.currency or (
+                    oa.addon.currency if oa.addon else billing_currency
+                )
+                rate_applied = None
+
+                if raw_price is None or raw_price <= Decimal("0.00"):
+                    continue
+
+                if addon_currency == billing_currency:
+                    price = raw_price
+                elif (
+                    rates_dict
+                    and addon_currency in rates_dict
+                    and billing_currency in rates_dict
+                ):
+                    try:
+                        rate = Decimal(str(rates_dict[billing_currency])) / Decimal(
+                            str(rates_dict[addon_currency])
+                        )
+                        price = (raw_price * rate).quantize(Decimal("0.01"))
+                        rate_applied = str(rate.quantize(Decimal("0.0001")))
+                    except Exception:
+                        continue
+                else:
+                    logger.warning(
+                        "Add-on %s currency %s mismatch with billing currency %s and no exchange rate available. Skipping line.",
+                        oa.addon.name,
+                        addon_currency,
+                        billing_currency,
+                    )
+                    continue
+
+                qty = Decimal(oa.quantity or 1)
+                line_amount = (price * qty).quantize(Decimal("0.01"))
+                lines_data.append(
+                    {
+                        "line_type": InvoiceLineType.ADDON,
+                        "event": None,
+                        "description": f"Add-on: {oa.addon.name} (Organisation)",
+                        "quantity": qty,
+                        "unit_price": price,
+                        "amount": line_amount,
+                        "tier_version": None,
+                        "addon": oa.addon,
+                        "usage_reference": f"organizer_addon_{oa.pk}",
+                        "calculation_metadata": {
+                            "organizer_addon_id": oa.pk,
+                            "addon_id": oa.addon.pk,
+                            "addon_name": oa.addon.name,
+                            "pricing_mode": str(oa.addon.pricing_mode),
+                            "quantity": int(qty),
+                            "unit_price": str(price),
+                            "original_currency": addon_currency,
+                            "original_price": str(raw_price),
+                            "exchange_rate": rate_applied,
+                            "billed_period": billed_period_str,
+                        },
+                    }
+                )
+
+            # 4b. Event-level add-ons
+            event_addons = (
+                EventAddon.objects.filter(event__organizer=organizer)
+                .filter(addon_filter)
+                .select_related("addon", "event")
+            )
+
+            for ea in event_addons:
+                raw_price = ea.price if ea.price is not None else ea.addon.price
+                addon_currency = ea.currency or (
+                    ea.addon.currency if ea.addon else billing_currency
+                )
+                rate_applied = None
+
+                if raw_price is None or raw_price <= Decimal("0.00"):
+                    continue
+
+                if addon_currency == billing_currency:
+                    price = raw_price
+                elif (
+                    rates_dict
+                    and addon_currency in rates_dict
+                    and billing_currency in rates_dict
+                ):
+                    try:
+                        rate = Decimal(str(rates_dict[billing_currency])) / Decimal(
+                            str(rates_dict[addon_currency])
+                        )
+                        price = (raw_price * rate).quantize(Decimal("0.01"))
+                        rate_applied = str(rate.quantize(Decimal("0.0001")))
+                    except Exception:
+                        continue
+                else:
+                    logger.warning(
+                        "Add-on %s currency %s mismatch with billing currency %s and no exchange rate available. Skipping line.",
+                        ea.addon.name,
+                        addon_currency,
+                        billing_currency,
+                    )
+                    continue
+
+                qty = Decimal(ea.quantity or 1)
+                line_amount = (price * qty).quantize(Decimal("0.01"))
+                lines_data.append(
+                    {
+                        "line_type": InvoiceLineType.ADDON,
+                        "event": ea.event,
+                        "description": f"Add-on: {ea.addon.name} (Event: {ea.event.name})",
+                        "quantity": qty,
+                        "unit_price": price,
+                        "amount": line_amount,
+                        "tier_version": None,
+                        "addon": ea.addon,
+                        "usage_reference": f"event_addon_{ea.pk}",
+                        "calculation_metadata": {
+                            "event_addon_id": ea.pk,
+                            "event_slug": ea.event.slug,
+                            "addon_id": ea.addon.pk,
+                            "addon_name": ea.addon.name,
+                            "pricing_mode": str(ea.addon.pricing_mode),
+                            "quantity": int(qty),
+                            "unit_price": str(price),
+                            "original_currency": addon_currency,
+                            "original_price": str(raw_price),
+                            "exchange_rate": rate_applied,
+                            "billed_period": billed_period_str,
+                        },
+                    }
+                )
+
+            # 5. Aggregate Paid-Order Platform Fees
+            fee_records = UsageRecord.objects.filter(
+                organizer=organizer,
+                capability="commerce.platform_fee_percent",
+                occurred_at__gte=start_date,
+                occurred_at__lte=end_date,
+            ).select_related("event")
+
+            events_fee_map = {}
+            for rec in fee_records:
+                ev = rec.event
+                events_fee_map.setdefault(ev, []).append(rec)
+
+            for ev, recs in events_fee_map.items():
+                total_event_fee = Decimal("0.00")
+                record_details = []
+
+                for r in recs:
+                    meta = r.metadata or {}
+                    rec_currency = meta.get("currency", r.unit)
+                    converted = meta.get("billing_currency_fee_amount")
+
+                    if converted and meta.get("billing_currency") == billing_currency:
+                        fee_val = Decimal(str(converted))
+                    elif rec_currency == billing_currency:
+                        fee_val = Decimal(str(r.quantity))
+                    elif (
+                        rates_dict
+                        and rec_currency in rates_dict
+                        and billing_currency in rates_dict
+                    ):
+                        try:
+                            rate = Decimal(str(rates_dict[billing_currency])) / Decimal(
+                                str(rates_dict[rec_currency])
+                            )
+                            fee_val = (Decimal(str(r.quantity)) * rate).quantize(
+                                Decimal("0.01")
+                            )
+                        except Exception as exc:
+                            logger.warning(
+                                "Failed to convert platform fee %s from %s to %s: %s",
+                                r.source_id,
+                                rec_currency,
+                                billing_currency,
+                                exc,
+                            )
+                            continue
+                    else:
+                        logger.warning(
+                            "Exchange rate unavailable to convert platform fee %s from %s to %s. Skipping record.",
+                            r.source_id,
+                            rec_currency,
+                            billing_currency,
+                        )
+                        continue
+
+                    total_event_fee += fee_val
+                    record_details.append(
+                        {
+                            "source_id": r.source_id,
+                            "fee_amount": str(fee_val),
+                            "currency": meta.get("currency", r.unit),
+                            "fee_base": meta.get("fee_base"),
+                            "fee_percent": meta.get("fee_percent"),
+                        }
+                    )
+
+                if total_event_fee > Decimal("0.00") and record_details:
+                    event_name = ev.name if ev else "General"
+                    lines_data.append(
+                        {
+                            "line_type": InvoiceLineType.PLATFORM_FEE,
+                            "event": ev,
+                            "description": f"Ticket platform transaction fees ({event_name})",
+                            "quantity": Decimal(len(record_details)),
+                            "unit_price": (
+                                total_event_fee / Decimal(len(record_details))
+                            ).quantize(Decimal("0.01")),
+                            "amount": total_event_fee.quantize(Decimal("0.01")),
+                            "tier_version": (
+                                active_sub.tier_version if active_sub else None
+                            ),
+                            "addon": None,
+                            "usage_reference": f"platform_fees_event_{ev.slug if ev else 'org'}",
+                            "calculation_metadata": {
+                                "orders_count": len(record_details),
+                                "total_fees": str(total_event_fee),
+                                "billing_currency": billing_currency,
+                                "fee_records": record_details,
+                            },
+                        }
+                    )
+
+            # 6. Aggregate Free Registration Overages
+            free_reg_records = UsageRecord.objects.filter(
+                organizer=organizer,
+                capability="registration.free_allowance_per_event",
+                occurred_at__gte=start_date,
+                occurred_at__lte=end_date,
+            ).select_related("event")
+
+            events_reg_map = {}
+            for rec in free_reg_records:
+                ev = rec.event
+                events_reg_map.setdefault(ev, []).append(rec)
+
+            allowance = 0
+            overage_price = Decimal("0.00")
+            if active_sub and active_sub.tier_version:
+                allowance_ent = active_sub.tier_version.entitlements.filter(
+                    capability="registration.free_allowance_per_event"
+                ).first()
+                if allowance_ent and allowance_ent.value:
+                    try:
+                        allowance = int(allowance_ent.value)
+                    except (ValueError, TypeError):
+                        allowance = 0
+
+                overage_ent = active_sub.tier_version.entitlements.filter(
+                    capability="registration.free_overage_price"
+                ).first()
+                if overage_ent and overage_ent.value:
+                    try:
+                        overage_price = Decimal(str(overage_ent.value))
+                    except Exception:
+                        overage_price = Decimal("0.00")
+
+            for ev, recs in events_reg_map.items():
+                total_free_registrations = sum(r.quantity for r in recs)
+                if total_free_registrations <= allowance:
+                    continue
+
+                overage_quantity = total_free_registrations - allowance
+                overage_amount = (overage_quantity * overage_price).quantize(
+                    Decimal("0.01")
+                )
+
+                if overage_amount <= Decimal("0.00"):
+                    continue
+
+                event_name = ev.name if ev else "General"
+                lines_data.append(
+                    {
+                        "line_type": InvoiceLineType.REGISTRATION_OVERAGE,
+                        "event": ev,
+                        "description": (
+                            f"Free ticket registration overage ({event_name}): "
+                            f"{int(overage_quantity)} registrations beyond {allowance} allowance"
+                        ),
+                        "quantity": overage_quantity,
+                        "unit_price": overage_price,
+                        "amount": overage_amount,
+                        "tier_version": active_sub.tier_version if active_sub else None,
+                        "addon": None,
+                        "usage_reference": f"registration_overage_event_{ev.slug if ev else 'org'}",
+                        "calculation_metadata": {
+                            "total_free_registrations": int(total_free_registrations),
+                            "included_allowance": allowance,
+                            "overage_units": int(overage_quantity),
+                            "unit_overage_price": str(overage_price),
+                        },
+                    }
+                )
+
+            # 7. If no lines and empty invoices not permitted, return None
+            if not lines_data and not allow_empty:
+                return None
+
+            # 8. Compute invoice totals
+            subtotal = sum((item["amount"] for item in lines_data), Decimal("0.00"))
+            tax = Decimal("0.00")
+            total = subtotal + tax
+
+            # 9. Persist Invoice and Lines atomically
             invoice_number = generate_invoice_number(organizer, start_date)
 
             invoice = BusinessInvoice.objects.create(
@@ -474,7 +640,7 @@ def generate_business_invoice_for_organizer(
             ]
             BusinessInvoiceLine.objects.bulk_create(line_objects)
 
-        return invoice
+            return invoice
     except IntegrityError:
         existing = BusinessInvoice.objects.filter(
             organizer=organizer,
