@@ -46,6 +46,8 @@ from .models import (
     AddonDefinition,
     AddonStatus,
     BillingInterval,
+    BusinessInvoice,
+    BusinessInvoiceStatus,
     EventAddon,
     OrganizerAddon,
     Subscription,
@@ -1844,3 +1846,89 @@ class EventAddonAdminRevokeView(AdministratorPermissionRequiredMixin, View):
 
         messages.success(request, _("The event add-on assignment has been revoked."))
         return redirect("plugins:eventyay_business:addons.assignments.event.list")
+
+
+class OrganizerInvoiceListView(
+    OrganizerPermissionRequiredMixin, OrganizerDetailViewMixin, ListView
+):
+    model = BusinessInvoice
+    template_name = "eventyay_business/invoices/organizer_list.html"
+    context_object_name = "invoices"
+    paginate_by = 25
+    permission = "can_change_organizer_settings"
+
+    def get_queryset(self):
+        return (
+            BusinessInvoice.objects.filter(organizer=self.request.organizer)
+            .prefetch_related("lines")
+            .order_by("-billing_period_start", "-id")
+        )
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["organizer"] = self.request.organizer
+        return ctx
+
+
+class OrganizerInvoiceDetailView(OrganizerPermissionRequiredMixin, DetailView):
+    model = BusinessInvoice
+    template_name = "eventyay_business/invoices/organizer_detail.html"
+    context_object_name = "invoice"
+    permission = "can_change_organizer_settings"
+
+    def get_queryset(self):
+        return BusinessInvoice.objects.filter(
+            organizer=self.request.organizer
+        ).prefetch_related("lines__event", "lines__tier_version__tier", "lines__addon")
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["organizer"] = self.request.organizer
+        ctx["lines"] = self.object.lines.all()
+        return ctx
+
+
+class AdminInvoiceListView(AdministratorPermissionRequiredMixin, ListView):
+    model = BusinessInvoice
+    template_name = "eventyay_business/invoices/admin_list.html"
+    context_object_name = "invoices"
+    paginate_by = 30
+
+    def get_queryset(self):
+        qs = BusinessInvoice.objects.select_related("organizer").order_by(
+            "-created_at", "-id"
+        )
+        status = self.request.GET.get("status")
+        if status:
+            qs = qs.filter(status=status)
+        search = self.request.GET.get("q")
+        if search:
+            qs = qs.filter(
+                Q(invoice_number__icontains=search)
+                | Q(organizer__name__icontains=search)
+                | Q(organizer__slug__icontains=search)
+            )
+        return qs
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["status_choices"] = BusinessInvoiceStatus.choices
+        ctx["current_status"] = self.request.GET.get("status", "")
+        ctx["search_query"] = self.request.GET.get("q", "")
+        return ctx
+
+
+class AdminInvoiceDetailView(AdministratorPermissionRequiredMixin, DetailView):
+    model = BusinessInvoice
+    template_name = "eventyay_business/invoices/admin_detail.html"
+    context_object_name = "invoice"
+
+    def get_queryset(self):
+        return BusinessInvoice.objects.select_related("organizer").prefetch_related(
+            "lines__event", "lines__tier_version__tier", "lines__addon"
+        )
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["lines"] = self.object.lines.all()
+        return ctx

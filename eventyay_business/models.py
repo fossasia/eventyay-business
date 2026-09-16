@@ -1,6 +1,7 @@
 from typing import Optional
 
 from datetime import datetime, timedelta
+from decimal import Decimal
 from django.conf import settings
 from django.db import models
 from django.utils.timezone import now
@@ -740,3 +741,155 @@ class EventAddon(models.Model):
             except Exception:
                 return Decimal("0")
         return val
+
+
+class BusinessInvoiceStatus(models.TextChoices):
+    DRAFT = "draft", _("Draft")
+    OPEN = "open", _("Open")
+    PAID = "paid", _("Paid")
+    CANCELED = "canceled", _("Canceled")
+    UNCOLLECTIBLE = "uncollectible", _("Uncollectible")
+
+
+class InvoiceLineType(models.TextChoices):
+    SUBSCRIPTION = "subscription", _("Subscription plan")
+    ADDON = "addon", _("Add-on package")
+    PLATFORM_FEE = "platform_fee", _("Platform ticket transaction fee")
+    REGISTRATION_OVERAGE = (
+        "registration_overage",
+        _("Free ticket registration overage"),
+    )
+    OTHER = "other", _("Other")
+
+
+class BusinessInvoice(models.Model):
+    organizer = models.ForeignKey(
+        "base.Organizer",
+        on_delete=models.CASCADE,
+        related_name="business_invoices",
+        verbose_name=_("Organizer"),
+    )
+    invoice_number = models.CharField(
+        max_length=64, unique=True, verbose_name=_("Invoice number")
+    )
+    billing_period_start = models.DateTimeField(verbose_name=_("Billing period start"))
+    billing_period_end = models.DateTimeField(verbose_name=_("Billing period end"))
+    currency = models.CharField(max_length=3, default="EUR", verbose_name=_("Currency"))
+    status = models.CharField(
+        max_length=20,
+        choices=BusinessInvoiceStatus.choices,
+        default=BusinessInvoiceStatus.OPEN,
+        verbose_name=_("Status"),
+    )
+    subtotal = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        verbose_name=_("Subtotal"),
+    )
+    tax = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        verbose_name=_("Tax"),
+    )
+    total = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        verbose_name=_("Total"),
+    )
+    stripe_payment_intent_id = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        verbose_name=_("Stripe payment intent ID"),
+    )
+    stripe_invoice_id = models.CharField(
+        max_length=255, blank=True, null=True, verbose_name=_("Stripe invoice ID")
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("Created at"))
+    updated_at = models.DateTimeField(auto_now=True, verbose_name=_("Updated at"))
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        verbose_name = _("Business invoice")
+        verbose_name_plural = _("Business invoices")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["organizer", "billing_period_start", "billing_period_end"],
+                name="unique_business_invoice_period_per_organizer",
+            )
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.invoice_number} - {self.organizer} ({self.total} {self.currency})"
+        )
+
+
+class BusinessInvoiceLine(models.Model):
+    invoice = models.ForeignKey(
+        BusinessInvoice,
+        on_delete=models.CASCADE,
+        related_name="lines",
+        verbose_name=_("Invoice"),
+    )
+    event = models.ForeignKey(
+        "base.Event",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="business_invoice_lines",
+        verbose_name=_("Event"),
+    )
+    line_type = models.CharField(
+        max_length=30, choices=InvoiceLineType.choices, verbose_name=_("Line type")
+    )
+    description = models.CharField(max_length=255, verbose_name=_("Description"))
+    quantity = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal("1.00"),
+        verbose_name=_("Quantity"),
+    )
+    unit_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        verbose_name=_("Unit price"),
+    )
+    amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        verbose_name=_("Amount"),
+    )
+    tier_version = models.ForeignKey(
+        TierVersion,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name=_("Tier version"),
+    )
+    addon = models.ForeignKey(
+        AddonDefinition,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name=_("Add-on"),
+    )
+    usage_reference = models.CharField(
+        max_length=255, blank=True, null=True, verbose_name=_("Usage reference")
+    )
+    calculation_metadata = models.JSONField(
+        default=dict, blank=True, verbose_name=_("Calculation metadata")
+    )
+
+    class Meta:
+        ordering = ["id"]
+        verbose_name = _("Business invoice line")
+        verbose_name_plural = _("Business invoice lines")
+
+    def __str__(self):
+        return f"{self.description}: {self.amount}"

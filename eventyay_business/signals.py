@@ -103,6 +103,15 @@ if nav_global:
                 ),
                 "parent": reverse("eventyay_admin:admin.global.business"),
             },
+            {
+                "label": _("Invoices"),
+                "url": reverse("plugins:eventyay_business:invoices.list"),
+                "active": (
+                    url.namespace == "plugins:eventyay_business"
+                    and url.url_name.startswith("invoices.")
+                ),
+                "parent": reverse("eventyay_admin:admin.global.business"),
+            },
         ]
 
 
@@ -337,7 +346,10 @@ if nav_organizer:
                 ),
                 "active": (
                     url.namespace == "plugins:eventyay_business"
-                    and url.url_name == "organizer.plan"
+                    and (
+                        url.url_name.startswith("organizer.plan")
+                        or url.url_name.startswith("organizer.invoices")
+                    )
                 ),
                 "icon": "credit-card",
                 "position": 100,

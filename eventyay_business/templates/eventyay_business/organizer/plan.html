@@ -8,6 +8,9 @@
 
     <div class="panel panel-default">
         <div class="panel-heading">
+            <a href="{% url 'plugins:eventyay_business:organizer.invoices' organizer=request.organizer.slug %}" class="btn btn-default btn-xs pull-right" style="margin-right: 8px;">
+                <i class="fa fa-file-text-o"></i> {% trans "Invoices" %}
+            </a>
             <a href="{% url 'plugins:eventyay_business:organizer.plan.upgrade' organizer=request.organizer.slug %}" class="btn btn-default btn-xs pull-right">
                 <i class="fa fa-arrow-up"></i> {% trans "Change / Upgrade Plan" %}
             </a>

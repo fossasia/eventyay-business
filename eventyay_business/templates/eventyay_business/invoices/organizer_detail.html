@@ -1,0 +1,139 @@
+{% extends "pretixcontrol/organizers/base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Invoice" %} {{ invoice.invoice_number }}{% endblock %}
+
+{% block inner %}
+    <div class="page-header">
+        <div class="pull-right">
+            <a href="{% url "plugins:eventyay_business:organizer.invoices" organizer=organizer.slug %}" class="btn btn-default">
+                <i class="fa fa-arrow-left"></i> {% trans "Back to Invoices" %}
+            </a>
+        </div>
+        <h1>{% trans "Invoice" %} {{ invoice.invoice_number }}</h1>
+    </div>
+
+    <div class="row">
+        <div class="col-md-6">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <h3 class="panel-title">{% trans "Invoice Details" %}</h3>
+                </div>
+                <div class="panel-body">
+                    <dl class="dl-horizontal">
+                        <dt>{% trans "Invoice Number" %}</dt>
+                        <dd><strong>{{ invoice.invoice_number }}</strong></dd>
+
+                        <dt>{% trans "Status" %}</dt>
+                        <dd>
+                            {% if invoice.status == "paid" %}
+                                <span class="label label-success">{{ invoice.get_status_display }}</span>
+                            {% elif invoice.status == "open" %}
+                                <span class="label label-info">{{ invoice.get_status_display }}</span>
+                            {% elif invoice.status == "draft" %}
+                                <span class="label label-default">{{ invoice.get_status_display }}</span>
+                            {% elif invoice.status == "canceled" %}
+                                <span class="label label-warning">{{ invoice.get_status_display }}</span>
+                            {% elif invoice.status == "uncollectible" %}
+                                <span class="label label-danger">{{ invoice.get_status_display }}</span>
+                            {% else %}
+                                <span class="label label-default">{{ invoice.get_status_display }}</span>
+                            {% endif %}
+                        </dd>
+
+                        <dt>{% trans "Billing Period" %}</dt>
+                        <dd>{{ invoice.billing_period_start|date:"SHORT_DATE_FORMAT" }} – {{ invoice.billing_period_end|date:"SHORT_DATE_FORMAT" }}</dd>
+
+                        <dt>{% trans "Date" %}</dt>
+                        <dd>{{ invoice.created_at|date:"SHORT_DATE_FORMAT" }}</dd>
+                    </dl>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <h3 class="panel-title">{% trans "Summary" %}</h3>
+                </div>
+                <div class="panel-body">
+                    <table class="table">
+                        <tr>
+                            <td>{% trans "Subtotal" %}</td>
+                            <td class="text-right"><strong>{{ invoice.subtotal }} {{ invoice.currency }}</strong></td>
+                        </tr>
+                        <tr>
+                            <td>{% trans "Tax" %}</td>
+                            <td class="text-right"><strong>{{ invoice.tax }} {{ invoice.currency }}</strong></td>
+                        </tr>
+                        <tr class="active">
+                            <td><h4>{% trans "Total" %}</h4></td>
+                            <td class="text-right"><h4>{{ invoice.total }} {{ invoice.currency }}</h4></td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="panel panel-default">
+        <div class="panel-heading">
+            <h3 class="panel-title">{% trans "Invoice Line Items" %}</h3>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>{% trans "Type" %}</th>
+                        <th>{% trans "Description" %}</th>
+                        <th>{% trans "Event" %}</th>
+                        <th class="text-right">{% trans "Quantity" %}</th>
+                        <th class="text-right">{% trans "Unit Price" %}</th>
+                        <th class="text-right">{% trans "Subtotal" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for line in lines %}
+                        <tr>
+                            <td>{{ forloop.counter }}</td>
+                            <td>
+                                <span class="label label-default">{{ line.get_line_type_display }}</span>
+                            </td>
+                            <td>
+                                <strong>{{ line.description }}</strong>
+                                {% if line.calculation_metadata %}
+                                    <div class="help-block text-muted" style="margin: 2px 0 0; font-size: 11px;">
+                                        {% if line.line_type == "platform_fee" %}
+                                            {% trans "Orders:" %} {{ line.calculation_metadata.orders_count }} |
+                                            {% trans "Total fees:" %} {{ line.calculation_metadata.total_fees }} {{ line.calculation_metadata.billing_currency }}
+                                        {% elif line.line_type == "registration_overage" %}
+                                            {% trans "Free registrations:" %} {{ line.calculation_metadata.total_free_registrations }} |
+                                            {% trans "Allowance:" %} {{ line.calculation_metadata.included_allowance }} |
+                                            {% trans "Overage count:" %} {{ line.calculation_metadata.overage_units }}
+                                        {% endif %}
+                                    </div>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if line.event %}
+                                    {{ line.event.name }}
+                                {% else %}
+                                    <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-right">{{ line.quantity }}</td>
+                            <td class="text-right">{{ line.unit_price }} {{ invoice.currency }}</td>
+                            <td class="text-right"><strong>{{ line.amount }} {{ invoice.currency }}</strong></td>
+                        </tr>
+                    {% empty %}
+                        <tr>
+                            <td colspan="7" class="text-center text-muted">
+                                {% trans "No line items found." %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+{% endblock %}

@@ -58,6 +58,16 @@ urlpatterns = [
         name="subscriptions.edit",
     ),
     path(
+        "admin/global/business/invoices/",
+        views.AdminInvoiceListView.as_view(),
+        name="invoices.list",
+    ),
+    path(
+        "admin/global/business/invoices/<int:pk>/",
+        views.AdminInvoiceDetailView.as_view(),
+        name="invoices.detail",
+    ),
+    path(
         "admin/global/business/addons/",
         views.AddonDefinitionListView.as_view(),
         name="addons.list",
@@ -138,6 +148,16 @@ urlpatterns = [
         "control/organizer/<str:organizer>/business/plan/cancel-downgrade/",
         views.OrganizerPlanCancelDowngradeView.as_view(),
         name="organizer.plan.cancel_downgrade",
+    ),
+    path(
+        "control/organizer/<str:organizer>/business/invoices/",
+        views.OrganizerInvoiceListView.as_view(),
+        name="organizer.invoices",
+    ),
+    path(
+        "control/organizer/<str:organizer>/business/invoices/<int:pk>/",
+        views.OrganizerInvoiceDetailView.as_view(),
+        name="organizer.invoices.detail",
     ),
     path(
         "control/organizer/<str:organizer>/business/addons/<int:pk>/purchase/",

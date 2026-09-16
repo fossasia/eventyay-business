@@ -1,0 +1,106 @@
+{% extends "pretixcontrol/admin/base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Invoices" %}{% endblock %}
+
+{% block content %}
+    <h1>{% trans "Business Invoices" %}</h1>
+
+    <div class="row filter-form">
+        <form method="get" class="form-inline col-md-12">
+            <div class="form-group">
+                <input type="text" name="q" value="{{ search_query }}" placeholder="{% trans "Search invoice # or organizer..." %}" class="form-control" style="width: 260px;">
+            </div>
+            <div class="form-group">
+                <select name="status" class="form-control">
+                    <option value="">{% trans "All statuses" %}</option>
+                    {% for val, label in status_choices %}
+                        <option value="{{ val }}" {% if current_status == val %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary">
+                <i class="fa fa-filter"></i> {% trans "Filter" %}
+            </button>
+            {% if search_query or current_status %}
+                <a href="{% url "plugins:eventyay_business:invoices.list" %}" class="btn btn-default">
+                    <i class="fa fa-times"></i> {% trans "Reset" %}
+                </a>
+            {% endif %}
+        </form>
+    </div>
+
+    <p></p>
+
+    {% if invoices|length == 0 %}
+        <div class="empty-collection">
+            <p>
+                {% blocktrans trimmed %}
+                    No business invoices found.
+                {% endblocktrans %}
+            </p>
+        </div>
+    {% else %}
+        <div class="table-responsive">
+            <table class="table table-hover table-striped">
+                <thead>
+                    <tr>
+                        <th>{% trans "Invoice #" %}</th>
+                        <th>{% trans "Organizer" %}</th>
+                        <th>{% trans "Period" %}</th>
+                        <th>{% trans "Status" %}</th>
+                        <th>{% trans "Date" %}</th>
+                        <th class="text-right">{% trans "Amount" %}</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for inv in invoices %}
+                        <tr>
+                            <td>
+                                <strong>
+                                    <a href="{% url "plugins:eventyay_business:invoices.detail" pk=inv.pk %}">
+                                        {{ inv.invoice_number }}
+                                    </a>
+                                </strong>
+                            </td>
+                            <td>
+                                <a href="{% url "control:organizer" organizer=inv.organizer.slug %}">
+                                    {{ inv.organizer.name }}
+                                </a>
+                            </td>
+                            <td>
+                                {{ inv.billing_period_start|date:"SHORT_DATE_FORMAT" }} – {{ inv.billing_period_end|date:"SHORT_DATE_FORMAT" }}
+                            </td>
+                            <td>
+                                {% if inv.status == "paid" %}
+                                    <span class="label label-success">{{ inv.get_status_display }}</span>
+                                {% elif inv.status == "open" %}
+                                    <span class="label label-info">{{ inv.get_status_display }}</span>
+                                {% elif inv.status == "draft" %}
+                                    <span class="label label-default">{{ inv.get_status_display }}</span>
+                                {% elif inv.status == "canceled" %}
+                                    <span class="label label-warning">{{ inv.get_status_display }}</span>
+                                {% elif inv.status == "uncollectible" %}
+                                    <span class="label label-danger">{{ inv.get_status_display }}</span>
+                                {% else %}
+                                    <span class="label label-default">{{ inv.get_status_display }}</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ inv.created_at|date:"SHORT_DATE_FORMAT" }}</td>
+                            <td class="text-right">
+                                <strong>{{ inv.total }} {{ inv.currency }}</strong>
+                            </td>
+                            <td class="text-right">
+                                <a href="{% url "plugins:eventyay_business:invoices.detail" pk=inv.pk %}" class="btn btn-default btn-sm">
+                                    <i class="fa fa-eye"></i> {% trans "View" %}
+                                </a>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% include "pretixcontrol/pagination.html" %}
+    {% endif %}
+{% endblock %}

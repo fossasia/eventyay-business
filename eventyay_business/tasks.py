@@ -285,8 +285,31 @@ def manage_subscription_lifecycles_task():
     return manage_subscription_lifecycles()
 
 
+def generate_monthly_business_invoices(start_date=None, end_date=None):
+    """
+    Executes the monthly business invoice generation engine across all organizers.
+    """
+    from .invoicing_service import generate_all_business_invoices
+
+    invoices = generate_all_business_invoices(start_date=start_date, end_date=end_date)
+    logger.info(
+        "generate_monthly_business_invoices completed: %d invoices generated",
+        len(invoices),
+    )
+    return {"generated_invoices_count": len(invoices)}
+
+
+@app.task(name="eventyay_business.generate_monthly_business_invoices")
+def generate_monthly_business_invoices_task():
+    return generate_monthly_business_invoices()
+
+
 if periodic_task:
 
     @receiver(periodic_task, dispatch_uid="business_manage_subscription_lifecycles")
     def periodic_manage_subscription_lifecycles(sender, **kwargs):
         return manage_subscription_lifecycles()
+
+    @receiver(periodic_task, dispatch_uid="business_generate_monthly_invoices")
+    def periodic_generate_business_invoices(sender, **kwargs):
+        return generate_monthly_business_invoices()
