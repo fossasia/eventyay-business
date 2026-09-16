@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils.timezone import is_aware, make_aware, now
@@ -83,6 +83,87 @@ def get_previous_calendar_month_range(reference_date: datetime = None):
         end_date = make_aware(end_date)
 
     return start_date, end_date
+
+
+def _build_addon_invoice_line(
+    addon_assignment,
+    description: str,
+    usage_reference: str,
+    scope_meta: dict,
+    event=None,
+    billing_currency: str = "EUR",
+    rates_dict: dict | None = None,
+    billed_period_str: str = "",
+) -> dict | None:
+    raw_price = (
+        addon_assignment.price
+        if addon_assignment.price is not None
+        else addon_assignment.addon.price
+    )
+    addon_currency = addon_assignment.currency or (
+        addon_assignment.addon.currency if addon_assignment.addon else billing_currency
+    )
+    rate_applied = None
+
+    if raw_price is None or raw_price <= Decimal("0.00"):
+        return None
+
+    if addon_currency == billing_currency:
+        price = raw_price
+    elif rates_dict and addon_currency in rates_dict and billing_currency in rates_dict:
+        try:
+            rate = Decimal(str(rates_dict[billing_currency])) / Decimal(
+                str(rates_dict[addon_currency])
+            )
+            price = (raw_price * rate).quantize(Decimal("0.01"))
+            rate_applied = str(rate.quantize(Decimal("0.0001")))
+        except (InvalidOperation, ArithmeticError, TypeError) as exc:
+            logger.warning(
+                "Failed to convert add-on amount %s from %s to %s: %s",
+                raw_price,
+                addon_currency,
+                billing_currency,
+                exc,
+            )
+            price = Decimal("0.00")
+            return None
+    else:
+        logger.warning(
+            "Add-on %s currency %s mismatch with billing currency %s and no exchange rate available. Skipping line.",
+            addon_assignment.addon.name,
+            addon_currency,
+            billing_currency,
+        )
+        return None
+
+    qty = Decimal(addon_assignment.quantity or 1)
+    line_amount = (price * qty).quantize(Decimal("0.01"))
+
+    calc_meta = {
+        **scope_meta,
+        "addon_id": addon_assignment.addon.pk,
+        "addon_name": addon_assignment.addon.name,
+        "pricing_mode": str(addon_assignment.addon.pricing_mode),
+        "quantity": int(qty),
+        "unit_price": str(price),
+        "original_currency": addon_currency,
+        "original_price": str(raw_price),
+        "exchange_rate": rate_applied,
+        "billed_period": billed_period_str,
+    }
+
+    return {
+        "line_type": InvoiceLineType.ADDON,
+        "event": event,
+        "description": description,
+        "quantity": qty,
+        "unit_price": price,
+        "amount": line_amount,
+        "tier_version": None,
+        "addon": addon_assignment.addon,
+        "usage_reference": usage_reference,
+        "calculation_metadata": calc_meta,
+    }
 
 
 def generate_business_invoice_for_organizer(
@@ -194,10 +275,15 @@ def generate_business_invoice_for_organizer(
                         or tier_ver.prices.filter(
                             active=True, billing_interval=interval
                         ).first()
-                        or tier_ver.prices.filter(active=True).first()
                     )
 
-                    if price_obj:
+                    if not price_obj:
+                        logger.warning(
+                            "No active price found for tier %s matching billing interval %s. Skipping subscription line.",
+                            tier.slug,
+                            interval,
+                        )
+                    else:
                         sub_rate = None
                         sub_currency = price_obj.currency
                         if sub_currency == billing_currency:
@@ -215,7 +301,18 @@ def generate_business_invoice_for_organizer(
                                     Decimal("0.01")
                                 )
                                 sub_rate = str(rate.quantize(Decimal("0.0001")))
-                            except Exception:
+                            except (
+                                InvalidOperation,
+                                ArithmeticError,
+                                TypeError,
+                            ) as exc:
+                                logger.warning(
+                                    "Failed to convert subscription amount %s from %s to %s: %s",
+                                    price_obj.amount,
+                                    sub_currency,
+                                    billing_currency,
+                                    exc,
+                                )
                                 sub_amount = Decimal("0.00")
                         else:
                             logger.warning(
@@ -299,66 +396,18 @@ def generate_business_invoice_for_organizer(
             )
 
             for oa in org_addons:
-                raw_price = oa.price if oa.price is not None else oa.addon.price
-                addon_currency = oa.currency or (
-                    oa.addon.currency if oa.addon else billing_currency
+                line = _build_addon_invoice_line(
+                    addon_assignment=oa,
+                    description=f"Add-on: {oa.addon.name} (Organisation)",
+                    usage_reference=f"organizer_addon_{oa.pk}",
+                    scope_meta={"organizer_addon_id": oa.pk},
+                    event=None,
+                    billing_currency=billing_currency,
+                    rates_dict=rates_dict,
+                    billed_period_str=billed_period_str,
                 )
-                rate_applied = None
-
-                if raw_price is None or raw_price <= Decimal("0.00"):
-                    continue
-
-                if addon_currency == billing_currency:
-                    price = raw_price
-                elif (
-                    rates_dict
-                    and addon_currency in rates_dict
-                    and billing_currency in rates_dict
-                ):
-                    try:
-                        rate = Decimal(str(rates_dict[billing_currency])) / Decimal(
-                            str(rates_dict[addon_currency])
-                        )
-                        price = (raw_price * rate).quantize(Decimal("0.01"))
-                        rate_applied = str(rate.quantize(Decimal("0.0001")))
-                    except Exception:
-                        continue
-                else:
-                    logger.warning(
-                        "Add-on %s currency %s mismatch with billing currency %s and no exchange rate available. Skipping line.",
-                        oa.addon.name,
-                        addon_currency,
-                        billing_currency,
-                    )
-                    continue
-
-                qty = Decimal(oa.quantity or 1)
-                line_amount = (price * qty).quantize(Decimal("0.01"))
-                lines_data.append(
-                    {
-                        "line_type": InvoiceLineType.ADDON,
-                        "event": None,
-                        "description": f"Add-on: {oa.addon.name} (Organisation)",
-                        "quantity": qty,
-                        "unit_price": price,
-                        "amount": line_amount,
-                        "tier_version": None,
-                        "addon": oa.addon,
-                        "usage_reference": f"organizer_addon_{oa.pk}",
-                        "calculation_metadata": {
-                            "organizer_addon_id": oa.pk,
-                            "addon_id": oa.addon.pk,
-                            "addon_name": oa.addon.name,
-                            "pricing_mode": str(oa.addon.pricing_mode),
-                            "quantity": int(qty),
-                            "unit_price": str(price),
-                            "original_currency": addon_currency,
-                            "original_price": str(raw_price),
-                            "exchange_rate": rate_applied,
-                            "billed_period": billed_period_str,
-                        },
-                    }
-                )
+                if line:
+                    lines_data.append(line)
 
             # 4b. Event-level add-ons
             event_addons = (
@@ -368,67 +417,21 @@ def generate_business_invoice_for_organizer(
             )
 
             for ea in event_addons:
-                raw_price = ea.price if ea.price is not None else ea.addon.price
-                addon_currency = ea.currency or (
-                    ea.addon.currency if ea.addon else billing_currency
+                line = _build_addon_invoice_line(
+                    addon_assignment=ea,
+                    description=f"Add-on: {ea.addon.name} (Event: {ea.event.name})",
+                    usage_reference=f"event_addon_{ea.pk}",
+                    scope_meta={
+                        "event_addon_id": ea.pk,
+                        "event_slug": ea.event.slug,
+                    },
+                    event=ea.event,
+                    billing_currency=billing_currency,
+                    rates_dict=rates_dict,
+                    billed_period_str=billed_period_str,
                 )
-                rate_applied = None
-
-                if raw_price is None or raw_price <= Decimal("0.00"):
-                    continue
-
-                if addon_currency == billing_currency:
-                    price = raw_price
-                elif (
-                    rates_dict
-                    and addon_currency in rates_dict
-                    and billing_currency in rates_dict
-                ):
-                    try:
-                        rate = Decimal(str(rates_dict[billing_currency])) / Decimal(
-                            str(rates_dict[addon_currency])
-                        )
-                        price = (raw_price * rate).quantize(Decimal("0.01"))
-                        rate_applied = str(rate.quantize(Decimal("0.0001")))
-                    except Exception:
-                        continue
-                else:
-                    logger.warning(
-                        "Add-on %s currency %s mismatch with billing currency %s and no exchange rate available. Skipping line.",
-                        ea.addon.name,
-                        addon_currency,
-                        billing_currency,
-                    )
-                    continue
-
-                qty = Decimal(ea.quantity or 1)
-                line_amount = (price * qty).quantize(Decimal("0.01"))
-                lines_data.append(
-                    {
-                        "line_type": InvoiceLineType.ADDON,
-                        "event": ea.event,
-                        "description": f"Add-on: {ea.addon.name} (Event: {ea.event.name})",
-                        "quantity": qty,
-                        "unit_price": price,
-                        "amount": line_amount,
-                        "tier_version": None,
-                        "addon": ea.addon,
-                        "usage_reference": f"event_addon_{ea.pk}",
-                        "calculation_metadata": {
-                            "event_addon_id": ea.pk,
-                            "event_slug": ea.event.slug,
-                            "addon_id": ea.addon.pk,
-                            "addon_name": ea.addon.name,
-                            "pricing_mode": str(ea.addon.pricing_mode),
-                            "quantity": int(qty),
-                            "unit_price": str(price),
-                            "original_currency": addon_currency,
-                            "original_price": str(raw_price),
-                            "exchange_rate": rate_applied,
-                            "billed_period": billed_period_str,
-                        },
-                    }
-                )
+                if line:
+                    lines_data.append(line)
 
             # 5. Aggregate Paid-Order Platform Fees
             fee_records = UsageRecord.objects.filter(
@@ -468,14 +471,19 @@ def generate_business_invoice_for_organizer(
                             fee_val = (Decimal(str(r.quantity)) * rate).quantize(
                                 Decimal("0.01")
                             )
-                        except Exception as exc:
+                        except (
+                            InvalidOperation,
+                            ArithmeticError,
+                            TypeError,
+                        ) as exc:
                             logger.warning(
-                                "Failed to convert platform fee %s from %s to %s: %s",
-                                r.source_id,
+                                "Failed to convert platform fee amount %s from %s to %s: %s",
+                                r.quantity,
                                 rec_currency,
                                 billing_currency,
                                 exc,
                             )
+                            fee_val = Decimal("0.00")
                             continue
                     else:
                         logger.warning(

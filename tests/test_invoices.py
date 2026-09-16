@@ -618,8 +618,23 @@ def test_concurrent_invoice_generation_integrity_handling(test_setup):
     )
     assert existing_inv is not None
 
-    # Simulate concurrency: second caller hits IntegrityError on create
-    with patch(
+    # Simulate concurrency: during the second call, the pre-existing invoice
+    # does not satisfy the idempotency check (simulating concurrent execution before commit),
+    # while preserving the conflicting record needed for IntegrityError recovery.
+    orig_filter = BusinessInvoice.objects.filter
+    filter_calls = 0
+
+    def mock_filter(*args, **kwargs):
+        nonlocal filter_calls
+        if kwargs.get("billing_period_start") == period_start:
+            filter_calls += 1
+            if filter_calls == 1:
+                return orig_filter(*args, **kwargs).none()
+        return orig_filter(*args, **kwargs)
+
+    with patch.object(
+        BusinessInvoice.objects, "filter", side_effect=mock_filter
+    ), patch(
         "eventyay_business.invoicing_service.BusinessInvoice.objects.create"
     ) as mock_create:
         mock_create.side_effect = IntegrityError(
@@ -628,7 +643,51 @@ def test_concurrent_invoice_generation_integrity_handling(test_setup):
         raced_inv = generate_business_invoice_for_organizer(
             org, period_start, period_end
         )
+        mock_create.assert_called_once()
         assert raced_inv == existing_inv
+
+
+@pytest.mark.django_db
+def test_subscription_line_skipped_when_no_interval_price_match(test_setup):
+    org, tier, version, event = test_setup
+    period_start = make_aware(datetime(2026, 8, 1, 0, 0, 0))
+    period_end = make_aware(datetime(2026, 8, 31, 23, 59, 59))
+
+    # Tier only has MONTHLY price
+    assert version.prices.filter(billing_interval=BillingInterval.MONTHLY).exists()
+    assert not version.prices.filter(billing_interval=BillingInterval.ANNUAL).exists()
+
+    # Subscription is set to ANNUAL, but starts in this period
+    sub = Subscription.objects.get(organizer=org)
+    sub.billing_interval = BillingInterval.ANNUAL
+    sub.starts_at = make_aware(datetime(2026, 8, 15, 10, 0, 0))
+    sub.save()
+
+    # Since no ANNUAL price exists, subscription line should be skipped
+    inv = generate_business_invoice_for_organizer(org, period_start, period_end)
+    assert inv is None
+
+
+@pytest.mark.django_db
+def test_ecb_conversion_exceptions_handled(test_setup):
+    org, tier, version, event = test_setup
+    period_start = make_aware(datetime(2026, 8, 1, 0, 0, 0))
+    period_end = make_aware(datetime(2026, 8, 31, 23, 59, 59))
+
+    # Tier price is in USD
+    price = version.prices.first()
+    price.currency = "USD"
+    price.save()
+
+    gs = GlobalSettingsObject()
+    # Malformed rate (e.g. division by zero in exchange rate)
+    gs.settings.ecb_rates_dict = {"EUR": "1.0000", "USD": "0.0000"}
+
+    # Should catch ArithmeticError / InvalidOperation, log, fallback to 0.00 and skip line
+    inv = generate_business_invoice_for_organizer(
+        org, period_start, period_end, currency="EUR"
+    )
+    assert inv is None
 
 
 @pytest.mark.django_db
