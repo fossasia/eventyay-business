@@ -5,6 +5,7 @@ from django.utils.translation import gettext_lazy as _
 from .capabilities import get_capability_choices
 from .models import (
     AddonDefinition,
+    CountryFeeSetting,
     EventAddon,
     OrganizerAddon,
     Subscription,
@@ -660,3 +661,101 @@ class EventAddonPurchaseForm(forms.Form):
         if commit:
             assignment.save()
         return assignment
+
+
+class CountryFeeSettingForm(forms.ModelForm):
+    class Meta:
+        model = CountryFeeSetting
+        fields = ["country", "currency", "service_fee_percent", "maximum_fee"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from django.conf import settings
+        from django_countries.widgets import CountrySelectWidget
+
+        self.fields["country"].widget = CountrySelectWidget(
+            attrs={"class": "form-control"}
+        )
+        if hasattr(settings, "CURRENCIES") and settings.CURRENCIES:
+            currency_choices = [("", "---------")] + [
+                (c.alpha_3, f"{c.alpha_3} - {c.name}") for c in settings.CURRENCIES
+            ]
+            self.fields["currency"].widget = forms.Select(
+                choices=currency_choices, attrs={"class": "form-control"}
+            )
+        else:
+            self.fields["currency"].widget = forms.TextInput(
+                attrs={"class": "form-control", "maxlength": "3"}
+            )
+
+        self.fields["service_fee_percent"].widget.attrs.update(
+            {"class": "form-control", "step": "0.01", "min": "0", "max": "100"}
+        )
+        self.fields["maximum_fee"].widget.attrs.update(
+            {"class": "form-control", "step": "0.01", "min": "0"}
+        )
+
+    def clean_currency(self):
+        currency = (self.cleaned_data.get("currency") or "").strip().upper()
+        if not currency.isalpha() or len(currency) != 3:
+            raise forms.ValidationError(
+                _("Please enter a valid 3-letter currency code (e.g. USD, EUR).")
+            )
+        return currency
+
+
+class GlobalFeeSettingsForm(forms.Form):
+    ticket_fee_percentage = forms.DecimalField(
+        label=_("Global ticket fee percentage"),
+        required=False,
+        decimal_places=2,
+        max_digits=10,
+        min_value=0,
+        max_value=100,
+        help_text=_(
+            "Default platform percentage fee charged for each ticket sold across all events."
+        ),
+    )
+    ticket_fee_maximum = forms.DecimalField(
+        label=_("Global maximum ticket fee"),
+        required=False,
+        decimal_places=2,
+        max_digits=12,
+        min_value=0,
+        help_text=_(
+            "Global maximum fee limit per order in platform base currency. Set to 0 or leave empty for no limit."
+        ),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from decimal import Decimal
+        from eventyay.base.settings import GlobalSettingsObject
+
+        self.gs = GlobalSettingsObject()
+        pct = self.gs.settings.get("ticket_fee_percentage", as_type=Decimal)
+        if pct is not None:
+            self.fields["ticket_fee_percentage"].initial = pct
+        max_fee = self.gs.settings.get("ticket_fee_maximum", as_type=Decimal)
+        if max_fee is not None:
+            self.fields["ticket_fee_maximum"].initial = max_fee
+
+        self.fields["ticket_fee_percentage"].widget.attrs.update(
+            {"class": "form-control", "step": "0.01", "min": "0", "max": "100"}
+        )
+        self.fields["ticket_fee_maximum"].widget.attrs.update(
+            {"class": "form-control", "step": "0.01", "min": "0"}
+        )
+
+    def save(self):
+        pct = self.cleaned_data.get("ticket_fee_percentage")
+        if pct is not None:
+            self.gs.settings.set("ticket_fee_percentage", str(pct))
+        else:
+            self.gs.settings.set("ticket_fee_percentage", "")
+
+        max_fee = self.cleaned_data.get("ticket_fee_maximum")
+        if max_fee is not None:
+            self.gs.settings.set("ticket_fee_maximum", str(max_fee))
+        else:
+            self.gs.settings.set("ticket_fee_maximum", "")

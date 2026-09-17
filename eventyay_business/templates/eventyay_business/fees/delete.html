@@ -1,0 +1,29 @@
+{% extends "pretixcontrol/admin/base.html" %}
+{% load i18n %}
+{% load bootstrap3 %}
+
+{% block title %}{% trans "Delete country fee setting" %}{% endblock %}
+
+{% block content %}
+    <h1>{% trans "Delete country fee setting" %}</h1>
+
+    <form action="" method="post" class="form-horizontal">
+        {% csrf_token %}
+        <p>
+            {% blocktrans trimmed with country=object.country.name currency=object.currency %}
+                Are you sure you want to delete the fee setting override for <strong>{{ country }} ({{ currency }})</strong>?
+            {% endblocktrans %}
+        </p>
+        <div class="alert alert-warning">
+            {% trans "After deletion, ticket fees for this country will fall back to global settings or tier entitlements." %}
+        </div>
+        <div class="form-group submit-group">
+            <a href="{% url "plugins:eventyay_business:fees.list" %}" class="btn btn-default btn-cancel">
+                {% trans "Cancel" %}
+            </a>
+            <button type="submit" class="btn btn-danger btn-save">
+                <i class="fa fa-trash"></i> {% trans "Delete" %}
+            </button>
+        </div>
+    </form>
+{% endblock %}

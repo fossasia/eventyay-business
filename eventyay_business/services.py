@@ -260,3 +260,105 @@ def get_grace_period_days(subscription=None) -> int:
         pass
 
     return 7
+
+
+def get_event_country(event=None, order=None):
+    """
+    Extract the 2-letter uppercase country code from an event or order.
+    """
+    if order:
+        try:
+            addr = getattr(order, "invoice_address", None)
+            if addr is not None:
+                country = getattr(addr, "country", None)
+                if country is not None:
+                    c_str = str(country).strip().upper()
+                    if len(c_str) == 2 and c_str.isalpha():
+                        return c_str
+        except Exception:
+            pass
+    if event and hasattr(event, "settings"):
+        country = event.settings.get(
+            "invoice_address_from_country"
+        ) or event.settings.get("region")
+        if country:
+            c_str = str(country).strip().upper()
+            if len(c_str) == 2 and c_str.isalpha():
+                return c_str
+    return None
+
+
+def resolve_fee_settings(
+    event=None, order=None, country=None, currency=None, tier_version=None
+):
+    """
+    Resolves the applicable fee percentage and maximum fee limit.
+
+    Hierarchy:
+    1. CountryFeeSetting matching (country, currency)
+    2. Tier entitlement 'commerce.platform_fee_percent' (if tier_version available)
+    3. Global settings: 'ticket_fee_percentage' and 'ticket_fee_maximum'
+
+    Returns:
+        tuple: (service_fee_percent: Decimal, maximum_fee: Decimal, is_override: bool)
+    """
+    from decimal import Decimal
+
+    from .models import CountryFeeSetting
+
+    if not currency:
+        if event and getattr(event, "currency", None):
+            currency = event.currency
+        elif (
+            order
+            and getattr(order, "event", None)
+            and getattr(order.event, "currency", None)
+        ):
+            currency = order.event.currency
+
+    if currency:
+        currency = str(currency).strip().upper()
+
+    if not country:
+        country = get_event_country(event=event, order=order)
+
+    # 1. Check CountryFeeSetting
+    if country and currency:
+        setting = CountryFeeSetting.objects.filter(
+            country=country, currency=currency
+        ).first()
+        if setting:
+            return (setting.service_fee_percent, setting.maximum_fee, True)
+
+    # 2. Check Tier Entitlement if tier_version provided
+    fee_percent = None
+    if tier_version:
+        ent = tier_version.entitlements.filter(
+            capability="commerce.platform_fee_percent"
+        ).first()
+        if ent:
+            fee_percent = ent.get_typed_value()
+        else:
+            from .capabilities import get_capability
+
+            cap_def = get_capability("commerce.platform_fee_percent")
+            if cap_def:
+                fee_percent = cap_def.default_value
+
+    # 3. Fallback to Global Settings
+    max_fee = Decimal("0.00")
+    try:
+        from eventyay.base.settings import GlobalSettingsObject
+
+        gs = GlobalSettingsObject()
+        if fee_percent is None:
+            pct = gs.settings.get("ticket_fee_percentage", as_type=Decimal)
+            fee_percent = pct if pct is not None else Decimal("2.50")
+        global_max = gs.settings.get("ticket_fee_maximum", as_type=Decimal)
+        if global_max is not None:
+            max_fee = global_max
+    except Exception:
+        if fee_percent is None:
+            fee_percent = Decimal("2.50")
+
+    return (fee_percent or Decimal("0.00"), max_fee or Decimal("0.00"), False)

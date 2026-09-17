@@ -1,0 +1,35 @@
+{% extends "pretixcontrol/admin/base.html" %}
+{% load i18n %}
+{% load bootstrap3 %}
+
+{% block title %}
+    {% if object %}
+        {% trans "Edit country fee setting" %}
+    {% else %}
+        {% trans "Add country fee setting" %}
+    {% endif %}
+{% endblock %}
+
+{% block content %}
+    <h1>
+        {% if object %}
+            {% trans "Edit country fee setting" %}
+        {% else %}
+            {% trans "Add country fee setting" %}
+        {% endif %}
+    </h1>
+
+    <form method="post" class="form-horizontal">
+        {% csrf_token %}
+        {% bootstrap_form form layout='horizontal' %}
+
+        <div class="form-group submit-group">
+            <button type="submit" class="btn btn-primary btn-save">
+                <i class="fa fa-save"></i> {% trans "Save" %}
+            </button>
+            <a href="{% url "plugins:eventyay_business:fees.list" %}" class="btn btn-default btn-cancel">
+                {% trans "Cancel" %}
+            </a>
+        </div>
+    </form>
+{% endblock %}

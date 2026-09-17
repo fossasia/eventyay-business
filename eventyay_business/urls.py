@@ -67,6 +67,27 @@ urlpatterns = [
         views.AdminInvoiceDetailView.as_view(),
         name="invoices.detail",
     ),
+    # Fee Settings
+    path(
+        "admin/global/business/fees/",
+        views.FeeSettingsView.as_view(),
+        name="fees.list",
+    ),
+    path(
+        "admin/global/business/fees/add/",
+        views.CountryFeeSettingCreateView.as_view(),
+        name="fees.add",
+    ),
+    path(
+        "admin/global/business/fees/<int:pk>/edit/",
+        views.CountryFeeSettingUpdateView.as_view(),
+        name="fees.edit",
+    ),
+    path(
+        "admin/global/business/fees/<int:pk>/delete/",
+        views.CountryFeeSettingDeleteView.as_view(),
+        name="fees.delete",
+    ),
     path(
         "admin/global/business/addons/",
         views.AddonDefinitionListView.as_view(),
