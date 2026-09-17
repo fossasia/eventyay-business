@@ -671,11 +671,8 @@ class CountryFeeSettingForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         from django.conf import settings
-        from django_countries.widgets import CountrySelectWidget
 
-        self.fields["country"].widget = CountrySelectWidget(
-            attrs={"class": "form-control"}
-        )
+        self.fields["country"].widget.attrs.update({"class": "form-control"})
         if hasattr(settings, "CURRENCIES") and settings.CURRENCIES:
             currency_choices = [("", "---------")] + [
                 (c.alpha_3, f"{c.alpha_3} - {c.name}") for c in settings.CURRENCIES
