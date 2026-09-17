@@ -338,27 +338,17 @@ def resolve_fee_settings(
         ).first()
         if ent:
             fee_percent = ent.get_typed_value()
-        else:
-            from .capabilities import get_capability
-
-            cap_def = get_capability("commerce.platform_fee_percent")
-            if cap_def:
-                fee_percent = cap_def.default_value
 
     # 3. Fallback to Global Settings
     max_fee = Decimal("0.00")
-    try:
-        from eventyay.base.settings import GlobalSettingsObject
+    from eventyay.base.settings import GlobalSettingsObject
 
-        gs = GlobalSettingsObject()
-        if fee_percent is None:
-            pct = gs.settings.get("ticket_fee_percentage", as_type=Decimal)
-            fee_percent = pct if pct is not None else Decimal("2.50")
-        global_max = gs.settings.get("ticket_fee_maximum", as_type=Decimal)
-        if global_max is not None:
-            max_fee = global_max
-    except Exception:
-        if fee_percent is None:
-            fee_percent = Decimal("2.50")
+    gs = GlobalSettingsObject()
+    if fee_percent is None:
+        pct = gs.settings.get("ticket_fee_percentage", as_type=Decimal)
+        fee_percent = pct if pct is not None else Decimal("2.50")
+    global_max = gs.settings.get("ticket_fee_maximum", as_type=Decimal)
+    if global_max is not None:
+        max_fee = global_max
 
     return (fee_percent or Decimal("0.00"), max_fee or Decimal("0.00"), False)

@@ -112,7 +112,7 @@ class TestCountryFeeSettingModel:
             service_fee_percent=Decimal("2.00"),
             maximum_fee=Decimal("100.00"),
         )
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             CountryFeeSetting.objects.create(
                 country="IN",
                 currency="INR",
