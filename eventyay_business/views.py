@@ -74,6 +74,7 @@ from .stripe_service import (
     create_subscription_checkout_session,
     get_stripe_secret_key_safe,
     is_stripe_configured,
+    sync_organizer_from_stripe,
     sync_tier_price_to_stripe,
 )
 
@@ -390,6 +391,25 @@ class OrganizerPlanView(
             .select_related("tier_version__tier", "pending_tier_version__tier")
             .first()
         )
+
+        is_free_or_missing = (
+            not sub
+            or not sub.tier_version
+            or getattr(sub.tier_version.tier, "slug", "") == "free"
+        )
+        if is_stripe_configured() and (
+            is_free_or_missing or self.request.GET.get("sync")
+        ):
+            try:
+                synced_sub = sync_organizer_from_stripe(organizer)
+                if synced_sub:
+                    sub = synced_sub
+            except Exception as exc:
+                logger.warning(
+                    "Failed to sync organizer %s from Stripe: %s",
+                    organizer.slug,
+                    exc,
+                )
 
         ctx["subscription"] = sub
 

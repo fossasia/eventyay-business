@@ -70,13 +70,52 @@ class StripeCheckoutSuccessView(View):
     def get(self, request, *args, **kwargs):
         organizer = kwargs.get("organizer")
         event = kwargs.get("event")
-        messages.success(
-            request,
-            _(
-                "Your payment was successful! Your subscription or add-on is being "
-                "activated and will appear shortly."
-            ),
-        )
+        session_id = request.GET.get("session_id")
+
+        fulfilled = False
+        if session_id:
+            from .stripe_service import fulfill_checkout_session_by_id
+
+            try:
+                result = fulfill_checkout_session_by_id(session_id)
+                if result:
+                    fulfilled = True
+            except Exception as exc:
+                logger.exception(
+                    "Error fulfilling checkout session %s on success return: %s",
+                    session_id,
+                    exc,
+                )
+
+        if not fulfilled and organizer:
+            from eventyay.base.models import Organizer
+
+            from .stripe_service import sync_organizer_from_stripe
+
+            try:
+                org_obj = Organizer.objects.filter(slug=organizer).first()
+                if org_obj:
+                    sync_result = sync_organizer_from_stripe(org_obj)
+                    if sync_result:
+                        fulfilled = True
+            except Exception as exc:
+                logger.warning(
+                    "Failed fallback Stripe sync on checkout success: %s", exc
+                )
+
+        if fulfilled:
+            messages.success(
+                request,
+                _("Your payment was successful and your plan has been activated!"),
+            )
+        else:
+            messages.success(
+                request,
+                _(
+                    "Your payment was successful! Your subscription or add-on is being "
+                    "activated and will appear shortly."
+                ),
+            )
         if event:
             return redirect(
                 "plugins:eventyay_business:event.addons",
