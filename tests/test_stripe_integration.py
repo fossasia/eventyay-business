@@ -14,7 +14,10 @@ from eventyay_business.models import (
     AddonPricingMode,
     AddonStatus,
     BillingInterval,
+    BusinessInvoice,
+    BusinessInvoiceStatus,
     EventAddon,
+    InvoiceLineType,
     OrganizerAddon,
     Subscription,
     SubscriptionStatus,
@@ -34,16 +37,18 @@ from eventyay_business.stripe_service import (
     process_subscription_change,
     process_webhook_event,
     sync_addon_to_stripe,
+    sync_organizer_from_stripe,
     sync_tier_price_to_stripe,
 )
 from eventyay_business.views_stripe import (
     StripeCheckoutCancelView,
+    StripeCheckoutSuccessView,
     stripe_business_webhook_view,
 )
 
 
 @pytest.fixture
-def setup_data():
+def setup_data(db):
     organizer = Organizer.objects.create(name="Stripe Org", slug="stripe-org")
     event = Event.objects.create(
         organizer=organizer,
@@ -891,3 +896,214 @@ def test_stripe_api_2025_03_31_compatibility(setup_data):
     process_invoice_paid(invoice_paid_data)
     sub.refresh_from_db()
     assert sub.status == SubscriptionStatus.ACTIVE
+
+
+@pytest.mark.django_db
+def test_subscription_checkout_creates_business_invoice(setup_data):
+    organizer, _, user, tier, tier_version, tier_price, _, _, _ = setup_data
+
+    session_data = {
+        "id": "cs_test_invoice_sub",
+        "customer": "cus_test_123",
+        "subscription": "sub_test_inv_456",
+        "payment_intent": "pi_test_inv_789",
+        "invoice": "in_test_inv_001",
+        "amount_total": 9900,
+        "currency": "usd",
+        "payment_status": "paid",
+        "metadata": {
+            "type": "subscription",
+            "organizer_slug": organizer.slug,
+            "tier_price_id": str(tier_price.pk),
+            "tier_version_id": str(tier_version.pk),
+            "user_id": str(user.pk),
+        },
+    }
+
+    sub = process_webhook_event("checkout.session.completed", session_data)
+    assert sub is not None
+    assert sub.status == SubscriptionStatus.ACTIVE
+    assert sub.tier_version == tier_version
+
+    # Check BusinessInvoice creation
+    invoices = BusinessInvoice.objects.filter(organizer=organizer)
+    assert invoices.count() == 1
+    invoice = invoices.first()
+    assert invoice.status == BusinessInvoiceStatus.PAID
+    assert invoice.total == Decimal("99.00")
+    assert invoice.currency == "USD"
+    assert invoice.stripe_payment_intent_id == "pi_test_inv_789"
+    assert invoice.stripe_invoice_id == "in_test_inv_001"
+
+    # Check line item
+    assert invoice.lines.count() == 1
+    line = invoice.lines.first()
+    assert line.line_type == InvoiceLineType.SUBSCRIPTION
+    assert line.amount == Decimal("99.00")
+    assert line.tier_version == tier_version
+
+    # Verify idempotency: second processing does not create duplicate invoice
+    sub_again = process_webhook_event("checkout.session.completed", session_data)
+    assert sub_again.pk == sub.pk
+    assert BusinessInvoice.objects.filter(organizer=organizer).count() == 1
+
+
+@pytest.mark.django_db
+def test_addon_checkout_creates_business_invoice(setup_data):
+    organizer, _, user, _, _, _, recurring_addon, _, _ = setup_data
+
+    session_data = {
+        "id": "cs_test_addon_inv",
+        "customer": "cus_test_123",
+        "subscription": "sub_test_addon_sub",
+        "payment_intent": "pi_test_addon_pi",
+        "invoice": "in_test_addon_inv",
+        "amount_total": 2500,
+        "currency": "usd",
+        "payment_status": "paid",
+        "metadata": {
+            "type": "addon_purchase",
+            "scope": recurring_addon.assignment_scope,
+            "organizer_slug": organizer.slug,
+            "addon_id": str(recurring_addon.pk),
+            "quantity": "1",
+            "user_id": str(user.pk),
+        },
+    }
+
+    assignment = process_webhook_event("checkout.session.completed", session_data)
+    assert assignment is not None
+    assert assignment.status == AddonStatus.ACTIVE
+
+    # Check BusinessInvoice creation
+    invoices = BusinessInvoice.objects.filter(organizer=organizer)
+    assert invoices.count() == 1
+    invoice = invoices.first()
+    assert invoice.status == BusinessInvoiceStatus.PAID
+    assert invoice.total == Decimal("25.00")
+    assert invoice.currency == "USD"
+
+    # Check line item
+    assert invoice.lines.count() == 1
+    line = invoice.lines.first()
+    assert line.line_type == InvoiceLineType.ADDON
+    assert line.amount == Decimal("25.00")
+    assert line.addon == recurring_addon
+
+    # Idempotency
+    process_webhook_event("checkout.session.completed", session_data)
+    assert BusinessInvoice.objects.filter(organizer=organizer).count() == 1
+
+
+@pytest.mark.django_db
+def test_stripe_checkout_success_view_synchronous_fulfillment(setup_data):
+    organizer, _, user, _, tier_version, tier_price, _, _, _ = setup_data
+
+    # Initially on a different tier or free
+    sub = organizer.subscriptions.first()
+    assert sub is None or sub.tier_version != tier_version
+
+    mock_session = MagicMock()
+    mock_session.id = "cs_sync_test_999"
+    mock_session.payment_status = "paid"
+    mock_session.customer = "cus_sync_123"
+    mock_session.subscription = "sub_sync_456"
+    mock_session.payment_intent = "pi_sync_789"
+    mock_session.invoice = "in_sync_001"
+    mock_session.amount_total = 9900
+    mock_session.currency = "usd"
+    mock_session.metadata = {
+        "type": "subscription",
+        "organizer_slug": organizer.slug,
+        "tier_price_id": str(tier_price.pk),
+        "tier_version_id": str(tier_version.pk),
+        "user_id": str(user.pk),
+    }
+    mock_session.to_dict.return_value = {
+        "id": "cs_sync_test_999",
+        "payment_status": "paid",
+        "customer": "cus_sync_123",
+        "subscription": "sub_sync_456",
+        "payment_intent": "pi_sync_789",
+        "invoice": "in_sync_001",
+        "amount_total": 9900,
+        "currency": "usd",
+        "metadata": mock_session.metadata,
+    }
+
+    rf = RequestFactory()
+    from django.contrib.messages.storage.fallback import FallbackStorage
+    from django.contrib.sessions.backends.db import SessionStore
+
+    req = rf.get(
+        reverse(
+            "plugins:eventyay_business:checkout.success",
+            kwargs={"organizer": organizer.slug},
+        )
+        + "?session_id=cs_sync_test_999"
+    )
+    req.user = user
+    req.session = SessionStore()
+    setattr(req, "_messages", FallbackStorage(req))
+
+    with patch(
+        "eventyay_business.stripe_service.get_stripe_secret_key_safe",
+        return_value="sk_test_123",
+    ):
+        with patch("stripe.checkout.Session.retrieve", return_value=mock_session):
+            resp = StripeCheckoutSuccessView.as_view()(req, organizer=organizer.slug)
+            assert resp.status_code == 302
+
+    # Verify subscription switched immediately
+    active_sub = organizer.subscriptions.filter(
+        status=SubscriptionStatus.ACTIVE
+    ).first()
+    assert active_sub is not None
+    assert active_sub.tier_version == tier_version
+
+    # Verify invoice was created immediately
+    invoice = BusinessInvoice.objects.filter(organizer=organizer).first()
+    assert invoice is not None
+    assert invoice.status == BusinessInvoiceStatus.PAID
+    assert invoice.total == Decimal("99.00")
+
+
+@pytest.mark.django_db
+def test_sync_organizer_from_stripe(setup_data):
+    organizer, _, _, _, tier_version, tier_price, _, _, _ = setup_data
+
+    mock_sub = MagicMock()
+    mock_sub.id = "sub_remote_live_1"
+    mock_sub.latest_invoice = "in_remote_001"
+    mock_sub.to_dict.return_value = {
+        "id": "sub_remote_live_1",
+        "metadata": {
+            "tier_price_id": str(tier_price.pk),
+            "tier_version_id": str(tier_version.pk),
+        },
+        "latest_invoice": "in_remote_001",
+        "items": {"data": []},
+    }
+
+    mock_subs_list = MagicMock()
+    mock_subs_list.data = [mock_sub]
+
+    with patch(
+        "eventyay_business.stripe_service.get_stripe_secret_key_safe",
+        return_value="sk_test_123",
+    ):
+        with patch(
+            "stripe.Customer.search",
+            return_value=MagicMock(data=[MagicMock(id="cus_found_1")]),
+        ):
+            with patch("stripe.Subscription.list", return_value=mock_subs_list):
+                synced = sync_organizer_from_stripe(organizer)
+                assert synced is not None
+                assert synced.status == SubscriptionStatus.ACTIVE
+                assert synced.tier_version == tier_version
+
+    # Invoice generated
+    inv = BusinessInvoice.objects.filter(organizer=organizer).first()
+    assert inv is not None
+    assert inv.status == BusinessInvoiceStatus.PAID
+    assert inv.total == Decimal("99.00")

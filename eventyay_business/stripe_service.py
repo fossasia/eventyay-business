@@ -7,12 +7,17 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils.timezone import now
 
+from .invoicing_service import generate_invoice_number
 from .models import (
     AddonDefinition,
     AddonPricingMode,
     AddonStatus,
     BillingInterval,
+    BusinessInvoice,
+    BusinessInvoiceLine,
+    BusinessInvoiceStatus,
     EventAddon,
+    InvoiceLineType,
     OrganizerAddon,
     Subscription,
     SubscriptionStatus,
@@ -323,6 +328,10 @@ def create_addon_checkout_session(
             price_data["recurring"] = {"interval": "month"}
         line_items = [{"price_data": price_data, "quantity": quantity}]
 
+    if success_url and "{CHECKOUT_SESSION_ID}" not in success_url:
+        sep = "&" if "?" in success_url else "?"
+        success_url = f"{success_url}{sep}session_id={{CHECKOUT_SESSION_ID}}"
+
     session_kwargs = {
         "payment_method_types": ["card"],
         "line_items": line_items,
@@ -393,6 +402,10 @@ def create_subscription_checkout_session(
         }
         line_items = [{"price_data": price_data, "quantity": 1}]
 
+    if success_url and "{CHECKOUT_SESSION_ID}" not in success_url:
+        sep = "&" if "?" in success_url else "?"
+        success_url = f"{success_url}{sep}session_id={{CHECKOUT_SESSION_ID}}"
+
     session_kwargs = {
         "payment_method_types": ["card"],
         "line_items": line_items,
@@ -439,6 +452,273 @@ def process_checkout_session_completed(session_data: dict):
     elif item_type == "subscription":
         return process_subscription_checkout_completed(session_data)
     return None
+
+
+def _record_checkout_invoice_for_subscription(
+    organizer,
+    subscription: Subscription,
+    tier_version: TierVersion,
+    tier_price: Optional[TierPrice],
+    session_data: dict,
+    user=None,
+) -> Optional[BusinessInvoice]:
+    """
+    Creates a BusinessInvoice and BusinessInvoiceLine (status=PAID)
+    for a completed subscription checkout session. Idempotent.
+    """
+    amount_total = session_data.get("amount_total")
+    if amount_total is not None:
+        try:
+            total = (Decimal(str(amount_total)) / Decimal("100")).quantize(
+                Decimal("0.01")
+            )
+        except Exception:
+            total = getattr(tier_price, "amount", Decimal("0.00"))
+    elif tier_price and tier_price.amount is not None:
+        total = tier_price.amount
+    else:
+        total = Decimal("0.00")
+
+    if total <= Decimal("0.00"):
+        return None
+
+    currency = (
+        session_data.get("currency")
+        or (tier_price.currency if tier_price else None)
+        or subscription.currency
+        or "USD"
+    ).upper()
+
+    stripe_sub_id = session_data.get("subscription")
+    stripe_pi_id = session_data.get("payment_intent")
+    stripe_invoice_id = session_data.get("invoice")
+
+    if hasattr(stripe_invoice_id, "id"):
+        stripe_invoice_id = stripe_invoice_id.id
+    if hasattr(stripe_pi_id, "id"):
+        stripe_pi_id = stripe_pi_id.id
+
+    if not stripe_invoice_id and stripe_sub_id and stripe:
+        try:
+            secret_key = get_stripe_secret_key_safe()
+            if secret_key:
+                stripe.api_key = secret_key
+                s_sub = stripe.Subscription.retrieve(stripe_sub_id)
+                latest_inv = getattr(s_sub, "latest_invoice", None)
+                if hasattr(latest_inv, "id"):
+                    stripe_invoice_id = latest_inv.id
+                elif isinstance(latest_inv, str):
+                    stripe_invoice_id = latest_inv
+        except Exception:
+            pass
+
+    if stripe_invoice_id:
+        existing = BusinessInvoice.objects.filter(
+            stripe_invoice_id=stripe_invoice_id
+        ).first()
+        if existing:
+            return existing
+
+    if stripe_pi_id:
+        existing = BusinessInvoice.objects.filter(
+            stripe_payment_intent_id=stripe_pi_id
+        ).first()
+        if existing:
+            return existing
+
+    start_date = subscription.starts_at or now()
+    end_date = subscription.ends_at or (start_date + timedelta(days=30))
+
+    existing_period = BusinessInvoice.objects.filter(
+        organizer=organizer,
+        billing_period_start=start_date,
+        billing_period_end=end_date,
+    ).first()
+    if existing_period:
+        if stripe_invoice_id and not existing_period.stripe_invoice_id:
+            existing_period.stripe_invoice_id = stripe_invoice_id
+            existing_period.save(update_fields=["stripe_invoice_id"])
+        if stripe_pi_id and not existing_period.stripe_payment_intent_id:
+            existing_period.stripe_payment_intent_id = stripe_pi_id
+            existing_period.save(update_fields=["stripe_payment_intent_id"])
+        return existing_period
+
+    invoice_num = generate_invoice_number(organizer, start_date)
+    invoice = BusinessInvoice.objects.create(
+        organizer=organizer,
+        invoice_number=invoice_num,
+        billing_period_start=start_date,
+        billing_period_end=end_date,
+        currency=currency,
+        status=BusinessInvoiceStatus.PAID,
+        subtotal=total,
+        tax=Decimal("0.00"),
+        total=total,
+        stripe_payment_intent_id=stripe_pi_id,
+        stripe_invoice_id=stripe_invoice_id,
+    )
+
+    interval_disp = (
+        subscription.get_billing_interval_display()
+        if hasattr(subscription, "get_billing_interval_display")
+        else subscription.billing_interval
+    )
+    desc = f"Plan Subscription: {tier_version.tier.name} ({interval_disp})"
+    BusinessInvoiceLine.objects.create(
+        invoice=invoice,
+        line_type=InvoiceLineType.SUBSCRIPTION,
+        description=desc,
+        quantity=Decimal("1.00"),
+        unit_price=total,
+        amount=total,
+        tier_version=tier_version,
+        usage_reference=f"subscription_{subscription.pk}",
+        calculation_metadata={
+            "subscription_id": subscription.pk,
+            "tier_slug": tier_version.tier.slug,
+            "tier_name": tier_version.tier.name,
+            "tier_version": tier_version.version,
+            "billing_interval": str(subscription.billing_interval),
+            "stripe_subscription_id": stripe_sub_id,
+            "stripe_checkout_session_id": session_data.get("id"),
+        },
+    )
+    logger.info(
+        "Created BusinessInvoice %s (%s %s) for subscription %s",
+        invoice_num,
+        total,
+        currency,
+        subscription.pk,
+    )
+    return invoice
+
+
+def _record_checkout_invoice_for_addon(
+    organizer,
+    assignment,
+    addon: AddonDefinition,
+    quantity: int,
+    session_data: dict,
+    event=None,
+    user=None,
+) -> Optional[BusinessInvoice]:
+    """
+    Creates a BusinessInvoice and BusinessInvoiceLine (status=PAID)
+    for a completed add-on checkout session. Idempotent.
+    """
+    amount_total = session_data.get("amount_total")
+    if amount_total is not None:
+        try:
+            total = (Decimal(str(amount_total)) / Decimal("100")).quantize(
+                Decimal("0.01")
+            )
+        except Exception:
+            total = (Decimal(str(addon.price)) * Decimal(quantity)).quantize(
+                Decimal("0.01")
+            )
+    elif assignment.price is not None:
+        total = (Decimal(str(assignment.price)) * Decimal(quantity)).quantize(
+            Decimal("0.01")
+        )
+    elif addon.price is not None:
+        total = (Decimal(str(addon.price)) * Decimal(quantity)).quantize(
+            Decimal("0.01")
+        )
+    else:
+        total = Decimal("0.00")
+
+    if total <= Decimal("0.00"):
+        return None
+
+    currency = (
+        session_data.get("currency") or assignment.currency or addon.currency or "USD"
+    ).upper()
+
+    stripe_pi_id = session_data.get("payment_intent")
+    stripe_sub_id = session_data.get("subscription")
+    stripe_invoice_id = session_data.get("invoice")
+
+    if hasattr(stripe_invoice_id, "id"):
+        stripe_invoice_id = stripe_invoice_id.id
+    if hasattr(stripe_pi_id, "id"):
+        stripe_pi_id = stripe_pi_id.id
+
+    if stripe_invoice_id:
+        existing = BusinessInvoice.objects.filter(
+            stripe_invoice_id=stripe_invoice_id
+        ).first()
+        if existing:
+            return existing
+
+    if stripe_pi_id:
+        existing = BusinessInvoice.objects.filter(
+            stripe_payment_intent_id=stripe_pi_id
+        ).first()
+        if existing:
+            return existing
+
+    start_date = assignment.starts_at or now()
+    end_date = assignment.ends_at or (start_date + timedelta(days=30))
+
+    existing_period = BusinessInvoice.objects.filter(
+        organizer=organizer,
+        billing_period_start=start_date,
+        billing_period_end=end_date,
+    ).first()
+    if existing_period:
+        if stripe_invoice_id and not existing_period.stripe_invoice_id:
+            existing_period.stripe_invoice_id = stripe_invoice_id
+            existing_period.save(update_fields=["stripe_invoice_id"])
+        if stripe_pi_id and not existing_period.stripe_payment_intent_id:
+            existing_period.stripe_payment_intent_id = stripe_pi_id
+            existing_period.save(update_fields=["stripe_payment_intent_id"])
+        return existing_period
+
+    invoice_num = generate_invoice_number(organizer, start_date)
+    invoice = BusinessInvoice.objects.create(
+        organizer=organizer,
+        invoice_number=invoice_num,
+        billing_period_start=start_date,
+        billing_period_end=end_date,
+        currency=currency,
+        status=BusinessInvoiceStatus.PAID,
+        subtotal=total,
+        tax=Decimal("0.00"),
+        total=total,
+        stripe_payment_intent_id=stripe_pi_id,
+        stripe_invoice_id=stripe_invoice_id,
+    )
+
+    unit_price = (total / Decimal(quantity)).quantize(Decimal("0.01"))
+    BusinessInvoiceLine.objects.create(
+        invoice=invoice,
+        event=event,
+        line_type=InvoiceLineType.ADDON,
+        description=f"Add-on: {addon.name} (x{quantity})",
+        quantity=Decimal(str(quantity)),
+        unit_price=unit_price,
+        amount=total,
+        addon=addon,
+        usage_reference=f"addon_assignment_{assignment.pk}",
+        calculation_metadata={
+            "assignment_id": assignment.pk,
+            "addon_id": addon.pk,
+            "addon_slug": addon.slug,
+            "addon_name": addon.name,
+            "quantity": int(quantity),
+            "stripe_subscription_id": stripe_sub_id,
+            "stripe_payment_intent_id": stripe_pi_id,
+            "stripe_checkout_session_id": session_data.get("id"),
+        },
+    )
+    logger.info(
+        "Created BusinessInvoice %s (%s %s) for add-on %s",
+        invoice_num,
+        total,
+        currency,
+        addon.slug,
+    )
+    return invoice
 
 
 def process_addon_checkout_completed(session_data: dict):
@@ -499,6 +779,15 @@ def process_addon_checkout_completed(session_data: dict):
                 if assignment:
                     if assignment.status == AddonStatus.ACTIVE:
                         # Idempotent: already activated
+                        _record_checkout_invoice_for_addon(
+                            organizer=organizer,
+                            assignment=assignment,
+                            addon=addon,
+                            quantity=quantity,
+                            session_data=session_data,
+                            event=event,
+                            user=user,
+                        )
                         return assignment
                     assignment.status = AddonStatus.ACTIVE
                     assignment.starts_at = current_time
@@ -514,6 +803,15 @@ def process_addon_checkout_completed(session_data: dict):
                     )
                     invalidate_entitlement_cache(organizer=organizer, event=event)
                     addon_purchased.send(sender=model_cls, instance=assignment)
+                    _record_checkout_invoice_for_addon(
+                        organizer=organizer,
+                        assignment=assignment,
+                        addon=addon,
+                        quantity=quantity,
+                        session_data=session_data,
+                        event=event,
+                        user=user,
+                    )
                     return assignment
 
             # Idempotency check by stripe IDs
@@ -528,7 +826,17 @@ def process_addon_checkout_completed(session_data: dict):
                 elif stripe_pi_id:
                     existing = existing.filter(stripe_payment_intent_id=stripe_pi_id)
                 if existing.exists():
-                    return existing.first()
+                    assignment = existing.first()
+                    _record_checkout_invoice_for_addon(
+                        organizer=organizer,
+                        assignment=assignment,
+                        addon=addon,
+                        quantity=quantity,
+                        session_data=session_data,
+                        event=event,
+                        user=user,
+                    )
+                    return assignment
 
                 assignment = EventAddon.objects.create(
                     event=event,
@@ -552,6 +860,15 @@ def process_addon_checkout_completed(session_data: dict):
                 )
                 invalidate_entitlement_cache(organizer=organizer, event=event)
                 addon_purchased.send(sender=EventAddon, instance=assignment)
+                _record_checkout_invoice_for_addon(
+                    organizer=organizer,
+                    assignment=assignment,
+                    addon=addon,
+                    quantity=quantity,
+                    session_data=session_data,
+                    event=event,
+                    user=user,
+                )
                 return assignment
             else:
                 existing = OrganizerAddon.objects.filter(
@@ -564,7 +881,17 @@ def process_addon_checkout_completed(session_data: dict):
                 elif stripe_pi_id:
                     existing = existing.filter(stripe_payment_intent_id=stripe_pi_id)
                 if existing.exists():
-                    return existing.first()
+                    assignment = existing.first()
+                    _record_checkout_invoice_for_addon(
+                        organizer=organizer,
+                        assignment=assignment,
+                        addon=addon,
+                        quantity=quantity,
+                        session_data=session_data,
+                        event=event,
+                        user=user,
+                    )
+                    return assignment
 
                 assignment = OrganizerAddon.objects.create(
                     organizer=organizer,
@@ -588,6 +915,15 @@ def process_addon_checkout_completed(session_data: dict):
                 )
                 invalidate_entitlement_cache(organizer=organizer)
                 addon_purchased.send(sender=OrganizerAddon, instance=assignment)
+                _record_checkout_invoice_for_addon(
+                    organizer=organizer,
+                    assignment=assignment,
+                    addon=addon,
+                    quantity=quantity,
+                    session_data=session_data,
+                    event=event,
+                    user=user,
+                )
                 return assignment
 
 
@@ -658,7 +994,15 @@ def process_subscription_checkout_completed(session_data: dict):
                     sub.stripe_subscription_id == stripe_sub_id
                     and sub.status == SubscriptionStatus.ACTIVE
                 ):
-                    # Idempotent
+                    # Idempotent: subscription already active, ensure invoice is recorded
+                    _record_checkout_invoice_for_subscription(
+                        organizer=organizer,
+                        subscription=sub,
+                        tier_version=tier_version,
+                        tier_price=tier_price,
+                        session_data=session_data,
+                        user=user,
+                    )
                     return sub
 
                 old_stripe_sub_id = sub.stripe_subscription_id
@@ -709,6 +1053,14 @@ def process_subscription_checkout_completed(session_data: dict):
 
             invalidate_entitlement_cache(organizer=organizer)
             subscription_purchased.send(sender=Subscription, instance=sub, user=user)
+            _record_checkout_invoice_for_subscription(
+                organizer=organizer,
+                subscription=sub,
+                tier_version=tier_version,
+                tier_price=tier_price,
+                session_data=session_data,
+                user=user,
+            )
             return sub
 
 
@@ -885,6 +1237,92 @@ def process_invoice_paid(invoice_data: dict):
                 sub.save(update_fields=["status", "past_due_since", "updated_at"])
                 invalidate_entitlement_cache(organizer=sub.organizer)
 
+            if sub:
+                stripe_inv_id = invoice_data.get("id")
+                if (
+                    stripe_inv_id
+                    and not BusinessInvoice.objects.filter(
+                        stripe_invoice_id=stripe_inv_id
+                    ).exists()
+                ):
+                    amount_paid = invoice_data.get("amount_paid")
+                    if amount_paid is not None:
+                        try:
+                            total = (
+                                Decimal(str(amount_paid)) / Decimal("100")
+                            ).quantize(Decimal("0.01"))
+                        except Exception:
+                            total = Decimal("0.00")
+                    else:
+                        total = Decimal("0.00")
+
+                    if total > Decimal("0.00"):
+                        p_start_ts = invoice_data.get("period_start")
+                        p_end_ts = invoice_data.get("period_end")
+                        p_start = (
+                            datetime.fromtimestamp(p_start_ts, tz=timezone.utc)
+                            if p_start_ts
+                            else (sub.starts_at or now())
+                        )
+                        p_end = (
+                            datetime.fromtimestamp(p_end_ts, tz=timezone.utc)
+                            if p_end_ts
+                            else (sub.ends_at or (p_start + timedelta(days=30)))
+                        )
+                        inv_currency = (
+                            invoice_data.get("currency") or sub.currency or "USD"
+                        ).upper()
+
+                        if not BusinessInvoice.objects.filter(
+                            organizer=sub.organizer,
+                            billing_period_start=p_start,
+                            billing_period_end=p_end,
+                        ).exists():
+                            inv_num = generate_invoice_number(sub.organizer, p_start)
+                            rec_inv = BusinessInvoice.objects.create(
+                                organizer=sub.organizer,
+                                invoice_number=inv_num,
+                                billing_period_start=p_start,
+                                billing_period_end=p_end,
+                                currency=inv_currency,
+                                status=BusinessInvoiceStatus.PAID,
+                                subtotal=total,
+                                tax=Decimal("0.00"),
+                                total=total,
+                                stripe_payment_intent_id=invoice_data.get(
+                                    "payment_intent"
+                                ),
+                                stripe_invoice_id=stripe_inv_id,
+                            )
+                            tier_name = (
+                                sub.tier_version.tier.name
+                                if sub.tier_version
+                                else "Subscription"
+                            )
+                            interval_disp = (
+                                sub.get_billing_interval_display()
+                                if hasattr(sub, "get_billing_interval_display")
+                                else sub.billing_interval
+                            )
+                            BusinessInvoiceLine.objects.create(
+                                invoice=rec_inv,
+                                line_type=InvoiceLineType.SUBSCRIPTION,
+                                description=f"Plan Subscription: {tier_name} ({interval_disp})",
+                                quantity=Decimal("1.00"),
+                                unit_price=total,
+                                amount=total,
+                                tier_version=sub.tier_version,
+                                usage_reference=f"subscription_{sub.pk}",
+                                calculation_metadata={
+                                    "subscription_id": sub.pk,
+                                    "stripe_subscription_id": stripe_sub_id,
+                                    "stripe_invoice_id": stripe_inv_id,
+                                    "billing_reason": invoice_data.get(
+                                        "billing_reason", ""
+                                    ),
+                                },
+                            )
+
             # Also restore linked recurring add-ons back to ACTIVE
             org_addons = OrganizerAddon.objects.select_for_update().filter(
                 stripe_subscription_id=stripe_sub_id,
@@ -905,3 +1343,150 @@ def process_invoice_paid(invoice_data: dict):
                 invalidate_entitlement_cache(
                     organizer=ea.event.organizer, event=ea.event
                 )
+
+
+def fulfill_checkout_session_by_id(session_id: str):
+    """
+    Retrieve checkout session directly from Stripe and fulfill it synchronously.
+    Handles subscription plan upgrades, add-on purchases, and invoice generation.
+    Safe and idempotent.
+    """
+    secret_key = get_stripe_secret_key_safe()
+    if not secret_key or stripe is None or not session_id:
+        return None
+
+    stripe.api_key = secret_key
+    try:
+        session = stripe.checkout.Session.retrieve(session_id)
+        if not session:
+            return None
+
+        payment_status = getattr(session, "payment_status", None)
+        if payment_status not in ("paid", "no_payment_required"):
+            logger.info(
+                "Checkout session %s payment_status is %s; skipping synchronous fulfillment",
+                session_id,
+                payment_status,
+            )
+            return None
+
+        session_dict = (
+            session.to_dict() if hasattr(session, "to_dict") else dict(session)
+        )
+        return process_checkout_session_completed(session_dict)
+    except Exception as exc:
+        logger.exception(
+            "Error fulfilling Stripe checkout session %s: %s", session_id, exc
+        )
+        return None
+
+
+def sync_organizer_from_stripe(organizer) -> Optional[Subscription]:
+    """
+    Query Stripe for any active subscriptions belonging to this organizer
+    and synchronize Eventyay state. Acts as a self-healing fallback if
+    webhooks were delayed or missed.
+    """
+    secret_key = get_stripe_secret_key_safe()
+    if not secret_key or stripe is None or not organizer:
+        return None
+
+    stripe.api_key = secret_key
+
+    # 1. Find stripe_customer_id
+    customer_id = None
+    sub = organizer.subscriptions.first()
+    if sub and sub.stripe_customer_id:
+        customer_id = sub.stripe_customer_id
+
+    if not customer_id:
+        try:
+            from eventyay.base.models.organizer import OrganizerBillingModel
+
+            billing = OrganizerBillingModel.objects.filter(
+                organizer_id=organizer.id
+            ).first()
+            if billing and billing.stripe_customer_id:
+                customer_id = billing.stripe_customer_id
+        except Exception:
+            pass
+
+    if not customer_id:
+        try:
+            customers = stripe.Customer.search(
+                query=f"metadata['organizer_slug']:'{organizer.slug}'"
+            )
+            if customers and getattr(customers, "data", None):
+                customer_id = customers.data[0].id
+        except Exception:
+            pass
+
+    if not customer_id:
+        return None
+
+    # 2. List active subscriptions in Stripe
+    try:
+        stripe_subs = stripe.Subscription.list(
+            customer=customer_id, status="active", limit=5
+        )
+        for s_sub in getattr(stripe_subs, "data", []):
+            s_dict = s_sub.to_dict() if hasattr(s_sub, "to_dict") else dict(s_sub)
+            meta = s_dict.get("metadata", {})
+            tier_version_id = meta.get("tier_version_id")
+            tier_price_id = meta.get("tier_price_id")
+
+            items_data = (s_dict.get("items") or {}).get("data", [])
+            if not tier_version_id and items_data:
+                first_item = items_data[0]
+                price_obj = first_item.get("price") or {}
+                price_meta = price_obj.get("metadata", {})
+                tier_price_id = tier_price_id or price_meta.get("tier_price_id")
+
+                prod_id = price_obj.get("product")
+                if prod_id and not tier_version_id:
+                    try:
+                        prod = stripe.Product.retrieve(prod_id)
+                        prod_meta = getattr(prod, "metadata", {})
+                        tier_slug = prod_meta.get("tier_slug")
+                        t_ver_str = prod_meta.get("tier_version")
+                        if tier_slug and t_ver_str:
+                            t_ver = TierVersion.objects.filter(
+                                tier__slug=tier_slug, version=int(t_ver_str)
+                            ).first()
+                            if t_ver:
+                                tier_version_id = str(t_ver.pk)
+                    except Exception:
+                        pass
+
+            if tier_version_id or tier_price_id:
+                tier_price = (
+                    TierPrice.objects.filter(pk=tier_price_id).first()
+                    if tier_price_id
+                    else None
+                )
+                tier_version = (
+                    TierVersion.objects.filter(pk=tier_version_id).first()
+                    if tier_version_id
+                    else (tier_price.tier_version if tier_price else None)
+                )
+                if tier_version:
+                    session_mock = {
+                        "metadata": {
+                            "type": "subscription",
+                            "organizer_slug": organizer.slug,
+                            "tier_price_id": str(tier_price.pk) if tier_price else "",
+                            "tier_version_id": str(tier_version.pk),
+                        },
+                        "customer": customer_id,
+                        "subscription": s_sub.id,
+                        "invoice": getattr(s_sub, "latest_invoice", None),
+                    }
+                    return process_subscription_checkout_completed(session_mock)
+    except Exception as exc:
+        logger.exception(
+            "Error syncing subscriptions from Stripe for %s: %s",
+            organizer.slug,
+            exc,
+        )
+
+    return None
