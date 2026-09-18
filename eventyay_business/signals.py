@@ -491,23 +491,14 @@ if order_paid:
             .first()
         )
 
-        if not sub or not sub.tier_version:
-            return
+        from .services import resolve_fee_settings
 
-        from .capabilities import get_capability
-
-        cap_def = get_capability("commerce.platform_fee_percent")
-        if not cap_def:
-            return
-
-        ent = sub.tier_version.entitlements.filter(
-            capability="commerce.platform_fee_percent"
-        ).first()
-
-        if ent:
-            fee_percent = ent.get_typed_value()
-        else:
-            fee_percent = cap_def.default_value
+        tier_version = sub.tier_version if sub else None
+        fee_percent, max_fee, is_override = resolve_fee_settings(
+            event=event,
+            order=order,
+            tier_version=tier_version,
+        )
 
         if not fee_percent or fee_percent <= Decimal("0.0"):
             return
@@ -528,6 +519,46 @@ if order_paid:
             Decimal("0.01")
         )
 
+        # When max_fee comes from global settings it is in the platform base currency (USD).
+        # Convert it to event.currency before comparing against fee_amount (which is in event.currency).
+        # Country overrides (is_override=True) are stored in the override's own currency, which
+        # must already match the event currency, so no conversion is needed for that path.
+        effective_max_fee = max_fee
+        if not is_override and max_fee and max_fee > Decimal("0.00"):
+            from django.conf import settings as django_settings
+
+            platform_currency = getattr(django_settings, "DEFAULT_CURRENCY", "USD")
+            if platform_currency != event.currency:
+                from eventyay.base.settings import GlobalSettingsObject
+
+                gs_cap = GlobalSettingsObject()
+                rates_dict = gs_cap.settings.get("ecb_rates_dict", as_type=dict) or {}
+                if platform_currency in rates_dict and event.currency in rates_dict:
+                    from decimal import ROUND_HALF_UP
+
+                    rate = (
+                        Decimal(str(rates_dict[event.currency]))
+                        / Decimal(str(rates_dict[platform_currency]))
+                    ).quantize(Decimal("0.0001"), ROUND_HALF_UP)
+                    effective_max_fee = (max_fee * rate).quantize(
+                        Decimal("0.01"), ROUND_HALF_UP
+                    )
+                else:
+                    logger.warning(
+                        "Exchange rate unavailable for converting global max_fee from %s to %s for order %s. Skipping cap.",
+                        platform_currency,
+                        event.currency,
+                        order.code,
+                    )
+                    effective_max_fee = Decimal("0.00")
+
+        if (
+            effective_max_fee
+            and effective_max_fee > Decimal("0.00")
+            and fee_amount > effective_max_fee
+        ):
+            fee_amount = effective_max_fee
+
         if fee_amount <= Decimal("0.0"):
             return
 
@@ -536,9 +567,11 @@ if order_paid:
             "fee_percent": str(fee_percent),
             "order_total": str(order.total),
             "currency": event.currency,
+            "maximum_fee": str(max_fee or "0.00"),
+            "is_fee_override": str(is_override),
         }
 
-        if sub.currency and sub.currency != event.currency:
+        if sub and sub.currency and sub.currency != event.currency:
             from eventyay.base.settings import GlobalSettingsObject
 
             gs = GlobalSettingsObject()

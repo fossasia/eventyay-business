@@ -11,6 +11,7 @@ from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 from django.views.generic import (
     CreateView,
+    DeleteView,
     DetailView,
     FormView,
     ListView,
@@ -31,6 +32,7 @@ from eventyay.control.views.organizer_views.organizer_detail_view_mixin import (
 from .capabilities import CapabilityValueType, get_all_capabilities, get_capability
 from .forms import (
     AddonDefinitionForm,
+    CountryFeeSettingForm,
     EventAddonForm,
     EventAddonPurchaseForm,
     OrganizerAddonForm,
@@ -48,6 +50,7 @@ from .models import (
     BillingInterval,
     BusinessInvoice,
     BusinessInvoiceStatus,
+    CountryFeeSetting,
     EventAddon,
     OrganizerAddon,
     Subscription,
@@ -1960,3 +1963,52 @@ class AdminInvoiceDetailView(AdministratorPermissionRequiredMixin, DetailView):
         ctx = super().get_context_data(**kwargs)
         ctx["lines"] = self.object.lines.all()
         return ctx
+
+
+class FeeSettingsView(AdministratorPermissionRequiredMixin, TemplateView):
+    template_name = "eventyay_business/fees/list.html"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["country_settings"] = CountryFeeSetting.objects.all().order_by(
+            "country", "currency"
+        )
+        return ctx
+
+
+class CountryFeeSettingCreateView(AdministratorPermissionRequiredMixin, CreateView):
+    model = CountryFeeSetting
+    form_class = CountryFeeSettingForm
+    template_name = "eventyay_business/fees/form.html"
+
+    def get_success_url(self):
+        return reverse("plugins:eventyay_business:fees.list")
+
+    def form_valid(self, form):
+        messages.success(self.request, _("Country fee setting created successfully."))
+        return super().form_valid(form)
+
+
+class CountryFeeSettingUpdateView(AdministratorPermissionRequiredMixin, UpdateView):
+    model = CountryFeeSetting
+    form_class = CountryFeeSettingForm
+    template_name = "eventyay_business/fees/form.html"
+
+    def get_success_url(self):
+        return reverse("plugins:eventyay_business:fees.list")
+
+    def form_valid(self, form):
+        messages.success(self.request, _("Country fee setting updated successfully."))
+        return super().form_valid(form)
+
+
+class CountryFeeSettingDeleteView(AdministratorPermissionRequiredMixin, DeleteView):
+    model = CountryFeeSetting
+    template_name = "eventyay_business/fees/delete.html"
+
+    def get_success_url(self):
+        return reverse("plugins:eventyay_business:fees.list")
+
+    def form_valid(self, form):
+        messages.success(self.request, _("Country fee setting deleted successfully."))
+        return super().form_valid(form)

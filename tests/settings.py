@@ -1,7 +1,10 @@
 try:
-    from eventyay.config.settings import *  # noqa: F403, F401
+    from tests.testutils.settings import *  # noqa: F403, F401
 except ImportError:
-    pass
+    try:
+        from eventyay.config.settings import *  # noqa: F403, F401
+    except ImportError:
+        pass
 
 SECRET_KEY = "test-secret-key"
 if not globals().get("DATABASES"):

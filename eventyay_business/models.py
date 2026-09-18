@@ -3,9 +3,12 @@ from typing import Optional
 from datetime import datetime, timedelta
 from decimal import Decimal
 from django.conf import settings
+from django.core.exceptions import ValidationError
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
+from django_countries.fields import CountryField
 
 
 class TierStatus(models.TextChoices):
@@ -984,3 +987,64 @@ class BusinessInvoiceLine(models.Model):
 
     def __str__(self):
         return f"{self.description}: {self.amount}"
+
+
+class CountryFeeSetting(models.Model):
+    country = CountryField(verbose_name=_("Country"))
+    currency = models.CharField(max_length=3, verbose_name=_("Currency"))
+    service_fee_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        validators=[
+            MinValueValidator(Decimal("0.00")),
+            MaxValueValidator(Decimal("100.00")),
+        ],
+        verbose_name=_("Service fee percentage"),
+        help_text=_("Percentage fee applied to tickets for this country and currency."),
+    )
+    maximum_fee = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        validators=[MinValueValidator(Decimal("0.00"))],
+        verbose_name=_("Maximum fee"),
+        help_text=_(
+            "Maximum fee limit in the specified currency. 0 indicates no maximum fee limit (unlimited)."
+        ),
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("Created at"))
+    updated_at = models.DateTimeField(auto_now=True, verbose_name=_("Updated at"))
+
+    class Meta:
+        ordering = ["country", "currency"]
+        verbose_name = _("Country fee setting")
+        verbose_name_plural = _("Country fee settings")
+        unique_together = (("country", "currency"),)
+
+    def clean(self):
+        super().clean()
+        if self.service_fee_percent is not None:
+            if self.service_fee_percent < Decimal(
+                "0.00"
+            ) or self.service_fee_percent > Decimal("100.00"):
+                raise ValidationError(
+                    {
+                        "service_fee_percent": _(
+                            "Service fee percentage must be between 0 and 100."
+                        )
+                    }
+                )
+        if self.maximum_fee is not None and self.maximum_fee < Decimal("0.00"):
+            raise ValidationError({"maximum_fee": _("Maximum fee cannot be negative.")})
+
+    def save(self, *args, **kwargs):
+        if self.currency:
+            self.currency = self.currency.strip().upper()
+        if self.country:
+            self.country = str(self.country).strip().upper()
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.country} ({self.currency}): {self.service_fee_percent}% (max: {self.maximum_fee})"

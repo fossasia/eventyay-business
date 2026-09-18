@@ -5,6 +5,7 @@ from django.utils.translation import gettext_lazy as _
 from .capabilities import get_capability_choices
 from .models import (
     AddonDefinition,
+    CountryFeeSetting,
     EventAddon,
     OrganizerAddon,
     Subscription,
@@ -660,3 +661,41 @@ class EventAddonPurchaseForm(forms.Form):
         if commit:
             assignment.save()
         return assignment
+
+
+class CountryFeeSettingForm(forms.ModelForm):
+    class Meta:
+        model = CountryFeeSetting
+        fields = ["country", "currency", "service_fee_percent", "maximum_fee"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from django.conf import settings
+
+        self.fields["country"].widget.attrs.update({"class": "form-control"})
+        if hasattr(settings, "CURRENCIES") and settings.CURRENCIES:
+            currency_choices = [("", "---------")] + [
+                (c.alpha_3, f"{c.alpha_3} - {c.name}") for c in settings.CURRENCIES
+            ]
+            self.fields["currency"].widget = forms.Select(
+                choices=currency_choices, attrs={"class": "form-control"}
+            )
+        else:
+            self.fields["currency"].widget = forms.TextInput(
+                attrs={"class": "form-control", "maxlength": "3"}
+            )
+
+        self.fields["service_fee_percent"].widget.attrs.update(
+            {"class": "form-control", "step": "0.01", "min": "0", "max": "100"}
+        )
+        self.fields["maximum_fee"].widget.attrs.update(
+            {"class": "form-control", "step": "0.01", "min": "0"}
+        )
+
+    def clean_currency(self):
+        currency = (self.cleaned_data.get("currency") or "").strip().upper()
+        if not currency.isalpha() or len(currency) != 3:
+            raise forms.ValidationError(
+                _("Please enter a valid 3-letter currency code (e.g. USD, EUR).")
+            )
+        return currency
