@@ -103,13 +103,12 @@
                                         </div>
                                     </div>
                                     <div class="col-sm-1 col-xs-6 text-right">
-                                        {% if p_form.instance.pk %}
-                                            {% bootstrap_field p_form.DELETE layout='inline' %}
-                                        {% else %}
-                                            <button type="button" class="btn btn-danger btn-sm" data-formset-delete-button aria-label="{% trans 'Delete Price' %}">
-                                                <i class="fa fa-trash"></i>
-                                            </button>
-                                        {% endif %}
+                                        <div class="sr-only">
+                                            {% bootstrap_field p_form.DELETE form_group_class="" layout="inline" %}
+                                        </div>
+                                        <button type="button" class="btn btn-delete btn-danger btn-sm" data-formset-delete-button aria-label="{% trans 'Delete Price' %}" title="{% trans 'Delete Price' %}">
+                                            <i class="fa fa-trash"></i>
+                                        </button>
                                     </div>
                                 </div>
                                 {% for hidden in p_form.hidden_fields %}
@@ -148,7 +147,7 @@
                                         </div>
                                     </div>
                                     <div class="col-sm-1 col-xs-6 text-right">
-                                        <button type="button" class="btn btn-danger btn-sm" data-formset-delete-button aria-label="{% trans 'Delete Price' %}">
+                                        <button type="button" class="btn btn-delete btn-danger btn-sm" data-formset-delete-button aria-label="{% trans 'Delete Price' %}" title="{% trans 'Delete Price' %}">
                                             <i class="fa fa-trash"></i>
                                         </button>
                                     </div>
@@ -200,6 +199,7 @@
                                     <div class="col-sm-4 col-xs-12">
                                         <label class="visible-xs text-muted small">{% trans "Capability / Feature" %}</label>
                                         {% bootstrap_field e_form.capability layout='inline' %}
+                                        <p class="help-block capability-description-text" style="font-size: 12px; line-height: 1.4; margin-top: 5px; margin-bottom: 0; color: #737373; display: none;"></p>
                                     </div>
                                     <div class="col-sm-3 col-xs-12" data-col-value>
                                         <label class="visible-xs text-muted small">{% trans "Value / Allowance" %}</label>
@@ -218,13 +218,12 @@
                                         </div>
                                     </div>
                                     <div class="col-sm-1 col-xs-6 text-right">
-                                        {% if e_form.instance.pk %}
-                                            {% bootstrap_field e_form.DELETE layout='inline' %}
-                                        {% else %}
-                                            <button type="button" class="btn btn-danger btn-sm" data-formset-delete-button aria-label="{% trans 'Delete Entitlement' %}">
-                                                <i class="fa fa-trash"></i>
-                                            </button>
-                                        {% endif %}
+                                        <div class="sr-only">
+                                            {% bootstrap_field e_form.DELETE form_group_class="" layout="inline" %}
+                                        </div>
+                                        <button type="button" class="btn btn-delete btn-danger btn-sm" data-formset-delete-button aria-label="{% trans 'Delete Entitlement' %}" title="{% trans 'Delete Entitlement' %}">
+                                            <i class="fa fa-trash"></i>
+                                        </button>
                                     </div>
                                 </div>
 
@@ -265,6 +264,7 @@
                                     <div class="col-sm-4 col-xs-12">
                                         <label class="visible-xs text-muted small">{% trans "Capability / Feature" %}</label>
                                         {% bootstrap_field entitlement_formset.empty_form.capability layout='inline' %}
+                                        <p class="help-block capability-description-text" style="font-size: 12px; line-height: 1.4; margin-top: 5px; margin-bottom: 0; color: #737373; display: none;"></p>
                                     </div>
                                     <div class="col-sm-3 col-xs-12" data-col-value>
                                         <label class="visible-xs text-muted small">{% trans "Value / Allowance" %}</label>
@@ -283,7 +283,7 @@
                                         </div>
                                     </div>
                                     <div class="col-sm-1 col-xs-6 text-right">
-                                        <button type="button" class="btn btn-danger btn-sm" data-formset-delete-button aria-label="{% trans 'Delete Entitlement' %}">
+                                        <button type="button" class="btn btn-delete btn-danger btn-sm" data-formset-delete-button aria-label="{% trans 'Delete Entitlement' %}" title="{% trans 'Delete Entitlement' %}">
                                             <i class="fa fa-trash"></i>
                                         </button>
                                     </div>

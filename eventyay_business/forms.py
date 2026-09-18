@@ -391,12 +391,46 @@ class AddonDefinitionForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        choices = [("", "---------")] + get_capability_choices()
+        grouped_choices = get_grouped_capability_choices()
+        choices = [("", "---------")] + grouped_choices
         if self.instance and self.instance.capability:
-            existing_caps = [c[0] for c in choices]
-            if self.instance.capability not in existing_caps:
-                choices.append((self.instance.capability, self.instance.capability))
-        self.fields["capability"].widget = forms.Select(choices=choices)
+            all_caps = []
+            for item in choices:
+                if isinstance(item[1], (list, tuple)):
+                    all_caps.extend(c[0] for c in item[1])
+                else:
+                    all_caps.append(item[0])
+            if self.instance.capability not in all_caps:
+                choices.append(
+                    (
+                        _("Custom / Other"),
+                        [(self.instance.capability, self.instance.capability)],
+                    )
+                )
+        self.fields["capability"].widget = forms.Select(
+            choices=choices,
+            attrs={"class": "form-control addon-capability-select"},
+        )
+        self.fields["entitlement_value"].widget.attrs.update(
+            {
+                "class": "form-control addon-value-input",
+                "placeholder": _("Value / Allowance"),
+            }
+        )
+        self.fields["currency"].widget.attrs.update(
+            {
+                "class": "form-control text-uppercase",
+                "placeholder": "USD",
+                "maxlength": "3",
+                "list": "tier-common-currencies",
+            }
+        )
+        if not self.instance.pk and not self.initial.get("currency"):
+            from django.conf import settings
+
+            self.fields["currency"].initial = getattr(
+                settings, "DEFAULT_CURRENCY", "USD"
+            )
 
         if self.instance and self.instance.pk:
             from .models import AddonStatus, EventAddon, OrganizerAddon
@@ -480,18 +514,28 @@ class AddonDefinitionForm(forms.ModelForm):
                                 _("Value must be a valid number or decimal.")
                             ),
                         )
-                elif (
-                    cap.value_type == CapabilityValueType.BOOLEAN
-                    and value.lower() not in ("true", "false", "1", "0", "yes", "no")
-                ):
-                    self.add_error(
-                        "entitlement_value",
-                        forms.ValidationError(
-                            _(
-                                "Value must be 'true' or 'false' for boolean capabilities."
+                elif cap.value_type == CapabilityValueType.BOOLEAN:
+                    if value not in (None, ""):
+                        val_str = str(value).strip().lower()
+                        if val_str in ("true", "1", "yes", "included", "enabled"):
+                            cleaned_data["entitlement_value"] = "true"
+                        elif val_str in (
+                            "false",
+                            "0",
+                            "no",
+                            "not included",
+                            "disabled",
+                        ):
+                            cleaned_data["entitlement_value"] = "false"
+                        else:
+                            self.add_error(
+                                "entitlement_value",
+                                forms.ValidationError(
+                                    _(
+                                        "Value must be a boolean (e.g. true, false, included, disabled)."
+                                    )
+                                ),
                             )
-                        ),
-                    )
         return cleaned_data
 
 

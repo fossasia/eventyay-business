@@ -1,7 +1,14 @@
 /**
- * Eventyay Business - Tier & Entitlements Form Interactions
+ * Eventyay Business - Tier & Addon Form Interactions
  * Standard ES Module (No jQuery, No Inline Scripts)
  */
+
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
 
 export function initTierForm() {
     const dataScript = document.getElementById('capabilities-data');
@@ -31,11 +38,13 @@ export function initTierForm() {
         // Description helper under capability select
         let descEl = row.querySelector('.capability-description-text');
         if (!descEl && capSelect.parentElement) {
-            descEl = document.createElement('div');
-            descEl.className = 'capability-description-text text-muted small mt-1';
-            descEl.style.fontSize = '0.85em';
-            descEl.style.lineHeight = '1.3';
-            descEl.style.marginTop = '4px';
+            descEl = document.createElement('p');
+            descEl.className = 'help-block capability-description-text';
+            descEl.style.fontSize = '12px';
+            descEl.style.lineHeight = '1.4';
+            descEl.style.marginTop = '5px';
+            descEl.style.marginBottom = '0';
+            descEl.style.color = '#737373';
             capSelect.parentElement.appendChild(descEl);
         }
 
@@ -46,7 +55,7 @@ export function initTierForm() {
             // 1. Update description
             if (descEl) {
                 if (cap && cap.description) {
-                    descEl.textContent = cap.description;
+                    descEl.innerHTML = '<i class="fa fa-info-circle text-info" style="margin-right: 4px;"></i>' + escapeHtml(cap.description);
                     descEl.style.display = 'block';
                 } else {
                     descEl.textContent = '';
@@ -97,9 +106,10 @@ export function initTierForm() {
                     unitInput.placeholder = 'N/A (Feature)';
                 }
 
-                // Hide overage for booleans
+                // Hide overage for booleans without removing column from grid layout (prevents column shifting)
                 if (overageCol) {
-                    overageCol.style.display = 'none';
+                    overageCol.style.visibility = 'hidden';
+                    overageCol.style.pointerEvents = 'none';
                 }
                 if (overageToggle) {
                     overageToggle.checked = false;
@@ -143,9 +153,10 @@ export function initTierForm() {
                     }
                 }
 
-                // Show overage section for quotas
+                // Show overage column for quotas
                 if (overageCol) {
-                    overageCol.style.display = '';
+                    overageCol.style.visibility = 'visible';
+                    overageCol.style.pointerEvents = 'auto';
                 }
                 updateOverageVisibility();
             }
@@ -184,8 +195,130 @@ export function initTierForm() {
     }
 }
 
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initTierForm);
-} else {
+export function initAddonForm() {
+    const dataScript = document.getElementById('capabilities-data');
+    let capabilities = {};
+    if (dataScript) {
+        try {
+            capabilities = JSON.parse(dataScript.textContent);
+        } catch (e) {
+            console.error('Failed to parse capabilities data:', e);
+        }
+    }
+
+    const capSelect = document.querySelector('.addon-capability-select, select[name="capability"]');
+    if (!capSelect) return;
+
+    // Helper to find or create description element
+    let descEl = capSelect.parentElement.querySelector('.capability-description-text');
+    if (!descEl) {
+        descEl = document.createElement('p');
+        descEl.className = 'help-block capability-description-text';
+        descEl.style.fontSize = '12px';
+        descEl.style.lineHeight = '1.4';
+        descEl.style.marginTop = '6px';
+        descEl.style.marginBottom = '0';
+        descEl.style.color = '#737373';
+        capSelect.parentElement.appendChild(descEl);
+    }
+
+    function updateAddonFields() {
+        const capName = capSelect.value;
+        const cap = capabilities[capName];
+
+        // 1. Description
+        if (cap && cap.description) {
+            descEl.innerHTML = '<i class="fa fa-info-circle text-info" style="margin-right: 4px;"></i>' + escapeHtml(cap.description);
+            descEl.style.display = 'block';
+        } else {
+            descEl.textContent = '';
+            descEl.style.display = 'none';
+        }
+
+        // 2. Value input adaptation
+        const valueInput = document.querySelector('.addon-value-input, [name="entitlement_value"]');
+        if (!valueInput) return;
+
+        const currentVal = (valueInput.value || '').trim();
+        const nameAttr = valueInput.name || 'entitlement_value';
+        const idAttr = valueInput.id || 'id_entitlement_value';
+
+        if (cap && cap.value_type === 'boolean') {
+            if (valueInput.tagName.toLowerCase() !== 'select') {
+                const select = document.createElement('select');
+                select.name = nameAttr;
+                select.id = idAttr;
+                select.className = 'form-control addon-value-input';
+
+                const optTrue = document.createElement('option');
+                optTrue.value = 'true';
+                optTrue.textContent = '✓ Included (Enabled)';
+
+                const optFalse = document.createElement('option');
+                optFalse.value = 'false';
+                optFalse.textContent = '✕ Not Included (Disabled)';
+
+                select.appendChild(optTrue);
+                select.appendChild(optFalse);
+
+                const isTrue = currentVal.toLowerCase() in { 'true': 1, '1': 1, 'yes': 1, 'included': 1, 'enabled': 1 };
+                select.value = isTrue ? 'true' : (currentVal ? 'false' : 'true');
+
+                valueInput.parentNode.replaceChild(select, valueInput);
+            }
+        } else {
+            if (valueInput.tagName.toLowerCase() === 'select') {
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.name = nameAttr;
+                input.id = idAttr;
+                input.className = 'form-control addon-value-input';
+                input.value = currentVal === 'false' ? '0' : (currentVal === 'true' ? '1' : currentVal);
+                valueInput.parentNode.replaceChild(input, valueInput);
+            }
+            const activeInput = document.querySelector('.addon-value-input, [name="entitlement_value"]');
+            if (activeInput) {
+                if (cap && (cap.value_type === 'integer' || cap.value_type === 'decimal' || cap.value_type === 'money')) {
+                    activeInput.type = 'number';
+                    activeInput.step = cap.value_type === 'integer' ? '1' : 'any';
+                    const unitSuffix = cap.unit ? ` (${cap.unit})` : '';
+                    activeInput.placeholder = (cap.value_type === 'integer' ? 'e.g. 10' : 'e.g. 2.50') + unitSuffix;
+                } else {
+                    activeInput.type = 'text';
+                    activeInput.placeholder = cap && cap.unit ? `Value in ${cap.unit}` : 'Value / Allowance';
+                }
+            }
+        }
+    }
+
+    capSelect.addEventListener('change', updateAddonFields);
+    updateAddonFields();
+}
+
+// Global click handler fallback for formset delete buttons
+document.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-formset-delete-button]');
+    if (!btn) return;
+    const row = btn.closest('[data-formset-form]');
+    if (!row) return;
+    const delInput = row.querySelector('input[type="checkbox"][name$="-DELETE"]');
+    if (delInput) {
+        delInput.checked = true;
+    }
+    setTimeout(() => {
+        if (row.parentElement && getComputedStyle(row).display !== 'none') {
+            row.style.display = 'none';
+        }
+    }, 50);
+});
+
+export function initAll() {
     initTierForm();
+    initAddonForm();
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initAll);
+} else {
+    initAll();
 }

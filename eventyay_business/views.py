@@ -1723,6 +1723,13 @@ class AddonDefinitionCreateView(AdministratorPermissionRequiredMixin, CreateView
     form_class = AddonDefinitionForm
     template_name = "eventyay_business/addons/form.html"
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        from .capabilities import get_capabilities_dict
+
+        context["capabilities_data"] = get_capabilities_dict()
+        return context
+
     def form_valid(self, form):
         self.object = form.save()
         messages.success(self.request, _("Add-on created successfully."))
@@ -1733,6 +1740,13 @@ class AddonDefinitionUpdateView(AdministratorPermissionRequiredMixin, UpdateView
     model = AddonDefinition
     form_class = AddonDefinitionForm
     template_name = "eventyay_business/addons/form.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        from .capabilities import get_capabilities_dict
+
+        context["capabilities_data"] = get_capabilities_dict()
+        return context
 
     def form_valid(self, form):
         self.object = form.save()
