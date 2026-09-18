@@ -148,20 +148,43 @@ class TierUpdateView(AdministratorPermissionRequiredMixin, UpdateView):
     def post(self, request, *args, **kwargs):
         self.object = self.get_object()
         self.latest_version = self.object.versions.first()
-        if "populate_standard" in request.POST and self.latest_version:
-            from .services import seed_standard_entitlements_for_version
-
-            seed_standard_entitlements_for_version(self.latest_version)
-            messages.success(
-                request,
-                _("Standard capabilities have been populated for this tier version."),
-            )
-            return redirect(
-                reverse(
-                    "plugins:eventyay_business:tiers.edit",
-                    kwargs={"pk": self.object.pk},
+        if "populate_standard" in request.POST:
+            with transaction.atomic():
+                locked_version = (
+                    TierVersion.objects.select_for_update()
+                    .filter(tier=self.object)
+                    .order_by("-version")
+                    .first()
                 )
-            )
+                if not locked_version or locked_version.published_at:
+                    messages.info(
+                        request,
+                        _(
+                            "This tier is published. To edit prices or entitlements, please create a new draft version."
+                        ),
+                    )
+                    return redirect(
+                        reverse(
+                            "plugins:eventyay_business:tiers.detail",
+                            kwargs={"pk": self.object.pk},
+                        )
+                    )
+
+                from .services import seed_standard_entitlements_for_version
+
+                seed_standard_entitlements_for_version(locked_version)
+                messages.success(
+                    request,
+                    _(
+                        "Standard capabilities have been populated for this tier version."
+                    ),
+                )
+                return redirect(
+                    reverse(
+                        "plugins:eventyay_business:tiers.edit",
+                        kwargs={"pk": self.object.pk},
+                    )
+                )
         return super().post(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):

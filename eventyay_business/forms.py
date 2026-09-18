@@ -124,6 +124,7 @@ class TierEntitlementForm(forms.ModelForm):
                 "class": "form-control text-uppercase",
                 "placeholder": "USD",
                 "maxlength": "3",
+                "list": "tier-common-currencies",
             }
         )
         self.fields["overage_price"].widget.attrs.update(

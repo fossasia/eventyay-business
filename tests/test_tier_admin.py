@@ -522,3 +522,21 @@ def test_tier_update_view_context_capabilities(business_admin_client, sample_tie
     assert "capabilities_data" in response.context_data
     assert "video.youtube" in response.context_data["capabilities_data"]
     assert "has_entitlements" in response.context_data
+
+
+@pytest.mark.django_db
+def test_populate_standard_entitlements_published_version_redirect(
+    business_admin_client, sample_tier
+):
+    from django.utils.timezone import now
+
+    v1 = sample_tier.versions.first()
+    v1.published_at = now()
+    v1.save()
+
+    url = reverse("plugins:eventyay_business:tiers.edit", kwargs={"pk": sample_tier.pk})
+    response = business_admin_client.post(url, {"populate_standard": "1"})
+    assert response.status_code == 302
+    assert response.url == reverse(
+        "plugins:eventyay_business:tiers.detail", kwargs={"pk": sample_tier.pk}
+    )

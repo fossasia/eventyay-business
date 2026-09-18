@@ -79,6 +79,10 @@ export function initTierForm() {
                     select.id = idAttr;
                     select.className = 'form-control entitlement-value-input';
 
+                    const optEmpty = document.createElement('option');
+                    optEmpty.value = '';
+                    optEmpty.textContent = '---------';
+
                     const optTrue = document.createElement('option');
                     optTrue.value = 'true';
                     optTrue.textContent = '✓ Included (Enabled)';
@@ -87,11 +91,16 @@ export function initTierForm() {
                     optFalse.value = 'false';
                     optFalse.textContent = '✕ Not Included (Disabled)';
 
+                    select.appendChild(optEmpty);
                     select.appendChild(optTrue);
                     select.appendChild(optFalse);
 
-                    const isTrue = currentVal.toLowerCase() in { 'true': 1, '1': 1, 'yes': 1, 'included': 1, 'enabled': 1 };
-                    select.value = isTrue ? 'true' : (currentVal ? 'false' : 'true');
+                    if (!currentVal) {
+                        select.value = '';
+                    } else {
+                        const isTrue = currentVal.toLowerCase() in { 'true': 1, '1': 1, 'yes': 1, 'included': 1, 'enabled': 1 };
+                        select.value = isTrue ? 'true' : 'false';
+                    }
 
                     currentValueEl.parentNode.replaceChild(select, currentValueEl);
                 }
@@ -250,6 +259,10 @@ export function initAddonForm() {
                 select.id = idAttr;
                 select.className = 'form-control addon-value-input';
 
+                const optEmpty = document.createElement('option');
+                optEmpty.value = '';
+                optEmpty.textContent = '---------';
+
                 const optTrue = document.createElement('option');
                 optTrue.value = 'true';
                 optTrue.textContent = '✓ Included (Enabled)';
@@ -258,11 +271,16 @@ export function initAddonForm() {
                 optFalse.value = 'false';
                 optFalse.textContent = '✕ Not Included (Disabled)';
 
+                select.appendChild(optEmpty);
                 select.appendChild(optTrue);
                 select.appendChild(optFalse);
 
-                const isTrue = currentVal.toLowerCase() in { 'true': 1, '1': 1, 'yes': 1, 'included': 1, 'enabled': 1 };
-                select.value = isTrue ? 'true' : (currentVal ? 'false' : 'true');
+                if (!currentVal) {
+                    select.value = '';
+                } else {
+                    const isTrue = currentVal.toLowerCase() in { 'true': 1, '1': 1, 'yes': 1, 'included': 1, 'enabled': 1 };
+                    select.value = isTrue ? 'true' : 'false';
+                }
 
                 valueInput.parentNode.replaceChild(select, valueInput);
             }
