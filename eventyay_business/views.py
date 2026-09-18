@@ -96,13 +96,16 @@ class TierCreateView(AdministratorPermissionRequiredMixin, CreateView):
     @transaction.atomic
     def form_valid(self, form):
         self.object = form.save()
-        # Create the initial draft TierVersion
-        TierVersion.objects.create(
+        # Create initial draft TierVersion with standard capabilities seeded
+        version = TierVersion.objects.create(
             tier=self.object, version=1, created_by=self.request.user
         )
+        from .services import seed_standard_entitlements_for_version
+
+        seed_standard_entitlements_for_version(version)
         messages.success(
             self.request,
-            _("Tier created successfully. You can now add prices and entitlements."),
+            _("Tier created successfully with standard capabilities."),
         )
         return redirect(
             reverse(
@@ -142,6 +145,48 @@ class TierUpdateView(AdministratorPermissionRequiredMixin, UpdateView):
 
         return super().dispatch(request, *args, **kwargs)
 
+    def post(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        self.latest_version = self.object.versions.first()
+        if "populate_standard" in request.POST:
+            with transaction.atomic():
+                locked_version = (
+                    TierVersion.objects.select_for_update()
+                    .filter(tier=self.object)
+                    .order_by("-version")
+                    .first()
+                )
+                if not locked_version or locked_version.published_at:
+                    messages.info(
+                        request,
+                        _(
+                            "This tier is published. To edit prices or entitlements, please create a new draft version."
+                        ),
+                    )
+                    return redirect(
+                        reverse(
+                            "plugins:eventyay_business:tiers.detail",
+                            kwargs={"pk": self.object.pk},
+                        )
+                    )
+
+                from .services import seed_standard_entitlements_for_version
+
+                seed_standard_entitlements_for_version(locked_version)
+                messages.success(
+                    request,
+                    _(
+                        "Standard capabilities have been populated for this tier version."
+                    ),
+                )
+                return redirect(
+                    reverse(
+                        "plugins:eventyay_business:tiers.edit",
+                        kwargs={"pk": self.object.pk},
+                    )
+                )
+        return super().post(request, *args, **kwargs)
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         if self.request.POST:
@@ -160,6 +205,13 @@ class TierUpdateView(AdministratorPermissionRequiredMixin, UpdateView):
             context["entitlement_formset"] = TierEntitlementFormSet(
                 instance=self.latest_version
             )
+
+        from .capabilities import get_capabilities_dict
+
+        context["capabilities_data"] = get_capabilities_dict()
+        context["has_entitlements"] = (
+            self.latest_version.entitlements.exists() if self.latest_version else False
+        )
         return context
 
     @transaction.atomic
@@ -1694,6 +1746,13 @@ class AddonDefinitionCreateView(AdministratorPermissionRequiredMixin, CreateView
     form_class = AddonDefinitionForm
     template_name = "eventyay_business/addons/form.html"
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        from .capabilities import get_capabilities_dict
+
+        context["capabilities_data"] = get_capabilities_dict()
+        return context
+
     def form_valid(self, form):
         self.object = form.save()
         messages.success(self.request, _("Add-on created successfully."))
@@ -1704,6 +1763,13 @@ class AddonDefinitionUpdateView(AdministratorPermissionRequiredMixin, UpdateView
     model = AddonDefinition
     form_class = AddonDefinitionForm
     template_name = "eventyay_business/addons/form.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        from .capabilities import get_capabilities_dict
+
+        context["capabilities_data"] = get_capabilities_dict()
+        return context
 
     def form_valid(self, form):
         self.object = form.save()

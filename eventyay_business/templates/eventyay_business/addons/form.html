@@ -1,6 +1,7 @@
 {% extends "pretixcontrol/admin/base.html" %}
 {% load i18n %}
 {% load bootstrap3 %}
+{% load static %}
 
 {% block title %}
     {% if object %}
@@ -32,4 +33,19 @@
             </a>
         </div>
     </form>
+
+    <datalist id="tier-common-currencies">
+        <option value="USD">USD - US Dollar</option>
+        <option value="EUR">EUR - Euro</option>
+        <option value="GBP">GBP - British Pound</option>
+        <option value="SGD">SGD - Singapore Dollar</option>
+        <option value="INR">INR - Indian Rupee</option>
+        <option value="AUD">AUD - Australian Dollar</option>
+        <option value="CAD">CAD - Canadian Dollar</option>
+        <option value="JPY">JPY - Japanese Yen</option>
+        <option value="CHF">CHF - Swiss Franc</option>
+    </datalist>
+
+    {{ capabilities_data|json_script:"capabilities-data" }}
+    <script type="module" src="{% static "eventyay_business/tier_form.js" %}"></script>
 {% endblock %}

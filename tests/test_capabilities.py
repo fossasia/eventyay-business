@@ -139,14 +139,24 @@ def test_register_entitlements_signal_receiver():
 
 def test_tier_entitlement_form_choices():
     form = TierEntitlementForm()
-    choices = dict(form.fields["capability"].widget.choices)
+
+    def get_choice_keys(widget_choices):
+        keys = set()
+        for item in widget_choices:
+            if isinstance(item[1], (list, tuple)):
+                keys.update(sub[0] for sub in item[1])
+            else:
+                keys.add(item[0])
+        return keys
+
+    choices = get_choice_keys(form.fields["capability"].widget.choices)
     assert "video.youtube" in choices
     assert "organizer.full_admins" in choices
 
     # Test preserving non-standard capability on existing instance
     existing = TierEntitlement(capability="legacy.unregistered_feature")
     edit_form = TierEntitlementForm(instance=existing)
-    edit_choices = dict(edit_form.fields["capability"].widget.choices)
+    edit_choices = get_choice_keys(edit_form.fields["capability"].widget.choices)
     assert "legacy.unregistered_feature" in edit_choices
 
 
@@ -225,3 +235,52 @@ def test_capability_audience_metadata():
             assert audience == "developer", f"{cap.name} should be developer audience"
         else:
             assert audience == "organizer", f"{cap.name} should be organizer audience"
+
+
+def test_grouped_capability_choices():
+    from eventyay_business.capabilities import get_grouped_capability_choices
+
+    grouped = get_grouped_capability_choices()
+    assert isinstance(grouped, list)
+    categories = [g[0] for g in grouped]
+    assert "Video" in categories
+    assert "Developer & API" in categories
+
+    video_group = next(g[1] for g in grouped if g[0] == "Video")
+    video_caps = [c[0] for c in video_group]
+    assert "video.youtube" in video_caps
+
+
+def test_tier_entitlement_form_auto_unit_and_boolean_normalization():
+    # 1. Boolean normalization
+    form_bool = TierEntitlementForm()
+    form_bool.cleaned_data = {"capability": "video.youtube", "value": "yes"}
+    cleaned = form_bool.clean()
+    assert cleaned["value"] == "true"
+    assert cleaned["unit"] == ""
+    assert cleaned["overage_allowed"] is False
+
+    form_bool_off = TierEntitlementForm()
+    form_bool_off.cleaned_data = {"capability": "video.youtube", "value": "disabled"}
+    cleaned_off = form_bool_off.clean()
+    assert cleaned_off["value"] == "false"
+
+    # 2. Quota auto unit
+    form_quota = TierEntitlementForm()
+    form_quota.cleaned_data = {
+        "capability": "video.jitsi.concurrent_rooms",
+        "value": "3",
+        "unit": "",
+    }
+    cleaned_quota = form_quota.clean()
+    assert cleaned_quota["unit"] == "rooms"
+
+    # 3. Percent auto unit
+    form_pct = TierEntitlementForm()
+    form_pct.cleaned_data = {
+        "capability": "commerce.platform_fee_percent",
+        "value": "2.5",
+        "unit": "",
+    }
+    cleaned_pct = form_pct.clean()
+    assert cleaned_pct["unit"] == "%"
