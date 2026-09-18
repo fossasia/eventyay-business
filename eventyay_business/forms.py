@@ -2,7 +2,7 @@ from django import forms
 from django.forms import inlineformset_factory
 from django.utils.translation import gettext_lazy as _
 
-from .capabilities import get_capability_choices, get_grouped_capability_choices
+from .capabilities import get_grouped_capability_choices
 from .models import (
     AddonDefinition,
     CountryFeeSetting,
