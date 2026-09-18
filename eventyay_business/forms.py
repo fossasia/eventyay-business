@@ -2,7 +2,7 @@ from django import forms
 from django.forms import inlineformset_factory
 from django.utils.translation import gettext_lazy as _
 
-from .capabilities import get_capability_choices
+from .capabilities import get_capability_choices, get_grouped_capability_choices
 from .models import (
     AddonDefinition,
     CountryFeeSetting,
@@ -84,60 +84,134 @@ class TierEntitlementForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        choices = [("", "---------")] + get_capability_choices()
+        grouped_choices = get_grouped_capability_choices()
+        choices = [("", "---------")] + grouped_choices
         if self.instance and self.instance.capability:
-            existing_caps = [c[0] for c in choices]
-            if self.instance.capability not in existing_caps:
-                choices.append((self.instance.capability, self.instance.capability))
-        self.fields["capability"].widget = forms.Select(choices=choices)
+            all_caps = []
+            for item in choices:
+                if isinstance(item[1], (list, tuple)):
+                    all_caps.extend(c[0] for c in item[1])
+                else:
+                    all_caps.append(item[0])
+            if self.instance.capability not in all_caps:
+                choices.append(
+                    (
+                        _("Custom / Other"),
+                        [(self.instance.capability, self.instance.capability)],
+                    )
+                )
+        self.fields["capability"].widget = forms.Select(
+            choices=choices,
+            attrs={"class": "form-control entitlement-capability-select"},
+        )
+        self.fields["value"].widget.attrs.update(
+            {
+                "class": "form-control entitlement-value-input",
+                "placeholder": _("Value / Allowance"),
+            }
+        )
+        self.fields["unit"].widget.attrs.update(
+            {
+                "class": "form-control entitlement-unit-input",
+                "placeholder": _("Unit (e.g. rooms, %)"),
+            }
+        )
+        self.fields["overage_allowed"].widget.attrs.update(
+            {"class": "entitlement-overage-toggle"}
+        )
+        self.fields["currency"].widget.attrs.update(
+            {
+                "class": "form-control text-uppercase",
+                "placeholder": "USD",
+                "maxlength": "3",
+            }
+        )
+        self.fields["overage_price"].widget.attrs.update(
+            {"class": "form-control", "placeholder": "0.00", "step": "0.01"}
+        )
+        self.fields["overage_block_size"].widget.attrs.update(
+            {"class": "form-control", "placeholder": "1"}
+        )
 
     def clean(self):
         cleaned_data = super().clean()
         capability_name = cleaned_data.get("capability")
         value = cleaned_data.get("value")
 
-        if capability_name and value:
+        if capability_name:
             from .capabilities import CapabilityValueType, get_capability
 
             cap = get_capability(capability_name)
             if cap:
                 if cap.value_type == CapabilityValueType.INTEGER:
-                    try:
-                        int(value)
-                    except ValueError:
-                        self.add_error(
-                            "value",
-                            forms.ValidationError(
-                                _("Value must be a valid whole number (integer).")
-                            ),
-                        )
+                    if value not in (None, ""):
+                        try:
+                            int(value)
+                        except ValueError:
+                            self.add_error(
+                                "value",
+                                forms.ValidationError(
+                                    _("Value must be a valid whole number (integer).")
+                                ),
+                            )
+                    # Auto-fill standard unit if not provided
+                    if not cleaned_data.get("unit") and cap.unit:
+                        cleaned_data["unit"] = cap.unit
+
                 elif cap.value_type in (
                     CapabilityValueType.DECIMAL,
                     CapabilityValueType.MONEY,
                 ):
-                    from decimal import Decimal, InvalidOperation
+                    if value not in (None, ""):
+                        from decimal import Decimal, InvalidOperation
 
-                    try:
-                        val = Decimal(value)
-                        if not val.is_finite():
-                            raise InvalidOperation
-                    except (InvalidOperation, TypeError):
-                        self.add_error(
-                            "value",
-                            forms.ValidationError(
-                                _("Value must be a valid number or decimal.")
-                            ),
-                        )
-                elif (
-                    cap.value_type == CapabilityValueType.BOOLEAN
-                    and value.lower() not in ("true", "false", "1", "0", "yes", "no")
-                ):
-                    self.add_error(
-                        "value",
-                        forms.ValidationError(
-                            _("Value must be a boolean (e.g. 1, 0, true, false).")
-                        ),
-                    )
+                        try:
+                            val = Decimal(value)
+                            if not val.is_finite():
+                                raise InvalidOperation
+                        except (InvalidOperation, TypeError):
+                            self.add_error(
+                                "value",
+                                forms.ValidationError(
+                                    _("Value must be a valid number or decimal.")
+                                ),
+                            )
+                    if not cleaned_data.get("unit") and cap.unit:
+                        cleaned_data["unit"] = cap.unit
+
+                elif cap.value_type == CapabilityValueType.BOOLEAN:
+                    if value not in (None, ""):
+                        val_str = str(value).strip().lower()
+                        if val_str in ("true", "1", "yes", "included", "enabled"):
+                            cleaned_data["value"] = "true"
+                        elif val_str in (
+                            "false",
+                            "0",
+                            "no",
+                            "not included",
+                            "disabled",
+                        ):
+                            cleaned_data["value"] = "false"
+                        else:
+                            self.add_error(
+                                "value",
+                                forms.ValidationError(
+                                    _(
+                                        "Value must be a boolean (e.g. true, false, included, disabled)."
+                                    )
+                                ),
+                            )
+                    cleaned_data["unit"] = ""
+                    cleaned_data["overage_allowed"] = False
+                    cleaned_data["overage_price"] = None
+                    cleaned_data["currency"] = ""
+                    cleaned_data["overage_block_size"] = None
+
+        if not cleaned_data.get("overage_allowed"):
+            cleaned_data["overage_price"] = None
+            cleaned_data["currency"] = ""
+            cleaned_data["overage_block_size"] = None
+
         return cleaned_data
 
     def clean_currency(self):
@@ -155,6 +229,30 @@ class TierPriceForm(forms.ModelForm):
     class Meta:
         model = TierPrice
         fields = ["billing_interval", "currency", "amount", "stripe_price_id", "active"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["billing_interval"].widget.attrs.update({"class": "form-control"})
+        self.fields["currency"].widget.attrs.update(
+            {
+                "class": "form-control text-uppercase",
+                "placeholder": "USD",
+                "maxlength": "3",
+                "list": "tier-common-currencies",
+            }
+        )
+        self.fields["amount"].widget.attrs.update(
+            {"class": "form-control", "placeholder": "0.00", "step": "0.01"}
+        )
+        self.fields["stripe_price_id"].widget.attrs.update(
+            {"class": "form-control", "placeholder": "price_1..."}
+        )
+        if not self.instance.pk and not self.initial.get("currency"):
+            from django.conf import settings
+
+            self.fields["currency"].initial = getattr(
+                settings, "DEFAULT_CURRENCY", "USD"
+            )
 
     def clean_currency(self):
         currency = (self.cleaned_data.get("currency") or "").strip().upper()

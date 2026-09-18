@@ -2,6 +2,7 @@
 {% load i18n %}
 {% load bootstrap3 %}
 {% load formset_tags %}
+{% load static %}
 
 {% block title %}
     {% if object %}
@@ -19,6 +20,19 @@
             {% trans "Create Tier" %}
         {% endif %}
     </h1>
+
+    <datalist id="tier-common-currencies">
+        <option value="USD">USD - United States Dollar</option>
+        <option value="EUR">EUR - Euro</option>
+        <option value="GBP">GBP - British Pound</option>
+        <option value="SGD">SGD - Singapore Dollar</option>
+        <option value="INR">INR - Indian Rupee</option>
+        <option value="AUD">AUD - Australian Dollar</option>
+        <option value="CAD">CAD - Canadian Dollar</option>
+        <option value="JPY">JPY - Japanese Yen</option>
+        <option value="CHF">CHF - Swiss Franc</option>
+    </datalist>
+
     <form action="" method="post" class="form-horizontal">
         {% csrf_token %}
         {% bootstrap_form_errors form %}
@@ -43,24 +57,56 @@
         {% if price_formset %}
         <fieldset>
             <legend>{% trans "Prices" %}</legend>
+            <p class="text-muted small">
+                {% trans "Configure pricing intervals for this tier. Subscriptions can be billed monthly or yearly in supported currencies." %}
+            </p>
             <div class="formset" data-formset data-formset-prefix="{{ price_formset.prefix }}">
                 {{ price_formset.management_form }}
                 {% bootstrap_formset_errors price_formset %}
+
+                <div class="hidden-xs" style="font-weight: 600; color: #555; padding: 6px 15px; margin-bottom: 5px; background: #f5f5f5; border-radius: 4px;">
+                    <div class="row">
+                        <div class="col-sm-3">{% trans "Billing Interval" %}</div>
+                        <div class="col-sm-2">{% trans "Currency" %}</div>
+                        <div class="col-sm-2">{% trans "Amount" %}</div>
+                        <div class="col-sm-3">{% trans "Stripe Price ID" %}</div>
+                        <div class="col-sm-1">{% trans "Active" %}</div>
+                        <div class="col-sm-1 text-right">{% trans "Action" %}</div>
+                    </div>
+                </div>
+
                 <div data-formset-body>
                     {% for p_form in price_formset %}
-                        <div class="panel panel-default" data-formset-form>
-                            <div class="panel-body">
-                                <div class="row">
-                                    <div class="col-sm-2">{% bootstrap_field p_form.billing_interval layout='inline' %}</div>
-                                    <div class="col-sm-2">{% bootstrap_field p_form.currency layout='inline' %}</div>
-                                    <div class="col-sm-2">{% bootstrap_field p_form.amount layout='inline' %}</div>
-                                    <div class="col-sm-3">{% bootstrap_field p_form.stripe_price_id layout='inline' %}</div>
-                                    <div class="col-sm-2">{% bootstrap_field p_form.active layout='inline' %}</div>
-                                    <div class="col-sm-1 text-right">
+                        <div class="panel panel-default" data-formset-form style="margin-bottom: 8px;">
+                            <div class="panel-body" style="padding: 10px 15px;">
+                                <div class="row" style="display: flex; align-items: center; flex-wrap: wrap;">
+                                    <div class="col-sm-3 col-xs-12">
+                                        <label class="visible-xs text-muted small">{% trans "Billing Interval" %}</label>
+                                        {% bootstrap_field p_form.billing_interval layout='inline' %}
+                                    </div>
+                                    <div class="col-sm-2 col-xs-12">
+                                        <label class="visible-xs text-muted small">{% trans "Currency" %}</label>
+                                        {% bootstrap_field p_form.currency layout='inline' %}
+                                    </div>
+                                    <div class="col-sm-2 col-xs-12">
+                                        <label class="visible-xs text-muted small">{% trans "Amount" %}</label>
+                                        {% bootstrap_field p_form.amount layout='inline' %}
+                                    </div>
+                                    <div class="col-sm-3 col-xs-12">
+                                        <label class="visible-xs text-muted small">{% trans "Stripe Price ID" %}</label>
+                                        {% bootstrap_field p_form.stripe_price_id layout='inline' %}
+                                    </div>
+                                    <div class="col-sm-1 col-xs-6">
+                                        <label class="visible-xs text-muted small">{% trans "Active" %}</label>
+                                        <div style="padding-top: 5px;">
+                                            {% bootstrap_field p_form.active layout='inline' %}
+                                        </div>
+                                    </div>
+                                    <div class="col-sm-1 col-xs-6 text-right">
                                         {% if p_form.instance.pk %}
                                             {% bootstrap_field p_form.DELETE layout='inline' %}
                                         {% else %}
-                                            <button type="button" class="btn btn-danger" data-formset-delete-button aria-label="{% trans 'Delete Price' %}">
+                                            <button type="button" class="btn btn-danger btn-sm" data-formset-delete-button aria-label="{% trans 'Delete Price' %}">
                                                 <i class="fa fa-trash"></i>
                                             </button>
                                         {% endif %}
@@ -73,18 +119,36 @@
                         </div>
                     {% endfor %}
                 </div>
+
                 <script type="form-template" data-formset-empty-form>
                     {% escapescript %}
-                        <div class="panel panel-default" data-formset-form>
-                            <div class="panel-body">
-                                <div class="row">
-                                    <div class="col-sm-2">{% bootstrap_field price_formset.empty_form.billing_interval layout='inline' %}</div>
-                                    <div class="col-sm-2">{% bootstrap_field price_formset.empty_form.currency layout='inline' %}</div>
-                                    <div class="col-sm-2">{% bootstrap_field price_formset.empty_form.amount layout='inline' %}</div>
-                                    <div class="col-sm-3">{% bootstrap_field price_formset.empty_form.stripe_price_id layout='inline' %}</div>
-                                    <div class="col-sm-2">{% bootstrap_field price_formset.empty_form.active layout='inline' %}</div>
-                                    <div class="col-sm-1 text-right">
-                                        <button type="button" class="btn btn-danger" data-formset-delete-button aria-label="{% trans 'Delete Price' %}">
+                        <div class="panel panel-default" data-formset-form style="margin-bottom: 8px;">
+                            <div class="panel-body" style="padding: 10px 15px;">
+                                <div class="row" style="display: flex; align-items: center; flex-wrap: wrap;">
+                                    <div class="col-sm-3 col-xs-12">
+                                        <label class="visible-xs text-muted small">{% trans "Billing Interval" %}</label>
+                                        {% bootstrap_field price_formset.empty_form.billing_interval layout='inline' %}
+                                    </div>
+                                    <div class="col-sm-2 col-xs-12">
+                                        <label class="visible-xs text-muted small">{% trans "Currency" %}</label>
+                                        {% bootstrap_field price_formset.empty_form.currency layout='inline' %}
+                                    </div>
+                                    <div class="col-sm-2 col-xs-12">
+                                        <label class="visible-xs text-muted small">{% trans "Amount" %}</label>
+                                        {% bootstrap_field price_formset.empty_form.amount layout='inline' %}
+                                    </div>
+                                    <div class="col-sm-3 col-xs-12">
+                                        <label class="visible-xs text-muted small">{% trans "Stripe Price ID" %}</label>
+                                        {% bootstrap_field price_formset.empty_form.stripe_price_id layout='inline' %}
+                                    </div>
+                                    <div class="col-sm-1 col-xs-6">
+                                        <label class="visible-xs text-muted small">{% trans "Active" %}</label>
+                                        <div style="padding-top: 5px;">
+                                            {% bootstrap_field price_formset.empty_form.active layout='inline' %}
+                                        </div>
+                                    </div>
+                                    <div class="col-sm-1 col-xs-6 text-right">
+                                        <button type="button" class="btn btn-danger btn-sm" data-formset-delete-button aria-label="{% trans 'Delete Price' %}">
                                             <i class="fa fa-trash"></i>
                                         </button>
                                     </div>
@@ -105,32 +169,86 @@
 
         {% if entitlement_formset %}
         <fieldset>
-            <legend>{% trans "Entitlements" %}</legend>
+            <div class="pull-right">
+                <button type="submit" name="populate_standard" value="1" class="btn btn-default btn-xs" style="margin-top: 25px;">
+                    <i class="fa fa-magic"></i> {% trans "Populate Standard Capabilities" %}
+                </button>
+            </div>
+            <legend>{% trans "Entitlements & Feature Quotas" %}</legend>
+            <p class="text-muted small">
+                {% trans "Define feature availability and usage allowances included in this tier version. Features adapt automatically based on type (Included toggles for features, numeric quotas for limits, and percentage fees)." %}
+            </p>
             <div class="formset" data-formset data-formset-prefix="{{ entitlement_formset.prefix }}">
                 {{ entitlement_formset.management_form }}
                 {% bootstrap_formset_errors entitlement_formset %}
+
+                <div class="hidden-xs" style="font-weight: 600; color: #555; padding: 6px 15px; margin-bottom: 5px; background: #f5f5f5; border-radius: 4px;">
+                    <div class="row">
+                        <div class="col-sm-4">{% trans "Capability / Feature" %}</div>
+                        <div class="col-sm-3">{% trans "Value / Allowance" %}</div>
+                        <div class="col-sm-2">{% trans "Unit" %}</div>
+                        <div class="col-sm-2">{% trans "Overage" %}</div>
+                        <div class="col-sm-1 text-right">{% trans "Action" %}</div>
+                    </div>
+                </div>
+
                 <div data-formset-body>
                     {% for e_form in entitlement_formset %}
-                        <div class="panel panel-default" data-formset-form>
-                            <div class="panel-body">
-                                <div class="row">
-                                    <div class="col-sm-2">{% bootstrap_field e_form.capability layout='inline' %}</div>
-                                    <div class="col-sm-1">{% bootstrap_field e_form.value layout='inline' %}</div>
-                                    <div class="col-sm-1">{% bootstrap_field e_form.unit layout='inline' %}</div>
-                                    <div class="col-sm-2">{% bootstrap_field e_form.overage_allowed layout='inline' %}</div>
-                                    <div class="col-sm-2">{% bootstrap_field e_form.currency layout='inline' %}</div>
-                                    <div class="col-sm-1">{% bootstrap_field e_form.overage_price layout='inline' %}</div>
-                                    <div class="col-sm-2">{% bootstrap_field e_form.overage_block_size layout='inline' %}</div>
-                                    <div class="col-sm-1 text-right">
+                        <div class="panel panel-default" data-formset-form style="margin-bottom: 8px;">
+                            <div class="panel-body" style="padding: 12px 15px;">
+                                <div class="row" style="display: flex; align-items: flex-start; flex-wrap: wrap;">
+                                    <div class="col-sm-4 col-xs-12">
+                                        <label class="visible-xs text-muted small">{% trans "Capability / Feature" %}</label>
+                                        {% bootstrap_field e_form.capability layout='inline' %}
+                                    </div>
+                                    <div class="col-sm-3 col-xs-12" data-col-value>
+                                        <label class="visible-xs text-muted small">{% trans "Value / Allowance" %}</label>
+                                        {% bootstrap_field e_form.value layout='inline' %}
+                                    </div>
+                                    <div class="col-sm-2 col-xs-12" data-col-unit>
+                                        <label class="visible-xs text-muted small">{% trans "Unit" %}</label>
+                                        {% bootstrap_field e_form.unit layout='inline' %}
+                                    </div>
+                                    <div class="col-sm-2 col-xs-6" data-col-overage>
+                                        <label class="visible-xs text-muted small">{% trans "Overage Allowed" %}</label>
+                                        <div style="padding-top: 5px;">
+                                            <label style="font-weight: normal; cursor: pointer;">
+                                                {{ e_form.overage_allowed }} {% trans "Allow overage" %}
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div class="col-sm-1 col-xs-6 text-right">
                                         {% if e_form.instance.pk %}
                                             {% bootstrap_field e_form.DELETE layout='inline' %}
                                         {% else %}
-                                            <button type="button" class="btn btn-danger" data-formset-delete-button aria-label="{% trans 'Delete Entitlement' %}">
+                                            <button type="button" class="btn btn-danger btn-sm" data-formset-delete-button aria-label="{% trans 'Delete Entitlement' %}">
                                                 <i class="fa fa-trash"></i>
                                             </button>
                                         {% endif %}
                                     </div>
                                 </div>
+
+                                <!-- Collapsible Overage Settings Block -->
+                                <div data-overage-fields class="well well-sm" style="margin-top: 10px; margin-bottom: 0; background: #fafafa; border: 1px solid #e3e3e3; display: none;">
+                                    <div class="row">
+                                        <div class="col-sm-12" style="font-weight: 600; margin-bottom: 6px; color: #444;">
+                                            <i class="fa fa-sliders"></i> {% trans "Overage Pricing Configuration" %}
+                                        </div>
+                                        <div class="col-sm-4 col-xs-12">
+                                            <label class="control-label small">{% trans "Price per Block" %}</label>
+                                            {% bootstrap_field e_form.overage_price layout='inline' %}
+                                        </div>
+                                        <div class="col-sm-4 col-xs-12">
+                                            <label class="control-label small">{% trans "Currency" %}</label>
+                                            {% bootstrap_field e_form.currency layout='inline' %}
+                                        </div>
+                                        <div class="col-sm-4 col-xs-12">
+                                            <label class="control-label small">{% trans "Block Size (Quantity per charge)" %}</label>
+                                            {% bootstrap_field e_form.overage_block_size layout='inline' %}
+                                        </div>
+                                    </div>
+                                </div>
+
                                 {% for hidden in e_form.hidden_fields %}
                                     {{ hidden }}
                                 {% endfor %}
@@ -138,24 +256,59 @@
                         </div>
                     {% endfor %}
                 </div>
+
                 <script type="form-template" data-formset-empty-form>
                     {% escapescript %}
-                        <div class="panel panel-default" data-formset-form>
-                            <div class="panel-body">
-                                <div class="row">
-                                    <div class="col-sm-2">{% bootstrap_field entitlement_formset.empty_form.capability layout='inline' %}</div>
-                                    <div class="col-sm-1">{% bootstrap_field entitlement_formset.empty_form.value layout='inline' %}</div>
-                                    <div class="col-sm-1">{% bootstrap_field entitlement_formset.empty_form.unit layout='inline' %}</div>
-                                    <div class="col-sm-2">{% bootstrap_field entitlement_formset.empty_form.overage_allowed layout='inline' %}</div>
-                                    <div class="col-sm-2">{% bootstrap_field entitlement_formset.empty_form.currency layout='inline' %}</div>
-                                    <div class="col-sm-1">{% bootstrap_field entitlement_formset.empty_form.overage_price layout='inline' %}</div>
-                                    <div class="col-sm-2">{% bootstrap_field entitlement_formset.empty_form.overage_block_size layout='inline' %}</div>
-                                    <div class="col-sm-1 text-right">
-                                        <button type="button" class="btn btn-danger" data-formset-delete-button aria-label="{% trans 'Delete Entitlement' %}">
+                        <div class="panel panel-default" data-formset-form style="margin-bottom: 8px;">
+                            <div class="panel-body" style="padding: 12px 15px;">
+                                <div class="row" style="display: flex; align-items: flex-start; flex-wrap: wrap;">
+                                    <div class="col-sm-4 col-xs-12">
+                                        <label class="visible-xs text-muted small">{% trans "Capability / Feature" %}</label>
+                                        {% bootstrap_field entitlement_formset.empty_form.capability layout='inline' %}
+                                    </div>
+                                    <div class="col-sm-3 col-xs-12" data-col-value>
+                                        <label class="visible-xs text-muted small">{% trans "Value / Allowance" %}</label>
+                                        {% bootstrap_field entitlement_formset.empty_form.value layout='inline' %}
+                                    </div>
+                                    <div class="col-sm-2 col-xs-12" data-col-unit>
+                                        <label class="visible-xs text-muted small">{% trans "Unit" %}</label>
+                                        {% bootstrap_field entitlement_formset.empty_form.unit layout='inline' %}
+                                    </div>
+                                    <div class="col-sm-2 col-xs-6" data-col-overage>
+                                        <label class="visible-xs text-muted small">{% trans "Overage Allowed" %}</label>
+                                        <div style="padding-top: 5px;">
+                                            <label style="font-weight: normal; cursor: pointer;">
+                                                {{ entitlement_formset.empty_form.overage_allowed }} {% trans "Allow overage" %}
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div class="col-sm-1 col-xs-6 text-right">
+                                        <button type="button" class="btn btn-danger btn-sm" data-formset-delete-button aria-label="{% trans 'Delete Entitlement' %}">
                                             <i class="fa fa-trash"></i>
                                         </button>
                                     </div>
                                 </div>
+
+                                <div data-overage-fields class="well well-sm" style="margin-top: 10px; margin-bottom: 0; background: #fafafa; border: 1px solid #e3e3e3; display: none;">
+                                    <div class="row">
+                                        <div class="col-sm-12" style="font-weight: 600; margin-bottom: 6px; color: #444;">
+                                            <i class="fa fa-sliders"></i> {% trans "Overage Pricing Configuration" %}
+                                        </div>
+                                        <div class="col-sm-4 col-xs-12">
+                                            <label class="control-label small">{% trans "Price per Block" %}</label>
+                                            {% bootstrap_field entitlement_formset.empty_form.overage_price layout='inline' %}
+                                        </div>
+                                        <div class="col-sm-4 col-xs-12">
+                                            <label class="control-label small">{% trans "Currency" %}</label>
+                                            {% bootstrap_field entitlement_formset.empty_form.currency layout='inline' %}
+                                        </div>
+                                        <div class="col-sm-4 col-xs-12">
+                                            <label class="control-label small">{% trans "Block Size (Quantity per charge)" %}</label>
+                                            {% bootstrap_field entitlement_formset.empty_form.overage_block_size layout='inline' %}
+                                        </div>
+                                    </div>
+                                </div>
+
                                 {% for hidden in entitlement_formset.empty_form.hidden_fields %}
                                     {{ hidden }}
                                 {% endfor %}
@@ -163,6 +316,7 @@
                         </div>
                     {% endescapescript %}
                 </script>
+
                 <button type="button" class="btn btn-default" data-formset-add>
                     <i class="fa fa-plus"></i> {% trans "Add Entitlement" %}
                 </button>
@@ -179,4 +333,9 @@
             </a>
         </div>
     </form>
+
+    {% if capabilities_data %}
+        {{ capabilities_data|json_script:"capabilities-data" }}
+        <script type="module" src="{% static 'eventyay_business/tier_form.js' %}"></script>
+    {% endif %}
 {% endblock %}

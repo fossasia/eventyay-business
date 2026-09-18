@@ -65,6 +65,8 @@ def test_tier_create_view(business_admin_client):
     version = tier.versions.first()
     assert version.version == 1
     assert version.published_at is None
+    assert version.entitlements.count() > 0
+    assert version.entitlements.filter(capability="video.youtube").exists()
 
 
 @pytest.mark.django_db
@@ -494,3 +496,29 @@ def test_organizer_plan_upgrade_view_audience_split(business_admin_client):
         "Developer &amp; API Access" in content or "Developer & API Access" in content
     )
     assert "Standard Platform Limits" in content
+
+
+@pytest.mark.django_db
+def test_populate_standard_entitlements_action(business_admin_client, sample_tier):
+    v1 = sample_tier.versions.first()
+    # Clear entitlements initially
+    v1.entitlements.all().delete()
+    assert v1.entitlements.count() == 0
+
+    url = reverse("plugins:eventyay_business:tiers.edit", kwargs={"pk": sample_tier.pk})
+    response = business_admin_client.post(url, {"populate_standard": "1"})
+    assert response.status_code == 302
+
+    v1.refresh_from_db()
+    assert v1.entitlements.count() > 0
+    assert v1.entitlements.filter(capability="commerce.platform_fee_percent").exists()
+
+
+@pytest.mark.django_db
+def test_tier_update_view_context_capabilities(business_admin_client, sample_tier):
+    url = reverse("plugins:eventyay_business:tiers.edit", kwargs={"pk": sample_tier.pk})
+    response = business_admin_client.get(url)
+    assert response.status_code == 200
+    assert "capabilities_data" in response.context_data
+    assert "video.youtube" in response.context_data["capabilities_data"]
+    assert "has_entitlements" in response.context_data

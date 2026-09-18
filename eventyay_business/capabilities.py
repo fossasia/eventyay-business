@@ -97,6 +97,21 @@ class CapabilityRegistry:
             for cap in sorted(self._capabilities.values(), key=lambda c: c.name)
         ]
 
+    def grouped_choices(self) -> list[tuple[str, list[tuple[str, str]]]]:
+        """
+        Returns choices grouped by category for Django select optgroups.
+        Format: [('Category', [(value, label), ...]), ...]
+        """
+        grouped = self.by_category()
+        result = []
+        for category in sorted(grouped.keys()):
+            items = [
+                (cap.name, f"{cap.label} ({cap.name})")
+                for cap in sorted(grouped[category], key=lambda c: str(c.label))
+            ]
+            result.append((category, items))
+        return result
+
     def as_dict(self) -> dict[str, dict[str, Any]]:
         """
         Serialize all registered capabilities into a dict keyed by capability name.
@@ -286,3 +301,11 @@ def get_all_capabilities() -> list[Capability]:
 
 def get_capability_choices() -> list[tuple[str, str]]:
     return default_registry.choices()
+
+
+def get_grouped_capability_choices() -> list[tuple[str, list[tuple[str, str]]]]:
+    return default_registry.grouped_choices()
+
+
+def get_capabilities_dict() -> dict[str, dict[str, Any]]:
+    return default_registry.as_dict()

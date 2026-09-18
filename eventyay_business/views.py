@@ -96,13 +96,16 @@ class TierCreateView(AdministratorPermissionRequiredMixin, CreateView):
     @transaction.atomic
     def form_valid(self, form):
         self.object = form.save()
-        # Create the initial draft TierVersion
-        TierVersion.objects.create(
+        # Create initial draft TierVersion with standard capabilities seeded
+        version = TierVersion.objects.create(
             tier=self.object, version=1, created_by=self.request.user
         )
+        from .services import seed_standard_entitlements_for_version
+
+        seed_standard_entitlements_for_version(version)
         messages.success(
             self.request,
-            _("Tier created successfully. You can now add prices and entitlements."),
+            _("Tier created successfully with standard capabilities."),
         )
         return redirect(
             reverse(
@@ -142,6 +145,25 @@ class TierUpdateView(AdministratorPermissionRequiredMixin, UpdateView):
 
         return super().dispatch(request, *args, **kwargs)
 
+    def post(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        self.latest_version = self.object.versions.first()
+        if "populate_standard" in request.POST and self.latest_version:
+            from .services import seed_standard_entitlements_for_version
+
+            seed_standard_entitlements_for_version(self.latest_version)
+            messages.success(
+                request,
+                _("Standard capabilities have been populated for this tier version."),
+            )
+            return redirect(
+                reverse(
+                    "plugins:eventyay_business:tiers.edit",
+                    kwargs={"pk": self.object.pk},
+                )
+            )
+        return super().post(request, *args, **kwargs)
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         if self.request.POST:
@@ -160,6 +182,13 @@ class TierUpdateView(AdministratorPermissionRequiredMixin, UpdateView):
             context["entitlement_formset"] = TierEntitlementFormSet(
                 instance=self.latest_version
             )
+
+        from .capabilities import get_capabilities_dict
+
+        context["capabilities_data"] = get_capabilities_dict()
+        context["has_entitlements"] = (
+            self.latest_version.entitlements.exists() if self.latest_version else False
+        )
         return context
 
     @transaction.atomic
