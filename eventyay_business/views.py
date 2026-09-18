@@ -35,7 +35,6 @@ from .forms import (
     CountryFeeSettingForm,
     EventAddonForm,
     EventAddonPurchaseForm,
-    GlobalFeeSettingsForm,
     OrganizerAddonForm,
     OrganizerAddonPurchaseForm,
     SubscriptionAdminForm,
@@ -1971,26 +1970,10 @@ class FeeSettingsView(AdministratorPermissionRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        if "global_form" not in ctx:
-            ctx["global_form"] = GlobalFeeSettingsForm()
         ctx["country_settings"] = CountryFeeSetting.objects.all().order_by(
             "country", "currency"
         )
         return ctx
-
-    def post(self, request, *args, **kwargs):
-        global_form = GlobalFeeSettingsForm(request.POST)
-        if global_form.is_valid():
-            global_form.save()
-            messages.success(request, _("Global fee settings have been saved."))
-            return redirect(reverse("plugins:eventyay_business:fees.list"))
-        else:
-            messages.error(
-                request, _("Your changes have not been saved, see below for errors.")
-            )
-            return self.render_to_response(
-                self.get_context_data(global_form=global_form)
-            )
 
 
 class CountryFeeSettingCreateView(AdministratorPermissionRequiredMixin, CreateView):

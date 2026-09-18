@@ -1,4 +1,5 @@
 import logging
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import IntegrityError, transaction
 from django.utils.timezone import now
 
@@ -275,7 +276,7 @@ def get_event_country(event=None, order=None):
                     c_str = str(country).strip().upper()
                     if len(c_str) == 2 and c_str.isalpha():
                         return c_str
-        except Exception:
+        except (AttributeError, ObjectDoesNotExist):
             pass
     if event and hasattr(event, "settings"):
         country = event.settings.get(

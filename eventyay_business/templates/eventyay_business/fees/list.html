@@ -7,25 +7,10 @@
 {% block content %}
     <h1>{% trans "Fee Settings" %}</h1>
 
-    <div class="row">
-        <div class="col-md-12">
-            <div class="panel panel-default">
-                <div class="panel-heading">
-                    <h3 class="panel-title">{% trans "Global Fee Settings" %}</h3>
-                </div>
-                <div class="panel-body">
-                    <form method="post" class="form-horizontal">
-                        {% csrf_token %}
-                        {% bootstrap_form global_form layout='horizontal' %}
-                        <div class="form-group submit-group">
-                            <button type="submit" name="save_global" class="btn btn-primary btn-save">
-                                <i class="fa fa-save"></i> {% trans "Save Global Fee Settings" %}
-                            </button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        </div>
+    <div class="alert alert-info">
+        {% trans "Global default fee percentage and maximum fee are configured in" %}
+        <a href="{% url "eventyay_admin:admin.global.business" %}">{% trans "Business Settings" %}</a>.
+        {% trans "Use this page to set country-specific overrides." %}
     </div>
 
     <div class="row">

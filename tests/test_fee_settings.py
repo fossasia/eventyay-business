@@ -7,7 +7,7 @@ from eventyay.base.models import Event, Organizer, User
 from eventyay.base.settings import GlobalSettingsObject
 from unittest.mock import MagicMock
 
-from eventyay_business.forms import CountryFeeSettingForm, GlobalFeeSettingsForm
+from eventyay_business.forms import CountryFeeSettingForm
 from eventyay_business.models import (
     CountryFeeSetting,
     Subscription,
@@ -148,23 +148,6 @@ class TestFeeSettingsForms:
         )
         assert not form.is_valid()
         assert "currency" in form.errors
-
-    def test_global_fee_settings_form_save(self):
-        gs = GlobalSettingsObject()
-        gs.settings.set("ticket_fee_percentage", "2.50")
-        gs.settings.set("ticket_fee_maximum", "100.00")
-
-        form = GlobalFeeSettingsForm(
-            data={
-                "ticket_fee_percentage": "3.50",
-                "ticket_fee_maximum": "150.00",
-            }
-        )
-        assert form.is_valid()
-        form.save()
-
-        assert gs.settings.get("ticket_fee_percentage") == "3.50"
-        assert gs.settings.get("ticket_fee_maximum") == "150.00"
 
 
 @pytest.mark.django_db
@@ -327,7 +310,6 @@ class TestFeeSettingsViews:
         url = reverse("plugins:eventyay_business:fees.list")
         response = staff_client.get(url)
         assert response.status_code == 200
-        assert "global_form" in response.context_data
         assert len(response.context_data["country_settings"]) == 1
 
     def test_fee_settings_create_view_admin(self, staff_client):
