@@ -73,6 +73,7 @@ from .signals import (
     subscription_purchased,
 )
 from .stripe_service import (
+    _stripe_call,
     create_addon_checkout_session,
     create_subscription_checkout_session,
     get_stripe_secret_key_safe,
@@ -795,14 +796,18 @@ class OrganizerPlanUpgradeView(
                         stripe.api_key = secret_key
                         if amount == 0:
                             # Paid-to-Free downgrade
-                            stripe.Subscription.modify(
-                                active_sub.stripe_subscription_id,
-                                cancel_at_period_end=True,
+                            _stripe_call(
+                                lambda: stripe.Subscription.modify(
+                                    active_sub.stripe_subscription_id,
+                                    cancel_at_period_end=True,
+                                )
                             )
                         else:
                             # Paid-to-Paid downgrade
-                            stripe_sub = stripe.Subscription.retrieve(
-                                active_sub.stripe_subscription_id
+                            stripe_sub = _stripe_call(
+                                lambda: stripe.Subscription.retrieve(
+                                    active_sub.stripe_subscription_id
+                                )
                             )
                             items = (stripe_sub.get("items") or {}).get("data", [])
                             target_price_id = (
@@ -814,13 +819,18 @@ class OrganizerPlanUpgradeView(
                                 else None
                             )
                             if items and target_price_id:
-                                stripe.Subscription.modify(
-                                    active_sub.stripe_subscription_id,
-                                    cancel_at_period_end=False,
-                                    proration_behavior="none",
-                                    items=[
-                                        {"id": items[0]["id"], "price": target_price_id}
-                                    ],
+                                _stripe_call(
+                                    lambda: stripe.Subscription.modify(
+                                        active_sub.stripe_subscription_id,
+                                        cancel_at_period_end=False,
+                                        proration_behavior="none",
+                                        items=[
+                                            {
+                                                "id": items[0]["id"],
+                                                "price": target_price_id,
+                                            }
+                                        ],
+                                    )
                                 )
                 except Exception as exc:
                     logger.error(
@@ -1019,9 +1029,11 @@ class OrganizerPlanCancelDowngradeView(
                 secret_key = get_stripe_secret_key_safe()
                 if secret_key:
                     stripe.api_key = secret_key
-                    stripe.Subscription.modify(
-                        active_sub.stripe_subscription_id,
-                        cancel_at_period_end=False,
+                    _stripe_call(
+                        lambda: stripe.Subscription.modify(
+                            active_sub.stripe_subscription_id,
+                            cancel_at_period_end=False,
+                        )
                     )
             except Exception as exc:
                 logger.error("Failed to cancel Stripe scheduled downgrade: %s", exc)
@@ -1158,9 +1170,11 @@ class OrganizerPlanCancelView(
                 secret_key = get_stripe_secret_key_safe()
                 if secret_key:
                     stripe.api_key = secret_key
-                    stripe_sub = stripe.Subscription.modify(
-                        active_sub.stripe_subscription_id,
-                        cancel_at_period_end=True,
+                    stripe_sub = _stripe_call(
+                        lambda: stripe.Subscription.modify(
+                            active_sub.stripe_subscription_id,
+                            cancel_at_period_end=True,
+                        )
                     )
                     period_end_ts = getattr(stripe_sub, "current_period_end", None)
                     if period_end_ts:
