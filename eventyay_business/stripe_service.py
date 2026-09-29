@@ -426,6 +426,15 @@ def process_webhook_event(event_type: str, data_object: dict):
     """
     Process incoming verified Stripe webhook event.
     """
+    from .operational_log import OUTCOME_SUCCESS, log_operation
+
+    log_operation(
+        "webhook.process",
+        OUTCOME_SUCCESS,
+        backend="stripe",
+        payment_provider="stripe",
+        error_code=event_type if isinstance(event_type, str) else None,
+    )
     if event_type == "checkout.session.completed":
         return process_checkout_session_completed(data_object)
     elif event_type in (
