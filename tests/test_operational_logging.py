@@ -1,7 +1,6 @@
 """Privacy and fail-open behavior of plugin operational logs."""
 
 import logging
-
 import pytest
 
 from eventyay_business.operational_log import (
@@ -93,15 +92,14 @@ def test_logged_request_records_status_without_url(captured, monkeypatch):
     class Response:
         status_code = 201
 
-    def fake_request(method, url, **kwargs):
-        assert method == "POST"
+    def fake_post(url, **kwargs):
         assert url == "https://example.invalid/secret"
         assert kwargs["json"]["token"] == "raw"
         return Response()
 
     import requests
 
-    monkeypatch.setattr(requests, "request", fake_request)
+    monkeypatch.setattr(requests, "post", fake_post)
     logged_request(
         "paypal", "POST", "https://example.invalid/secret", json={"token": "raw"}
     )

@@ -1,5 +1,4 @@
 import logging
-
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.http import HttpResponse, HttpResponseBadRequest
@@ -52,13 +51,26 @@ def stripe_business_webhook_view(request):
         event = stripe.Webhook.construct_event(payload, sig_header, webhook_secret)
     except ValueError:
         logger.error("Invalid payload in Stripe webhook")
-        log_operation("webhook.inbound", OUTCOME_FAILURE, backend="stripe", payment_provider="stripe", error_code="invalid_payload", status=400)
+        log_operation(
+            "webhook.inbound",
+            OUTCOME_FAILURE,
+            backend="stripe",
+            payment_provider="stripe",
+            error_code="invalid_payload",
+            status=400,
+        )
         return HttpResponseBadRequest("Invalid payload")
     except stripe.error.SignatureVerificationError:
         logger.error("Invalid signature in Stripe webhook")
-        log_operation("webhook.inbound", OUTCOME_FAILURE, backend="stripe", payment_provider="stripe", error_code="signature_invalid", status=400)
+        log_operation(
+            "webhook.inbound",
+            OUTCOME_FAILURE,
+            backend="stripe",
+            payment_provider="stripe",
+            error_code="signature_invalid",
+            status=400,
+        )
         return HttpResponseBadRequest("Invalid signature")
-    log_operation("webhook.inbound", OUTCOME_SUCCESS, backend="stripe", payment_provider="stripe", status=200)
 
     try:
         process_webhook_event(event.type, event.data.object)
@@ -66,8 +78,23 @@ def stripe_business_webhook_view(request):
         logger.exception(
             "Error processing Stripe webhook event %s: %s", event.type, exc
         )
+        log_operation(
+            "webhook.inbound",
+            OUTCOME_FAILURE,
+            backend="stripe",
+            payment_provider="stripe",
+            error_code="processing_error",
+            status=500,
+        )
         return HttpResponse("Error processing event", status=500)
 
+    log_operation(
+        "webhook.inbound",
+        OUTCOME_SUCCESS,
+        backend="stripe",
+        payment_provider="stripe",
+        status=200,
+    )
     return HttpResponse("Success", status=200)
 
 

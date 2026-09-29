@@ -1,8 +1,8 @@
+from typing import Optional
+
 import logging
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from typing import Optional
-
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils.timezone import now
@@ -456,27 +456,36 @@ def process_webhook_event(event_type: str, data_object: dict):
     """
     Process incoming verified Stripe webhook event.
     """
-    from .operational_log import OUTCOME_SUCCESS, log_operation
-
+    try:
+        if event_type == "checkout.session.completed":
+            result = process_checkout_session_completed(data_object)
+        elif event_type in (
+            "customer.subscription.updated",
+            "customer.subscription.deleted",
+        ):
+            result = process_subscription_change(event_type, data_object)
+        elif event_type == "invoice.payment_failed":
+            result = process_invoice_payment_failed(data_object)
+        elif event_type == "invoice.paid":
+            result = process_invoice_paid(data_object)
+        else:
+            result = None
+    except Exception:
+        log_operation(
+            "webhook.process",
+            OUTCOME_FAILURE,
+            backend="stripe",
+            payment_provider="stripe",
+            error_code="processing_error",
+        )
+        raise
     log_operation(
         "webhook.process",
         OUTCOME_SUCCESS,
         backend="stripe",
         payment_provider="stripe",
-        error_code=event_type if isinstance(event_type, str) else None,
     )
-    if event_type == "checkout.session.completed":
-        return process_checkout_session_completed(data_object)
-    elif event_type in (
-        "customer.subscription.updated",
-        "customer.subscription.deleted",
-    ):
-        return process_subscription_change(event_type, data_object)
-    elif event_type == "invoice.payment_failed":
-        return process_invoice_payment_failed(data_object)
-    elif event_type == "invoice.paid":
-        return process_invoice_paid(data_object)
-    return None
+    return result
 
 
 def process_checkout_session_completed(session_data: dict):
@@ -542,7 +551,9 @@ def _record_checkout_invoice_for_subscription(
             secret_key = get_stripe_secret_key_safe()
             if secret_key:
                 stripe.api_key = secret_key
-                s_sub = _stripe_call(lambda: stripe.Subscription.retrieve(stripe_sub_id))
+                s_sub = _stripe_call(
+                    lambda: stripe.Subscription.retrieve(stripe_sub_id)
+                )
                 latest_inv = getattr(s_sub, "latest_invoice", None)
                 if hasattr(latest_inv, "id"):
                     stripe_invoice_id = latest_inv.id
@@ -1056,7 +1067,9 @@ def process_subscription_checkout_completed(session_data: dict):
                         secret_key = get_stripe_secret_key_safe()
                         if secret_key:
                             stripe.api_key = secret_key
-                            _stripe_call(lambda: stripe.Subscription.cancel(old_stripe_sub_id))
+                            _stripe_call(
+                                lambda: stripe.Subscription.cancel(old_stripe_sub_id)
+                            )
                     except Exception as exc:
                         logger.warning(
                             "Failed to cancel old Stripe subscription %s: %s",

@@ -67,11 +67,7 @@ from .services import (
     migrate_addon_assignments,
     migrate_tier_subscribers,
 )
-from .signals import (
-    addon_canceled,
-    subscription_downgraded,
-    subscription_purchased,
-)
+from .signals import addon_canceled, subscription_downgraded, subscription_purchased
 from .stripe_service import (
     _stripe_call,
     create_addon_checkout_session,
