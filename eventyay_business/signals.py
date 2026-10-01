@@ -105,7 +105,7 @@ if nav_global:
                     url.namespace == "plugins:eventyay_business"
                     and url.url_name == "settings"
                 ),
-                "parent": reverse("eventyay_admin:admin.vouchers"),
+                "parent": reverse("eventyay_admin:admin.global.business"),
             },
             {
                 "label": _("Tiers"),
@@ -114,7 +114,7 @@ if nav_global:
                     url.namespace == "plugins:eventyay_business"
                     and url.url_name.startswith("tiers.")
                 ),
-                "parent": reverse("eventyay_admin:admin.vouchers"),
+                "parent": reverse("eventyay_admin:admin.global.business"),
             },
             {
                 "label": _("Subscriptions"),
@@ -123,7 +123,7 @@ if nav_global:
                     url.namespace == "plugins:eventyay_business"
                     and url.url_name.startswith("subscriptions.")
                 ),
-                "parent": reverse("eventyay_admin:admin.vouchers"),
+                "parent": reverse("eventyay_admin:admin.global.business"),
             },
             {
                 "label": _("Add-ons"),
@@ -132,7 +132,7 @@ if nav_global:
                     url.namespace == "plugins:eventyay_business"
                     and url.url_name.startswith("addons.")
                 ),
-                "parent": reverse("eventyay_admin:admin.vouchers"),
+                "parent": reverse("eventyay_admin:admin.global.business"),
             },
             {
                 "label": _("Invoices"),
@@ -141,7 +141,7 @@ if nav_global:
                     url.namespace == "plugins:eventyay_business"
                     and url.url_name.startswith("invoices.")
                 ),
-                "parent": reverse("eventyay_admin:admin.vouchers"),
+                "parent": reverse("eventyay_admin:admin.global.business"),
             },
         ]
 
