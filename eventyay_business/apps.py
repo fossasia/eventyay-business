@@ -30,5 +30,8 @@ class PluginApp(PluginConfig):
         navigation_links = []
 
     def ready(self):
+        from .operational_log import log_plugin_loaded
+
+        log_plugin_loaded("business")
         from . import signals  # NOQA
         from . import tasks  # NOQA

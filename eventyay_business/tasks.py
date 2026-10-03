@@ -4,6 +4,8 @@ from django.db.models import Q
 from django.dispatch import receiver
 from django.utils.timezone import now
 
+from .operational_log import traced_job
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -167,6 +169,7 @@ def expire_addon_assignments():
 
 
 @app.task(name="eventyay_business.expire_addon_assignments")
+@traced_job("business.expire_addons")
 def expire_addon_assignments_task():
     return expire_addon_assignments()
 
@@ -281,6 +284,7 @@ def manage_subscription_lifecycles():
 
 
 @app.task(name="eventyay_business.manage_subscription_lifecycles")
+@traced_job("business.subscription_lifecycle")
 def manage_subscription_lifecycles_task():
     return manage_subscription_lifecycles()
 
@@ -300,6 +304,7 @@ def generate_monthly_business_invoices(start_date=None, end_date=None):
 
 
 @app.task(name="eventyay_business.generate_monthly_business_invoices")
+@traced_job("business.monthly_invoices")
 def generate_monthly_business_invoices_task():
     return generate_monthly_business_invoices()
 

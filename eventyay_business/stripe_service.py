@@ -24,6 +24,7 @@ from .models import (
     TierPrice,
     TierVersion,
 )
+from .operational_log import OUTCOME_FAILURE, OUTCOME_SUCCESS, log_operation
 from .services import invalidate_entitlement_cache, log_addon_lifecycle_action
 from .signals import addon_purchased, subscription_purchased
 
@@ -57,6 +58,31 @@ def get_stripe_secret_key_safe() -> Optional[str]:
         return get_stripe_secret_key()
     except Exception:
         return None
+
+
+def _stripe_call(fn):
+    """Run one Stripe SDK call, log the outcome, and re-raise the same exception."""
+    try:
+        result = fn()
+    except Exception as exc:
+        code = getattr(exc, "code", None)
+        if not isinstance(code, str) or not code:
+            code = type(exc).__name__
+        log_operation(
+            "connection.request",
+            OUTCOME_FAILURE,
+            backend="stripe",
+            payment_provider="stripe",
+            error_code=code,
+        )
+        raise
+    log_operation(
+        "connection.request",
+        OUTCOME_SUCCESS,
+        backend="stripe",
+        payment_provider="stripe",
+    )
+    return result
 
 
 def get_or_create_stripe_customer(organizer, user=None) -> Optional[str]:
@@ -95,10 +121,12 @@ def get_or_create_stripe_customer(organizer, user=None) -> Optional[str]:
         email = (
             user.email if user and user.email else f"billing@{organizer.slug}.eventyay"
         )
-        customer = stripe.Customer.create(
-            email=email,
-            name=organizer.name,
-            metadata={"organizer_slug": organizer.slug},
+        customer = _stripe_call(
+            lambda: stripe.Customer.create(
+                email=email,
+                name=organizer.name,
+                metadata={"organizer_slug": organizer.slug},
+            )
         )
         # Persist customer.id so subsequent calls do not create duplicate customers
         active_sub = (
@@ -156,7 +184,7 @@ def sync_tier_price_to_stripe(tier_price: TierPrice) -> Optional[str]:
             }
             if tier.description:
                 prod_kwargs["description"] = tier.description
-            prod = stripe.Product.create(**prod_kwargs)
+            prod = _stripe_call(lambda: stripe.Product.create(**prod_kwargs))
             product_id = prod.id
             if hasattr(tier, "stripe_product_id"):
                 tier.stripe_product_id = product_id
@@ -185,15 +213,17 @@ def sync_tier_price_to_stripe(tier_price: TierPrice) -> Optional[str]:
     )
 
     try:
-        price = stripe.Price.create(
-            product=product_id,
-            unit_amount=unit_amount,
-            currency=(tier_price.currency or "usd").lower(),
-            recurring={"interval": interval},
-            metadata={
-                "tier_price_id": str(tier_price.id),
-                "tier_slug": tier.slug,
-            },
+        price = _stripe_call(
+            lambda: stripe.Price.create(
+                product=product_id,
+                unit_amount=unit_amount,
+                currency=(tier_price.currency or "usd").lower(),
+                recurring={"interval": interval},
+                metadata={
+                    "tier_price_id": str(tier_price.id),
+                    "tier_slug": tier.slug,
+                },
+            )
         )
         tier_price.stripe_price_id = price.id
         tier_price.save(update_fields=["stripe_price_id"])
@@ -236,7 +266,7 @@ def sync_addon_to_stripe(addon: AddonDefinition) -> Optional[str]:
             }
             if addon.description:
                 prod_kwargs["description"] = addon.description
-            prod = stripe.Product.create(**prod_kwargs)
+            prod = _stripe_call(lambda: stripe.Product.create(**prod_kwargs))
             product_id = prod.id
             addon.stripe_product_id = product_id
             addon.save(update_fields=["stripe_product_id", "updated_at"])
@@ -264,7 +294,7 @@ def sync_addon_to_stripe(addon: AddonDefinition) -> Optional[str]:
         price_kwargs["recurring"] = {"interval": "month"}
 
     try:
-        price = stripe.Price.create(**price_kwargs)
+        price = _stripe_call(lambda: stripe.Price.create(**price_kwargs))
         addon.stripe_price_id = price.id
         addon.save(update_fields=["stripe_price_id", "updated_at"])
         return price.id
@@ -346,7 +376,7 @@ def create_addon_checkout_session(
     if mode == "subscription":
         session_kwargs["subscription_data"] = {"metadata": metadata}
 
-    session = stripe.checkout.Session.create(**session_kwargs)
+    session = _stripe_call(lambda: stripe.checkout.Session.create(**session_kwargs))
     return session.url
 
 
@@ -418,7 +448,7 @@ def create_subscription_checkout_session(
     if customer_id:
         session_kwargs["customer"] = customer_id
 
-    session = stripe.checkout.Session.create(**session_kwargs)
+    session = _stripe_call(lambda: stripe.checkout.Session.create(**session_kwargs))
     return session.url
 
 
@@ -426,18 +456,36 @@ def process_webhook_event(event_type: str, data_object: dict):
     """
     Process incoming verified Stripe webhook event.
     """
-    if event_type == "checkout.session.completed":
-        return process_checkout_session_completed(data_object)
-    elif event_type in (
-        "customer.subscription.updated",
-        "customer.subscription.deleted",
-    ):
-        return process_subscription_change(event_type, data_object)
-    elif event_type == "invoice.payment_failed":
-        return process_invoice_payment_failed(data_object)
-    elif event_type == "invoice.paid":
-        return process_invoice_paid(data_object)
-    return None
+    try:
+        if event_type == "checkout.session.completed":
+            result = process_checkout_session_completed(data_object)
+        elif event_type in (
+            "customer.subscription.updated",
+            "customer.subscription.deleted",
+        ):
+            result = process_subscription_change(event_type, data_object)
+        elif event_type == "invoice.payment_failed":
+            result = process_invoice_payment_failed(data_object)
+        elif event_type == "invoice.paid":
+            result = process_invoice_paid(data_object)
+        else:
+            result = None
+    except Exception:
+        log_operation(
+            "webhook.process",
+            OUTCOME_FAILURE,
+            backend="stripe",
+            payment_provider="stripe",
+            error_code="processing_error",
+        )
+        raise
+    log_operation(
+        "webhook.process",
+        OUTCOME_SUCCESS,
+        backend="stripe",
+        payment_provider="stripe",
+    )
+    return result
 
 
 def process_checkout_session_completed(session_data: dict):
@@ -503,7 +551,9 @@ def _record_checkout_invoice_for_subscription(
             secret_key = get_stripe_secret_key_safe()
             if secret_key:
                 stripe.api_key = secret_key
-                s_sub = stripe.Subscription.retrieve(stripe_sub_id)
+                s_sub = _stripe_call(
+                    lambda: stripe.Subscription.retrieve(stripe_sub_id)
+                )
                 latest_inv = getattr(s_sub, "latest_invoice", None)
                 if hasattr(latest_inv, "id"):
                     stripe_invoice_id = latest_inv.id
@@ -1017,7 +1067,9 @@ def process_subscription_checkout_completed(session_data: dict):
                         secret_key = get_stripe_secret_key_safe()
                         if secret_key:
                             stripe.api_key = secret_key
-                            stripe.Subscription.cancel(old_stripe_sub_id)
+                            _stripe_call(
+                                lambda: stripe.Subscription.cancel(old_stripe_sub_id)
+                            )
                     except Exception as exc:
                         logger.warning(
                             "Failed to cancel old Stripe subscription %s: %s",
@@ -1357,7 +1409,7 @@ def fulfill_checkout_session_by_id(session_id: str):
 
     stripe.api_key = secret_key
     try:
-        session = stripe.checkout.Session.retrieve(session_id)
+        session = _stripe_call(lambda: stripe.checkout.Session.retrieve(session_id))
         if not session:
             return None
 
@@ -1413,8 +1465,10 @@ def sync_organizer_from_stripe(organizer) -> Optional[Subscription]:
 
     if not customer_id:
         try:
-            customers = stripe.Customer.search(
-                query=f"metadata['organizer_slug']:'{organizer.slug}'"
+            customers = _stripe_call(
+                lambda: stripe.Customer.search(
+                    query=f"metadata['organizer_slug']:'{organizer.slug}'"
+                )
             )
             if customers and getattr(customers, "data", None):
                 customer_id = customers.data[0].id
@@ -1426,8 +1480,10 @@ def sync_organizer_from_stripe(organizer) -> Optional[Subscription]:
 
     # 2. List active subscriptions in Stripe
     try:
-        stripe_subs = stripe.Subscription.list(
-            customer=customer_id, status="active", limit=5
+        stripe_subs = _stripe_call(
+            lambda: stripe.Subscription.list(
+                customer=customer_id, status="active", limit=5
+            )
         )
         for s_sub in getattr(stripe_subs, "data", []):
             s_dict = s_sub.to_dict() if hasattr(s_sub, "to_dict") else dict(s_sub)
@@ -1445,7 +1501,7 @@ def sync_organizer_from_stripe(organizer) -> Optional[Subscription]:
                 prod_id = price_obj.get("product")
                 if prod_id and not tier_version_id:
                     try:
-                        prod = stripe.Product.retrieve(prod_id)
+                        prod = _stripe_call(lambda: stripe.Product.retrieve(prod_id))
                         prod_meta = getattr(prod, "metadata", {})
                         tier_slug = prod_meta.get("tier_slug")
                         t_ver_str = prod_meta.get("tier_version")

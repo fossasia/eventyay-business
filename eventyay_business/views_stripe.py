@@ -8,6 +8,7 @@ from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
+from .operational_log import OUTCOME_FAILURE, OUTCOME_SUCCESS, log_operation
 from .stripe_service import process_webhook_event
 
 logger = logging.getLogger(__name__)
@@ -48,11 +49,27 @@ def stripe_business_webhook_view(request):
 
     try:
         event = stripe.Webhook.construct_event(payload, sig_header, webhook_secret)
-    except ValueError as exc:
-        logger.error("Invalid payload in Stripe webhook: %s", exc)
+    except ValueError:
+        logger.error("Invalid payload in Stripe webhook")
+        log_operation(
+            "webhook.inbound",
+            OUTCOME_FAILURE,
+            backend="stripe",
+            payment_provider="stripe",
+            error_code="invalid_payload",
+            status=400,
+        )
         return HttpResponseBadRequest("Invalid payload")
-    except stripe.error.SignatureVerificationError as exc:
-        logger.error("Invalid signature in Stripe webhook: %s", exc)
+    except stripe.error.SignatureVerificationError:
+        logger.error("Invalid signature in Stripe webhook")
+        log_operation(
+            "webhook.inbound",
+            OUTCOME_FAILURE,
+            backend="stripe",
+            payment_provider="stripe",
+            error_code="signature_invalid",
+            status=400,
+        )
         return HttpResponseBadRequest("Invalid signature")
 
     try:
@@ -61,8 +78,23 @@ def stripe_business_webhook_view(request):
         logger.exception(
             "Error processing Stripe webhook event %s: %s", event.type, exc
         )
+        log_operation(
+            "webhook.inbound",
+            OUTCOME_FAILURE,
+            backend="stripe",
+            payment_provider="stripe",
+            error_code="processing_error",
+            status=500,
+        )
         return HttpResponse("Error processing event", status=500)
 
+    log_operation(
+        "webhook.inbound",
+        OUTCOME_SUCCESS,
+        backend="stripe",
+        payment_provider="stripe",
+        status=200,
+    )
     return HttpResponse("Success", status=200)
 
 
