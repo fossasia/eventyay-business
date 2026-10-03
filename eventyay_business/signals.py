@@ -1,9 +1,13 @@
 import logging
+from decimal import Decimal
+from django.conf import settings
 from django.db import IntegrityError
 from django.db.models import Q, Sum
 from django.dispatch import Signal, receiver
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
+from django_scopes import scope
+from eventyay.base.models import OrderPayment
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +46,24 @@ except ImportError:
     entitlement_check = None
     entitlement_usage_recorded = None
     order_paid = None
+
+
+def stripe_fees_collected_at_checkout(order, event) -> Decimal:
+    places = settings.CURRENCY_PLACES.get(event.currency, 2)
+    total = Decimal("0.00")
+    with scope(organizer=event.organizer, event=event):
+        payments = order.payments.filter(
+            state=OrderPayment.PAYMENT_STATE_CONFIRMED,
+            provider__startswith="stripe",
+        )
+        for payment in payments:
+            info = payment.info_data
+            if not isinstance(info, dict):
+                continue
+            amount = info.get("application_fee_amount")
+            if isinstance(amount, int) and not isinstance(amount, bool) and amount > 0:
+                total += Decimal(amount) / (10**places)
+    return total
 
 
 if nav_global:
@@ -537,6 +559,11 @@ if order_paid:
         if fee_amount <= Decimal("0.0"):
             return
 
+        collected_at_checkout = stripe_fees_collected_at_checkout(order, event)
+        fee_amount = max(fee_amount - collected_at_checkout, Decimal("0.00"))
+        if fee_amount <= Decimal("0.00"):
+            return
+
         metadata = {
             "fee_base": str(fee_base),
             "fee_percent": str(fee_percent),
@@ -544,6 +571,7 @@ if order_paid:
             "currency": event.currency,
             "maximum_fee": str(max_fee or "0.00"),
             "is_fee_override": str(is_override),
+            "collected_at_checkout": str(collected_at_checkout),
         }
 
         if sub and sub.currency and sub.currency != event.currency:
