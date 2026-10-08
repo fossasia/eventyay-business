@@ -10,7 +10,10 @@ from eventyay_business.models import (
     TierVersion,
     UsageRecord,
 )
-from eventyay_business.signals import record_platform_fee_on_order_paid
+from eventyay_business.signals import (
+    record_platform_fee_on_order_paid,
+    stripe_fees_collected_at_checkout,
+)
 
 
 @pytest.fixture
@@ -77,6 +80,53 @@ def test_platform_fee_calculation(organizer_with_fee_tier):
     assert record.metadata["fee_base"] == "110.00"
     assert record.metadata["fee_percent"] == "5.0"
     assert record.metadata["order_total"] == "120.00"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("collected_cents", "remaining_fee"),
+    [(550, None), (250, Decimal("3.00"))],
+)
+def test_stripe_fee_collected_at_checkout_is_not_billed_again(
+    organizer_with_fee_tier, collected_cents, remaining_fee
+):
+    from eventyay.base.models import Event
+
+    event = Event.objects.create(
+        organizer=organizer_with_fee_tier,
+        name="Stripe fee event",
+        slug="stripe-fee-event",
+        currency="USD",
+        date_from=now(),
+    )
+    order = MagicMock()
+    order.code = "STRIPEPAID"
+    order.total = Decimal("110.00")
+    order.positions.all.return_value = [
+        MagicMock(price=Decimal("110.00"), tax_value=Decimal("0.00"))
+    ]
+    payments = order.payments.filter.return_value
+    payments.order_by.return_value.first.return_value = None
+    payments.__iter__.return_value = iter(
+        [MagicMock(info_data={"application_fee_amount": collected_cents})]
+    )
+
+    assert (
+        stripe_fees_collected_at_checkout(order, event)
+        == Decimal(collected_cents) / 100
+    )
+    payments.__iter__.return_value = iter(
+        [MagicMock(info_data={"application_fee_amount": collected_cents})]
+    )
+
+    record_platform_fee_on_order_paid(sender=event, order=order)
+
+    record = UsageRecord.objects.filter(source_id=order.code).first()
+    if remaining_fee is None:
+        assert record is None
+    else:
+        assert record.quantity == remaining_fee
+        assert record.metadata["collected_at_checkout"] == "2.50"
 
 
 @pytest.mark.django_db
