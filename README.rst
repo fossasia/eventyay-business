@@ -21,6 +21,23 @@ Development setup
 6. Restart your local eventyay server. You can now use the plugin from this repository for your events by enabling it in
    the 'plugins' tab in the settings.
 
+Upgrade notes for platform fees
+-------------------------------
+
+Platform ticket fees are now configured by this plugin. The former core global
+``ticket_fee_percentage`` and ``ticket_fee_maximum`` settings are no longer read.
+For an event without a matching country and currency override, the plugin uses
+the active tier's ``commerce.platform_fee_percent`` entitlement. If there is no
+such entitlement, the percentage is zero. Without a country override, there is
+no maximum fee cap.
+
+Before upgrading a fee-bearing installation, configure country overrides or
+publish tier versions with the intended fee entitlement and assign organizers
+to those tiers. Review existing global fee settings and reproduce the intended
+rates in the plugin before creating new fee-bearing orders. Old global values
+are not migrated automatically, and fees missed during the transition are not
+recovered by later configuration changes.
+
 This plugin has CI set up to enforce a few code style rules. To check locally, you need these packages installed::
 
     pip install flake8 isort black

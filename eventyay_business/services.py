@@ -1,7 +1,12 @@
 import logging
+from decimal import Decimal
+from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import IntegrityError, transaction
 from django.utils.timezone import now
+from eventyay.base.settings import GlobalSettingsObject
+
+from .models import CountryFeeSetting
 
 logger = logging.getLogger(__name__)
 
@@ -241,8 +246,6 @@ def get_grace_period_days(subscription=None) -> int:
             except (ValueError, TypeError):
                 pass
 
-    from django.conf import settings
-
     val = getattr(settings, "EVENTYAY_BUSINESS_GRACE_PERIOD_DAYS", None)
     if val is not None:
         try:
@@ -251,8 +254,6 @@ def get_grace_period_days(subscription=None) -> int:
             pass
 
     try:
-        from eventyay.base.settings import GlobalSettingsObject
-
         gs = GlobalSettingsObject()
         gs_val = gs.settings.get("business_grace_period_days", as_type=int)
         if gs_val is not None:
@@ -298,15 +299,11 @@ def resolve_fee_settings(
     Hierarchy:
     1. CountryFeeSetting matching (country, currency)
     2. Tier entitlement 'commerce.platform_fee_percent' (if tier_version available)
-    3. Global settings: 'ticket_fee_percentage' and 'ticket_fee_maximum'
+    3. Fallback: explicit zero fee and zero maximum
 
     Returns:
         tuple: (service_fee_percent: Decimal, maximum_fee: Decimal, is_override: bool)
     """
-    from decimal import Decimal
-
-    from .models import CountryFeeSetting
-
     if not currency:
         if event and getattr(event, "currency", None):
             currency = event.currency
@@ -340,16 +337,7 @@ def resolve_fee_settings(
         if ent:
             fee_percent = ent.get_typed_value()
 
-    # 3. Fallback to Global Settings
+    # 3. Fallback: No fee
     max_fee = Decimal("0.00")
-    from eventyay.base.settings import GlobalSettingsObject
 
-    gs = GlobalSettingsObject()
-    if fee_percent is None:
-        pct = gs.settings.get("ticket_fee_percentage", as_type=Decimal)
-        fee_percent = pct if pct is not None else Decimal("2.50")
-    global_max = gs.settings.get("ticket_fee_maximum", as_type=Decimal)
-    if global_max is not None:
-        max_fee = global_max
-
-    return (fee_percent or Decimal("0.00"), max_fee or Decimal("0.00"), False)
+    return (fee_percent or Decimal("0.00"), max_fee, False)

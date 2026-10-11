@@ -5,6 +5,11 @@ from . import views, views_stripe
 urlpatterns = [
     # Global Admin URLs
     path(
+        "admin/global/business/",
+        views.GlobalBusinessSettingsView.as_view(),
+        name="settings",
+    ),
+    path(
         "admin/global/business/tiers/", views.TierListView.as_view(), name="tiers.list"
     ),
     path(

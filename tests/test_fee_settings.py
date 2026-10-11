@@ -4,7 +4,6 @@ from django.core.exceptions import ValidationError
 from django.urls import reverse
 from django.utils.timezone import now
 from eventyay.base.models import Event, Organizer, User
-from eventyay.base.settings import GlobalSettingsObject
 from unittest.mock import MagicMock
 
 from eventyay_business.forms import CountryFeeSettingForm
@@ -188,9 +187,6 @@ class TestFeeResolutionService:
         )
         event.settings.set("invoice_address_from_country", "US")
 
-        gs = GlobalSettingsObject()
-        gs.settings.set("ticket_fee_maximum", "80.00")
-
         sub = Subscription.objects.get(organizer=organizer_with_tier)
         pct, max_fee, is_override = resolve_fee_settings(
             event=event, tier_version=sub.tier_version
@@ -198,9 +194,9 @@ class TestFeeResolutionService:
 
         assert is_override is False
         assert pct == Decimal("3.00")
-        assert max_fee == Decimal("80.00")
+        assert max_fee == Decimal("0.00")
 
-    def test_fallback_to_global_settings_without_tier(self, sample_organizer):
+    def test_fallback_to_zero_without_tier(self, sample_organizer):
         event = Event.objects.create(
             organizer=sample_organizer,
             name="No Tier Event",
@@ -209,15 +205,11 @@ class TestFeeResolutionService:
             date_from=now(),
         )
 
-        gs = GlobalSettingsObject()
-        gs.settings.set("ticket_fee_percentage", "2.75")
-        gs.settings.set("ticket_fee_maximum", "55.00")
-
         pct, max_fee, is_override = resolve_fee_settings(event=event, tier_version=None)
 
         assert is_override is False
-        assert pct == Decimal("2.75")
-        assert max_fee == Decimal("55.00")
+        assert pct == Decimal("0.00")
+        assert max_fee == Decimal("0.00")
 
 
 @pytest.mark.django_db

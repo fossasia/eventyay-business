@@ -986,8 +986,8 @@ def test_tier_version_form_grace_period(lifecycle_data):
 @pytest.mark.django_db
 def test_global_business_settings_form_grace_period(lifecycle_data):
     from eventyay.base.settings import GlobalSettingsObject
-    from eventyay.control.forms.global_settings import GlobalBusinessSettingsForm
 
+    from eventyay_business.forms import GlobalBusinessSettingsForm
     from eventyay_business.services import get_grace_period_days
 
     (
@@ -1004,12 +1004,8 @@ def test_global_business_settings_form_grace_period(lifecycle_data):
     gs = GlobalSettingsObject()
     gs.settings.set("business_grace_period_days", 21)
 
-    try:
-        form = GlobalBusinessSettingsForm()
-        if "business_grace_period_days" in form.fields:
-            assert form.initial["business_grace_period_days"] == 21
-    except Exception:
-        pass
+    form = GlobalBusinessSettingsForm()
+    assert form.initial["business_grace_period_days"] == 21
 
     sub = Subscription.objects.get(organizer=organizer)
     assert sub.configuration_snapshot == {}

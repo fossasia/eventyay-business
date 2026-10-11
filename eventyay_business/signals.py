@@ -1,9 +1,13 @@
 import logging
+from decimal import Decimal
+from django.conf import settings
 from django.db import IntegrityError
 from django.db.models import Q, Sum
 from django.dispatch import Signal, receiver
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
+from django_scopes import scope
+from eventyay.base.models import OrderPayment
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +48,24 @@ except ImportError:
     order_paid = None
 
 
+def stripe_fees_collected_at_checkout(order, event) -> Decimal:
+    places = settings.CURRENCY_PLACES.get(event.currency, 2)
+    total = Decimal("0.00")
+    with scope(organizer=event.organizer, event=event):
+        payments = order.payments.filter(
+            state=OrderPayment.PAYMENT_STATE_CONFIRMED,
+            provider__startswith="stripe",
+        )
+        for payment in payments:
+            info = payment.info_data
+            if not isinstance(info, dict):
+                continue
+            amount = info.get("application_fee_amount")
+            if isinstance(amount, int) and not isinstance(amount, bool) and amount > 0:
+                total += Decimal(amount) / (10**places)
+    return total
+
+
 if nav_global:
 
     @receiver(nav_global, dispatch_uid="business_tiers_nav")
@@ -76,6 +98,15 @@ if nav_global:
             return []
 
         return [
+            {
+                "label": _("Business Settings"),
+                "url": reverse("plugins:eventyay_business:settings"),
+                "active": (
+                    url.namespace == "plugins:eventyay_business"
+                    and url.url_name == "settings"
+                ),
+                "parent": reverse("eventyay_admin:admin.global.business"),
+            },
             {
                 "label": _("Tiers"),
                 "url": reverse("plugins:eventyay_business:tiers.list"),
@@ -152,9 +183,6 @@ def auto_assign_free_tier(sender, instance, created, **kwargs):
             "status": TierStatus.PUBLISHED,
         },
     )
-    if free_tier.status == TierStatus.DRAFT:
-        free_tier.status = TierStatus.PUBLISHED
-        free_tier.save(update_fields=["status"])
 
     latest_version = (
         free_tier.versions.filter(published_at__isnull=False)
@@ -519,38 +547,7 @@ if order_paid:
             Decimal("0.01")
         )
 
-        # When max_fee comes from global settings it is in the platform base currency (USD).
-        # Convert it to event.currency before comparing against fee_amount (which is in event.currency).
-        # Country overrides (is_override=True) are stored in the override's own currency, which
-        # must already match the event currency, so no conversion is needed for that path.
         effective_max_fee = max_fee
-        if not is_override and max_fee and max_fee > Decimal("0.00"):
-            from django.conf import settings as django_settings
-
-            platform_currency = getattr(django_settings, "DEFAULT_CURRENCY", "USD")
-            if platform_currency != event.currency:
-                from eventyay.base.settings import GlobalSettingsObject
-
-                gs_cap = GlobalSettingsObject()
-                rates_dict = gs_cap.settings.get("ecb_rates_dict", as_type=dict) or {}
-                if platform_currency in rates_dict and event.currency in rates_dict:
-                    from decimal import ROUND_HALF_UP
-
-                    rate = (
-                        Decimal(str(rates_dict[event.currency]))
-                        / Decimal(str(rates_dict[platform_currency]))
-                    ).quantize(Decimal("0.0001"), ROUND_HALF_UP)
-                    effective_max_fee = (max_fee * rate).quantize(
-                        Decimal("0.01"), ROUND_HALF_UP
-                    )
-                else:
-                    logger.warning(
-                        "Exchange rate unavailable for converting global max_fee from %s to %s for order %s. Skipping cap.",
-                        platform_currency,
-                        event.currency,
-                        order.code,
-                    )
-                    effective_max_fee = Decimal("0.00")
 
         if (
             effective_max_fee
@@ -562,6 +559,11 @@ if order_paid:
         if fee_amount <= Decimal("0.0"):
             return
 
+        collected_at_checkout = stripe_fees_collected_at_checkout(order, event)
+        fee_amount = max(fee_amount - collected_at_checkout, Decimal("0.00"))
+        if fee_amount <= Decimal("0.00"):
+            return
+
         metadata = {
             "fee_base": str(fee_base),
             "fee_percent": str(fee_percent),
@@ -569,6 +571,7 @@ if order_paid:
             "currency": event.currency,
             "maximum_fee": str(max_fee or "0.00"),
             "is_fee_override": str(is_override),
+            "collected_at_checkout": str(collected_at_checkout),
         }
 
         if sub and sub.currency and sub.currency != event.currency:

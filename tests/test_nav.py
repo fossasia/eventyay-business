@@ -93,15 +93,17 @@ def test_business_tiers_nav_staff_on_admin_page():
     )
 
     items = business_tiers_nav(sender=None, request=request)
-    assert len(items) == 4
-    assert str(items[0]["label"]) == "Tiers"
-    assert str(items[1]["label"]) == "Subscriptions"
-    assert str(items[2]["label"]) == "Add-ons"
-    assert str(items[3]["label"]) == "Invoices"
+    assert len(items) == 5
+    assert str(items[0]["label"]) == "Business Settings"
+    assert str(items[1]["label"]) == "Tiers"
+    assert str(items[2]["label"]) == "Subscriptions"
+    assert str(items[3]["label"]) == "Add-ons"
+    assert str(items[4]["label"]) == "Invoices"
     assert items[0]["active"] is False
     assert items[1]["active"] is False
     assert items[2]["active"] is False
     assert items[3]["active"] is False
+    assert items[4]["active"] is False
 
 
 def test_business_tiers_nav_staff_on_tiers_list():
@@ -119,11 +121,12 @@ def test_business_tiers_nav_staff_on_tiers_list():
     )
 
     items = business_tiers_nav(sender=None, request=request)
-    assert len(items) == 4
-    assert items[0]["active"] is True
-    assert items[1]["active"] is False
+    assert len(items) == 5
+    assert items[0]["active"] is False
+    assert items[1]["active"] is True
     assert items[2]["active"] is False
     assert items[3]["active"] is False
+    assert items[4]["active"] is False
 
 
 def test_business_tiers_nav_staff_on_addons_list():
@@ -141,11 +144,12 @@ def test_business_tiers_nav_staff_on_addons_list():
     )
 
     items = business_tiers_nav(sender=None, request=request)
-    assert len(items) == 4
+    assert len(items) == 5
     assert items[0]["active"] is False
     assert items[1]["active"] is False
-    assert items[2]["active"] is True
-    assert items[3]["active"] is False
+    assert items[2]["active"] is False
+    assert items[3]["active"] is True
+    assert items[4]["active"] is False
 
 
 def test_business_tiers_nav_staff_on_invoices_list():
@@ -163,11 +167,12 @@ def test_business_tiers_nav_staff_on_invoices_list():
     )
 
     items = business_tiers_nav(sender=None, request=request)
-    assert len(items) == 4
+    assert len(items) == 5
     assert items[0]["active"] is False
     assert items[1]["active"] is False
     assert items[2]["active"] is False
-    assert items[3]["active"] is True
+    assert items[3]["active"] is False
+    assert items[4]["active"] is True
 
 
 def test_business_event_addons_nav_anonymous():

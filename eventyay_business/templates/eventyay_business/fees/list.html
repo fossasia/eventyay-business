@@ -8,9 +8,7 @@
     <h1>{% trans "Fee Settings" %}</h1>
 
     <div class="alert alert-info">
-        {% trans "Global default fee percentage and maximum fee are configured in" %}
-        <a href="{% url "eventyay_admin:admin.global.business" %}">{% trans "Business Settings" %}</a>.
-        {% trans "Use this page to set country-specific overrides." %}
+        {% trans "Set fee percentages on tier entitlements and use this page for country-specific overrides." %}
     </div>
 
     <div class="row">
@@ -26,7 +24,7 @@
                 </div>
                 <div class="panel-body">
                     <p class="text-muted">
-                        {% trans "Override default service fees and set maximum fee caps for specific countries and currencies. Orders originating from these countries will use these custom rates instead of the global defaults." %}
+                        {% trans "Override tier service fees and set maximum fee caps for specific countries and currencies. Orders originating from these countries will use these custom rates." %}
                     </p>
 
                     {% if country_settings %}
