@@ -35,6 +35,13 @@ except ImportError:
     EntitlementDecision = None
 
 try:
+    from eventyay.base.platform_fees import PlatformFeePolicy
+    from eventyay.base.signals import platform_fee_policy
+except ImportError:
+    PlatformFeePolicy = None
+    platform_fee_policy = None
+
+try:
     from eventyay.base.signals import (
         entitlement_check,
         entitlement_usage_recorded,
@@ -46,6 +53,39 @@ except ImportError:
     entitlement_check = None
     entitlement_usage_recorded = None
     order_paid = None
+
+
+if platform_fee_policy and PlatformFeePolicy:
+
+    @receiver(platform_fee_policy, dispatch_uid="business_platform_fee_policy")
+    def provide_platform_fee_policy(sender, order, payment, **kwargs):
+        from django.utils.timezone import now
+
+        from .models import Subscription
+        from .services import resolve_fee_settings
+
+        checkout_time = now()
+        subscription = (
+            Subscription.objects.filter(
+                organizer=sender.organizer,
+                status="active",
+                starts_at__lte=checkout_time,
+            )
+            .exclude(ends_at__lt=checkout_time)
+            .select_related("tier_version")
+            .first()
+        )
+        fee_percent, maximum_fee, is_override = resolve_fee_settings(
+            event=sender,
+            order=order,
+            tier_version=subscription.tier_version if subscription else None,
+        )
+        return PlatformFeePolicy(
+            percentage=fee_percent,
+            maximum_fee=maximum_fee,
+            is_override=is_override,
+            source="eventyay-business",
+        )
 
 
 def stripe_fees_collected_at_checkout(order, event) -> Decimal:
