@@ -1,4 +1,5 @@
 import pytest
+from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import MagicMock
 
@@ -23,7 +24,10 @@ def test_business_provides_tier_platform_fee_policy():
     )
     subscription = Subscription.objects.get(organizer=organizer)
     subscription.tier_version = version
-    subscription.save(update_fields=["tier_version"])
+    payment_date = now() - timedelta(days=30)
+    subscription.starts_at = payment_date - timedelta(days=1)
+    subscription.ends_at = payment_date + timedelta(days=1)
+    subscription.save(update_fields=["tier_version", "starts_at", "ends_at"])
     event = Event.objects.create(
         organizer=organizer,
         name="Fee event",
@@ -31,7 +35,7 @@ def test_business_provides_tier_platform_fee_policy():
         currency="EUR",
         date_from=now(),
     )
-    payment = MagicMock(payment_date=now())
+    payment = MagicMock(payment_date=payment_date)
     order = MagicMock()
 
     policy = resolve_platform_fee_policy(
