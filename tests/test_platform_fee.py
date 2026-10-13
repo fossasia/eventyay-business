@@ -1,9 +1,26 @@
 import pytest
+from datetime import timedelta
 from decimal import Decimal
+from django.core.exceptions import ValidationError
+from django.db.models import Sum
 from django.utils.timezone import now
-from unittest.mock import MagicMock
+from django_scopes import scope
+from eventyay.base.models import (
+    Event,
+    Order,
+    OrderPayment,
+    OrderPosition,
+    OrderRefund,
+    Organizer,
+    Product,
+)
 
+from eventyay_business.invoicing_service import generate_business_invoice_for_organizer
 from eventyay_business.models import (
+    CountryFeeSetting,
+    InvoiceLineType,
+    PlatformFeeLedgerEntry,
+    PlatformFeeLedgerEntryType,
     Subscription,
     Tier,
     TierEntitlement,
@@ -11,305 +28,349 @@ from eventyay_business.models import (
     UsageRecord,
 )
 from eventyay_business.signals import (
+    record_platform_fee_on_order_canceled,
     record_platform_fee_on_order_paid,
-    stripe_fees_collected_at_checkout,
+    record_platform_fee_on_refund,
 )
 
 
 @pytest.fixture
 def organizer_with_fee_tier(db):
-    from eventyay.base.models import Organizer
-
-    org = Organizer.objects.create(name="Fee Org", slug="fee-org")
-
+    organizer = Organizer.objects.create(name="Fee Org", slug="fee-org")
     tier = Tier.objects.create(slug="paid", name="Paid Tier")
     version = TierVersion.objects.create(tier=tier, version=1, published_at=now())
-
     TierEntitlement.objects.create(
-        tier_version=version, capability="commerce.platform_fee_percent", value="5.0"
+        tier_version=version,
+        capability="commerce.platform_fee_percent",
+        value="5.0",
     )
-
-    sub = Subscription.objects.get(organizer=org)
-    sub.tier_version = version
-    sub.save()
-
-    return org
-
-
-@pytest.mark.django_db
-def test_platform_fee_calculation(organizer_with_fee_tier):
-    from eventyay.base.models import Event
-
-    event = Event.objects.create(
-        organizer=organizer_with_fee_tier,
-        name="Test Event",
-        slug="test-event",
-        currency="USD",
-        date_from=now(),
-    )
-
-    order = MagicMock()
-    order.code = "ABCXYZ"
-    order.total = Decimal("120.00")
-
-    pos1 = MagicMock()
-    pos1.price = Decimal("100.00")
-    pos1.tax_value = Decimal("10.00")  # net = 90
-
-    pos2 = MagicMock()
-    pos2.price = Decimal("20.00")
-    pos2.tax_value = Decimal("0.00")  # net = 20
-
-    order.positions.all.return_value = [pos1, pos2]
-
-    record_platform_fee_on_order_paid(sender=event, order=order)
-
-    assert UsageRecord.objects.count() == 1
-    record = UsageRecord.objects.first()
-
-    assert record.organizer == organizer_with_fee_tier
-    assert record.event == event
-    assert record.capability == "commerce.platform_fee_percent"
-    assert record.unit == "USD"
-    assert record.source_type == "order"
-    assert record.source_id == "ABCXYZ"
-
-    # Base = 90 + 20 = 110
-    # Fee = 110 * 5.0% = 5.50
-    assert record.quantity == Decimal("5.50")
-    assert record.metadata["fee_base"] == "110.00"
-    assert record.metadata["fee_percent"] == "5.0"
-    assert record.metadata["order_total"] == "120.00"
+    subscription = Subscription.objects.get(organizer=organizer)
+    subscription.tier_version = version
+    subscription.starts_at = now() - timedelta(days=30)
+    subscription.save()
+    return organizer
 
 
-@pytest.mark.django_db
-@pytest.mark.parametrize(
-    ("collected_cents", "remaining_fee"),
-    [(550, None), (250, Decimal("3.00"))],
-)
-def test_stripe_fee_collected_at_checkout_is_not_billed_again(
-    organizer_with_fee_tier, collected_cents, remaining_fee
+def create_paid_order(
+    organizer,
+    *,
+    code="ORDER1",
+    currency="USD",
+    position_price=Decimal("110.00"),
+    tax_value=Decimal("10.00"),
+    payment_amounts=(Decimal("110.00"),),
+    application_fees=(),
 ):
-    from eventyay.base.models import Event
-
     event = Event.objects.create(
-        organizer=organizer_with_fee_tier,
-        name="Stripe fee event",
-        slug="stripe-fee-event",
-        currency="USD",
+        organizer=organizer,
+        name=f"Event {code}",
+        slug=code.lower(),
+        currency=currency,
         date_from=now(),
     )
-    order = MagicMock()
-    order.code = "STRIPEPAID"
-    order.total = Decimal("110.00")
-    order.positions.all.return_value = [
-        MagicMock(price=Decimal("110.00"), tax_value=Decimal("0.00"))
-    ]
-    payments = order.payments.filter.return_value
-    payments.order_by.return_value.first.return_value = None
-    payments.__iter__.return_value = iter(
-        [MagicMock(info_data={"application_fee_amount": collected_cents})]
-    )
-
-    assert (
-        stripe_fees_collected_at_checkout(order, event)
-        == Decimal(collected_cents) / 100
-    )
-    payments.__iter__.return_value = iter(
-        [MagicMock(info_data={"application_fee_amount": collected_cents})]
-    )
-
-    record_platform_fee_on_order_paid(sender=event, order=order)
-
-    record = UsageRecord.objects.filter(source_id=order.code).first()
-    if remaining_fee is None:
-        assert record is None
-    else:
-        assert record.quantity == remaining_fee
-        assert record.metadata["collected_at_checkout"] == "2.50"
+    with scope(organizer=organizer, event=event):
+        product = Product.objects.create(
+            event=event,
+            name="Ticket",
+            category=None,
+            default_price=position_price,
+            admission=True,
+        )
+        order = Order.objects.create(
+            code=code,
+            event=event,
+            email="buyer@example.com",
+            status=Order.STATUS_PAID,
+            datetime=now(),
+            expires=now() + timedelta(days=10),
+            total=sum(payment_amounts, Decimal("0.00")),
+            locale="en",
+        )
+        OrderPosition.objects.create(
+            order=order,
+            product=product,
+            variation=None,
+            price=position_price,
+            tax_value=tax_value,
+            tax_rate=Decimal("0.00"),
+            attendee_name_parts={"full_name": "Buyer"},
+        )
+        payments = []
+        for index, amount in enumerate(payment_amounts, start=1):
+            payment = OrderPayment.objects.create(
+                order=order,
+                local_id=index,
+                state=OrderPayment.PAYMENT_STATE_CONFIRMED,
+                amount=amount,
+                payment_date=now() + timedelta(seconds=index),
+                provider="stripe",
+            )
+            if index <= len(application_fees):
+                payment.info_data = {
+                    "application_fee_amount": application_fees[index - 1]
+                }
+                payment.save(update_fields=["info"])
+            payments.append(payment)
+    return event, order, payments
 
 
 @pytest.mark.django_db
-def test_platform_fee_zero_percent(organizer_with_fee_tier):
-    # Update fee to 0%
-    sub = Subscription.objects.get(organizer=organizer_with_fee_tier)
-    ent = sub.tier_version.entitlements.first()
-    ent.value = "0.0"
-    ent.save()
+def test_paid_order_records_reproducible_tier_fee(organizer_with_fee_tier):
+    event, order, payments = create_paid_order(organizer_with_fee_tier)
 
-    from eventyay.base.models import Event
+    record_platform_fee_on_order_paid(sender=event, order=order)
 
-    event = Event.objects.create(
-        organizer=organizer_with_fee_tier,
-        name="Test Event 2",
-        slug="test-event-2",
+    entry = PlatformFeeLedgerEntry.objects.get()
+    assert entry.payment == payments[0]
+    assert entry.fee_base == Decimal("100.00")
+    assert entry.percentage == Decimal("5.0000")
+    assert entry.calculated_fee == Decimal("5.00")
+    assert entry.amount == Decimal("5.00")
+    assert entry.policy_source == "tier:paid:v1"
+    assert entry.billing_period == payments[0].payment_date.date().replace(day=1)
+
+
+@pytest.mark.django_db
+def test_zero_policy_creates_no_ledger_debt(organizer_with_fee_tier):
+    subscription = Subscription.objects.get(organizer=organizer_with_fee_tier)
+    entitlement = subscription.tier_version.entitlements.get(
+        capability="commerce.platform_fee_percent"
+    )
+    entitlement.value = "0"
+    entitlement.save(update_fields=["value"])
+    event, order, _ = create_paid_order(organizer_with_fee_tier, code="ZEROFEE")
+
+    record_platform_fee_on_order_paid(sender=event, order=order)
+
+    assert not PlatformFeeLedgerEntry.objects.exists()
+
+
+@pytest.mark.django_db
+def test_country_override_caps_order_fee(organizer_with_fee_tier):
+    CountryFeeSetting.objects.create(
+        country="FR",
         currency="EUR",
-        date_from=now(),
+        service_fee_percent=Decimal("2.00"),
+        maximum_fee=Decimal("15.00"),
     )
+    event, order, _ = create_paid_order(
+        organizer_with_fee_tier,
+        code="CAPPED",
+        currency="EUR",
+        position_price=Decimal("2000.00"),
+        tax_value=Decimal("0.00"),
+        payment_amounts=(Decimal("2000.00"),),
+    )
+    event.settings.set("invoice_address_from_country", "FR")
 
-    order = MagicMock()
-    order.code = "ABCDEF"
-    order.positions.all.return_value = [
-        MagicMock(price=Decimal("100"), tax_value=Decimal("0"))
+    record_platform_fee_on_order_paid(sender=event, order=order)
+
+    entry = PlatformFeeLedgerEntry.objects.get()
+    assert entry.amount == Decimal("15.00")
+    assert entry.maximum_fee == Decimal("15.00")
+    assert entry.is_override is True
+    assert entry.policy_source == "country_override"
+
+
+@pytest.mark.django_db
+def test_partial_payments_share_fee_and_respect_order_cap(organizer_with_fee_tier):
+    CountryFeeSetting.objects.create(
+        country="US",
+        currency="USD",
+        service_fee_percent=Decimal("10.00"),
+        maximum_fee=Decimal("8.00"),
+    )
+    event, order, payments = create_paid_order(
+        organizer_with_fee_tier,
+        code="PARTIAL",
+        position_price=Decimal("100.00"),
+        tax_value=Decimal("0.00"),
+        payment_amounts=(Decimal("40.00"), Decimal("60.00")),
+    )
+    event.settings.set("invoice_address_from_country", "US")
+
+    record_platform_fee_on_order_paid(sender=event, order=order)
+    record_platform_fee_on_order_paid(sender=event, order=order)
+
+    entries = list(PlatformFeeLedgerEntry.objects.order_by("payment_id"))
+    assert [entry.payment for entry in entries] == payments
+    assert [entry.fee_base for entry in entries] == [
+        Decimal("40.00"),
+        Decimal("60.00"),
     ]
-
-    record_platform_fee_on_order_paid(sender=event, order=order)
-
-    # Should not create a usage record for 0% fee
-    assert UsageRecord.objects.count() == 0
+    assert [entry.amount for entry in entries] == [
+        Decimal("4.00"),
+        Decimal("4.00"),
+    ]
+    assert sum((entry.amount for entry in entries), Decimal("0.00")) == Decimal("8.00")
 
 
 @pytest.mark.django_db
-def test_platform_fee_currency_conversion(organizer_with_fee_tier):
-    from eventyay.base.models import Event
-    from eventyay.base.settings import GlobalSettingsObject
+def test_historical_application_fee_is_not_accrued_again(organizer_with_fee_tier):
+    event, order, _ = create_paid_order(
+        organizer_with_fee_tier,
+        code="HISTORICAL",
+        application_fees=(500,),
+    )
 
-    gs = GlobalSettingsObject()
-    gs.settings.ecb_rates_date = "2026-09-11"
-    # Event is USD, Subscription is EUR
-    # 1 EUR = 1.10 USD
-    gs.settings.ecb_rates_dict = {"EUR": "1.0000", "USD": "1.1000"}
+    record_platform_fee_on_order_paid(sender=event, order=order)
 
-    sub = Subscription.objects.get(organizer=organizer_with_fee_tier)
-    sub.currency = "EUR"
-    sub.save()
+    entry = PlatformFeeLedgerEntry.objects.get()
+    assert entry.calculated_fee == Decimal("5.00")
+    assert entry.collected_at_checkout == Decimal("5.00")
+    assert entry.amount == Decimal("0.00")
+    assert entry.metadata["collection_path"] == "historical_immediate"
 
-    event = Event.objects.create(
+
+@pytest.mark.django_db
+def test_legacy_usage_debt_is_not_accrued_again(organizer_with_fee_tier):
+    event, order, _ = create_paid_order(
+        organizer_with_fee_tier,
+        code="LEGACYDEBT",
+    )
+    UsageRecord.objects.create(
         organizer=organizer_with_fee_tier,
-        name="Test Event 3",
-        slug="test-event-3",
-        currency="USD",
-        date_from=now(),
+        event=event,
+        capability="commerce.platform_fee_percent",
+        quantity=Decimal("5.00"),
+        unit="USD",
+        occurred_at=now(),
+        source_type="order",
+        source_id=order.code,
+        idempotency_key=f"order_{order.code}_platform_fee",
     )
-
-    order = MagicMock()
-    order.code = "CONVERT"
-    order.total = Decimal("110.00")
-
-    pos1 = MagicMock()
-    pos1.price = Decimal("110.00")
-    pos1.tax_value = Decimal("0.00")
-
-    order.positions.all.return_value = [pos1]
 
     record_platform_fee_on_order_paid(sender=event, order=order)
 
-    assert UsageRecord.objects.count() == 1
-    record = UsageRecord.objects.first()
-
-    assert record.unit == "USD"
-    # Base = 110. Fee = 110 * 5% = 5.50 USD.
-    assert record.quantity == Decimal("5.50")
-
-    # 1 USD = 1/1.10 EUR = 0.9091 EUR
-    # Converted fee = 5.50 * 0.9091 = 5.00 EUR
-    assert record.metadata["billing_currency"] == "EUR"
-    assert record.metadata["exchange_rate"] == "0.9091"
-    assert record.metadata["exchange_rate_date"] == "2026-09-11"
-    assert record.metadata["billing_currency_fee_amount"] == "5.00"
+    entry = PlatformFeeLedgerEntry.objects.get()
+    assert entry.calculated_fee == Decimal("5.00")
+    assert entry.amount == Decimal("0.00")
+    assert entry.metadata["collection_path"] == "legacy_usage_record"
 
 
 @pytest.mark.django_db
-def test_platform_fee_idempotent_repeated_delivery(organizer_with_fee_tier):
-    from eventyay.base.models import Event
-
-    event = Event.objects.create(
-        organizer=organizer_with_fee_tier,
-        name="Test Event Repeat",
-        slug="test-event-repeat",
-        currency="USD",
-        date_from=now(),
-    )
-
-    order = MagicMock()
-    order.code = "REPEAT123"
-    order.total = Decimal("100.00")
-    pos = MagicMock(price=Decimal("100.00"), tax_value=Decimal("0.00"))
-    order.positions.all.return_value = [pos]
-
-    # Invoke twice to test idempotent processing
-    record_platform_fee_on_order_paid(sender=event, order=order)
-    record_platform_fee_on_order_paid(sender=event, order=order)
-
-    assert (
-        UsageRecord.objects.filter(
-            idempotency_key="order_REPEAT123_platform_fee"
-        ).count()
-        == 1
-    )
-
-
-@pytest.mark.django_db
-def test_platform_fee_currency_conversion_missing_rates_stops_persistence(
+def test_partial_and_full_refunds_create_linked_negative_entries(
     organizer_with_fee_tier,
 ):
-    from eventyay.base.models import Event
-    from eventyay.base.settings import GlobalSettingsObject
-
-    gs = GlobalSettingsObject()
-    gs.settings.ecb_rates_date = "2026-09-11"
-    # Event is JPY, Subscription is EUR, but JPY is missing from rates
-    gs.settings.ecb_rates_dict = {"EUR": "1.0000", "USD": "1.1000"}
-
-    sub = Subscription.objects.get(organizer=organizer_with_fee_tier)
-    sub.currency = "EUR"
-    sub.save()
-
-    event = Event.objects.create(
-        organizer=organizer_with_fee_tier,
-        name="Test Event JPY",
-        slug="test-event-jpy",
-        currency="JPY",
-        date_from=now(),
+    event, order, payments = create_paid_order(
+        organizer_with_fee_tier,
+        code="REFUNDS",
+        position_price=Decimal("100.00"),
+        tax_value=Decimal("0.00"),
+        payment_amounts=(Decimal("100.00"),),
+    )
+    record_platform_fee_on_order_paid(sender=event, order=order)
+    charge = PlatformFeeLedgerEntry.objects.get(
+        entry_type=PlatformFeeLedgerEntryType.CHARGE
     )
 
-    order = MagicMock()
-    order.code = "MISSINGRATE"
-    order.total = Decimal("10000.00")
-    pos = MagicMock(price=Decimal("10000.00"), tax_value=Decimal("0.00"))
-    order.positions.all.return_value = [pos]
+    with scope(organizer=organizer_with_fee_tier, event=event):
+        partial = OrderRefund.objects.create(
+            order=order,
+            payment=payments[0],
+            state=OrderRefund.REFUND_STATE_DONE,
+            source=OrderRefund.REFUND_SOURCE_ADMIN,
+            amount=Decimal("25.00"),
+            execution_date=now(),
+            provider="stripe",
+        )
+        final = OrderRefund.objects.create(
+            order=order,
+            payment=payments[0],
+            state=OrderRefund.REFUND_STATE_DONE,
+            source=OrderRefund.REFUND_SOURCE_ADMIN,
+            amount=Decimal("75.00"),
+            execution_date=now(),
+            provider="stripe",
+        )
 
+    record_platform_fee_on_refund(sender=OrderRefund, instance=partial)
+    record_platform_fee_on_refund(sender=OrderRefund, instance=final)
+
+    refunds = PlatformFeeLedgerEntry.objects.filter(
+        entry_type=PlatformFeeLedgerEntryType.REFUND
+    )
+    assert refunds.count() == 2
+    assert all(entry.related_entry == charge for entry in refunds)
+    assert refunds.aggregate(total=Sum("amount"))["total"] == Decimal("-5.00")
+
+
+@pytest.mark.django_db
+def test_invoice_claims_ledger_entry_once(organizer_with_fee_tier):
+    event, order, _ = create_paid_order(
+        organizer_with_fee_tier,
+        code="INVOICED",
+        position_price=Decimal("100.00"),
+        tax_value=Decimal("0.00"),
+        payment_amounts=(Decimal("100.00"),),
+    )
     record_platform_fee_on_order_paid(sender=event, order=order)
+    entry = PlatformFeeLedgerEntry.objects.get()
+    period_start = entry.occurred_at.replace(
+        day=1, hour=0, minute=0, second=0, microsecond=0
+    )
+    next_month = (period_start + timedelta(days=32)).replace(day=1)
+    period_end = next_month - timedelta(microseconds=1)
 
-    # Persistence must stop when exchange rate is unavailable
+    invoice = generate_business_invoice_for_organizer(
+        organizer_with_fee_tier,
+        period_start,
+        period_end,
+        currency="USD",
+    )
+
+    entry.refresh_from_db()
+    assert entry.invoice == invoice
+    assert invoice.lines.get(line_type=InvoiceLineType.PLATFORM_FEE).amount == Decimal(
+        "5.00"
+    )
     assert (
-        UsageRecord.objects.filter(
-            idempotency_key="order_MISSINGRATE_platform_fee"
-        ).count()
-        == 0
+        generate_business_invoice_for_organizer(
+            organizer_with_fee_tier,
+            period_start,
+            period_end,
+            currency="USD",
+        )
+        == invoice
     )
 
 
 @pytest.mark.django_db
-def test_platform_fee_uses_payment_timestamp(organizer_with_fee_tier):
-    import datetime
-    from django.utils.timezone import make_aware
-    from eventyay.base.models import Event
-
-    event = Event.objects.create(
-        organizer=organizer_with_fee_tier,
-        name="Test Event Payment Date",
-        slug="test-event-payment-date",
-        currency="USD",
-        date_from=now(),
+def test_order_cancellation_reverses_remaining_fee_once(organizer_with_fee_tier):
+    event, order, _ = create_paid_order(
+        organizer_with_fee_tier,
+        code="CANCELED",
+        position_price=Decimal("100.00"),
+        tax_value=Decimal("0.00"),
+        payment_amounts=(Decimal("100.00"),),
     )
+    record_platform_fee_on_order_paid(sender=event, order=order)
+    order.status = Order.STATUS_CANCELED
+    order.cancellation_date = now()
+    order.save(update_fields=["status", "cancellation_date"])
 
-    confirmed_date = make_aware(datetime.datetime(2026, 8, 15, 10, 0, 0))
+    record_platform_fee_on_order_canceled(sender=event, order=order)
+    record_platform_fee_on_order_canceled(sender=event, order=order)
 
-    sub = Subscription.objects.get(organizer=organizer_with_fee_tier)
-    sub.starts_at = confirmed_date - datetime.timedelta(days=1)
-    sub.save()
+    cancellation = PlatformFeeLedgerEntry.objects.get(
+        entry_type=PlatformFeeLedgerEntryType.CANCELLATION
+    )
+    assert cancellation.amount == Decimal("-5.00")
+    assert cancellation.related_entry.amount == Decimal("5.00")
 
-    order = MagicMock()
-    order.code = "PAYDATE"
-    order.total = Decimal("100.00")
-    pos = MagicMock(price=Decimal("100.00"), tax_value=Decimal("0.00"))
-    order.positions.all.return_value = [pos]
 
-    payment = MagicMock()
-    payment.payment_date = confirmed_date
+@pytest.mark.django_db
+def test_ledger_financial_fields_are_immutable(organizer_with_fee_tier):
+    event, order, _ = create_paid_order(
+        organizer_with_fee_tier,
+        code="IMMUTABLE",
+        position_price=Decimal("100.00"),
+        tax_value=Decimal("0.00"),
+        payment_amounts=(Decimal("100.00"),),
+    )
+    record_platform_fee_on_order_paid(sender=event, order=order)
+    entry = PlatformFeeLedgerEntry.objects.get()
+    entry.amount = Decimal("1.00")
 
-    record_platform_fee_on_order_paid(sender=event, order=order, payment=payment)
-
-    record = UsageRecord.objects.get(idempotency_key="order_PAYDATE_platform_fee")
-    assert record.occurred_at == confirmed_date
+    with pytest.raises(ValidationError):
+        entry.save(update_fields=["amount"])

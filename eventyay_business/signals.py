@@ -1,15 +1,13 @@
 import datetime
 import logging
-from decimal import Decimal
-from django.conf import settings
-from django.db import DatabaseError, IntegrityError
+from django.db import DatabaseError
 from django.db.models import Q, Sum
+from django.db.models.signals import post_save
 from django.dispatch import Signal, receiver
 from django.urls import reverse
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
-from django_scopes import scope
-from eventyay.base.models import OrderPayment
+from eventyay.base.models import OrderRefund, Organizer
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +78,7 @@ try:
     from eventyay.base.signals import (
         entitlement_check,
         entitlement_usage_recorded,
+        order_canceled,
         order_paid,
         register_entitlements,
     )
@@ -87,6 +86,7 @@ except ImportError:
     register_entitlements = None
     entitlement_check = None
     entitlement_usage_recorded = None
+    order_canceled = None
     order_paid = None
 
 
@@ -123,24 +123,6 @@ if platform_fee_policy and PlatformFeePolicy:
             is_override=is_override,
             source="eventyay-business",
         )
-
-
-def stripe_fees_collected_at_checkout(order, event) -> Decimal:
-    places = settings.CURRENCY_PLACES.get(event.currency, 2)
-    total = Decimal("0.00")
-    with scope(organizer=event.organizer, event=event):
-        payments = order.payments.filter(
-            state=OrderPayment.PAYMENT_STATE_CONFIRMED,
-            provider__startswith="stripe",
-        )
-        for payment in payments:
-            info = payment.info_data
-            if not isinstance(info, dict):
-                continue
-            amount = info.get("application_fee_amount")
-            if isinstance(amount, int) and not isinstance(amount, bool) and amount > 0:
-                total += Decimal(amount) / (10**places)
-    return total
 
 
 if nav_global:
@@ -230,10 +212,6 @@ if register_entitlements:
         from .capabilities import default_registry
 
         return default_registry.as_dict()
-
-
-from django.db.models.signals import post_save
-from eventyay.base.models import Organizer
 
 
 @receiver(post_save, sender=Organizer, dispatch_uid="business_assign_free_tier")
@@ -544,131 +522,25 @@ if order_paid:
 
     @receiver(order_paid, dispatch_uid="business_order_paid_fee")
     def record_platform_fee_on_order_paid(sender, order, **kwargs):
-        from decimal import Decimal
+        from .platform_fee_ledger import record_platform_fees_for_paid_order
 
-        from .models import Subscription, UsageRecord
+        return record_platform_fees_for_paid_order(sender, order)
 
-        event = sender
-        organizer = event.organizer
 
-        payment_date = _resolve_payment_date(
-            order=order,
-            payment=kwargs.get("payment"),
-            payment_date=kwargs.get("payment_date"),
-        )
+if order_canceled:
 
-        sub = (
-            Subscription.objects.filter(
-                organizer=organizer,
-                status="active",
-                starts_at__lte=payment_date,
-            )
-            .exclude(ends_at__lt=payment_date)
-            .select_related("tier_version")
-            .first()
-        )
+    @receiver(order_canceled, dispatch_uid="business_order_canceled_fee")
+    def record_platform_fee_on_order_canceled(sender, order, **kwargs):
+        from .platform_fee_ledger import record_platform_fee_cancellation
 
-        from .services import resolve_fee_settings
+        return record_platform_fee_cancellation(sender, order)
 
-        tier_version = sub.tier_version if sub else None
-        fee_percent, max_fee, is_override = resolve_fee_settings(
-            event=event,
-            order=order,
-            tier_version=tier_version,
-        )
 
-        if not fee_percent or fee_percent <= Decimal("0.0"):
-            return
+@receiver(post_save, sender=OrderRefund, dispatch_uid="business_refund_platform_fee")
+def record_platform_fee_on_refund(sender, instance, **kwargs):
+    if instance.state != OrderRefund.REFUND_STATE_DONE:
+        return []
 
-        # Calculate fee base: sum of all active positions (price - tax)
-        # Excludes shipping, payment fees (which are OrderFee objects)
-        fee_base = Decimal("0.0")
-        # In Eventyay, order.positions is the default manager that excludes canceled positions
-        for pos in order.positions.all():
-            # some old data might have None for tax_value, default to 0
-            tax = pos.tax_value or Decimal("0.0")
-            fee_base += pos.price - tax
+    from .platform_fee_ledger import record_platform_fee_refund
 
-        if fee_base <= Decimal("0.0"):
-            return
-
-        fee_amount = (fee_base * fee_percent / Decimal("100.0")).quantize(
-            Decimal("0.01")
-        )
-
-        effective_max_fee = max_fee
-
-        if (
-            effective_max_fee
-            and effective_max_fee > Decimal("0.00")
-            and fee_amount > effective_max_fee
-        ):
-            fee_amount = effective_max_fee
-
-        if fee_amount <= Decimal("0.0"):
-            return
-
-        collected_at_checkout = stripe_fees_collected_at_checkout(order, event)
-        fee_amount = max(fee_amount - collected_at_checkout, Decimal("0.00"))
-        if fee_amount <= Decimal("0.00"):
-            return
-
-        metadata = {
-            "fee_base": str(fee_base),
-            "fee_percent": str(fee_percent),
-            "order_total": str(order.total),
-            "currency": event.currency,
-            "maximum_fee": str(max_fee or "0.00"),
-            "is_fee_override": str(is_override),
-            "collected_at_checkout": str(collected_at_checkout),
-        }
-
-        if sub and sub.currency and sub.currency != event.currency:
-            from eventyay.base.settings import GlobalSettingsObject
-
-            gs = GlobalSettingsObject()
-            rates_dict = gs.settings.get("ecb_rates_dict", as_type=dict)
-            rates_date = gs.settings.get("ecb_rates_date")
-
-            if not (
-                rates_dict
-                and event.currency in rates_dict
-                and sub.currency in rates_dict
-            ):
-                logger.warning(
-                    "Exchange rate unavailable for converting platform fee from %s to %s for order %s. Stopping fee persistence.",
-                    event.currency,
-                    sub.currency,
-                    order.code,
-                )
-                return
-
-            from decimal import ROUND_HALF_UP
-
-            rate = (
-                Decimal(rates_dict[sub.currency]) / Decimal(rates_dict[event.currency])
-            ).quantize(Decimal("0.0001"), ROUND_HALF_UP)
-
-            converted_fee = (fee_amount * rate).quantize(Decimal("0.01"))
-            metadata["billing_currency"] = sub.currency
-            metadata["exchange_rate"] = str(rate)
-            metadata["exchange_rate_date"] = str(rates_date)
-            metadata["billing_currency_fee_amount"] = str(converted_fee)
-
-        try:
-            UsageRecord.objects.get_or_create(
-                organizer=organizer,
-                idempotency_key=f"order_{order.code}_platform_fee",
-                defaults={
-                    "event": event,
-                    "capability": "commerce.platform_fee_percent",
-                    "quantity": fee_amount,
-                    "unit": event.currency,
-                    "source_type": "order",
-                    "source_id": order.code,
-                    "occurred_at": payment_date,
-                    "metadata": metadata,
-                },
-            )
-        except IntegrityError:
-            pass
+    return record_platform_fee_refund(instance)

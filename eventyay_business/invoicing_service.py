@@ -17,6 +17,7 @@ from .models import (
     EventAddon,
     InvoiceLineType,
     OrganizerAddon,
+    PlatformFeeLedgerEntry,
     Subscription,
     SubscriptionStatus,
     UsageRecord,
@@ -440,17 +441,79 @@ def generate_business_invoice_for_organizer(
                 occurred_at__gte=start_date,
                 occurred_at__lte=end_date,
             ).select_related("event")
+            ledger_entries = (
+                PlatformFeeLedgerEntry.objects.select_for_update()
+                .filter(
+                    organizer=organizer,
+                    invoice__isnull=True,
+                    occurred_at__gte=start_date,
+                    occurred_at__lte=end_date,
+                )
+                .select_related("event")
+            )
 
             events_fee_map = {}
             for rec in fee_records:
                 ev = rec.event
-                events_fee_map.setdefault(ev, []).append(rec)
+                events_fee_map.setdefault(ev, []).append(("usage", rec))
+            for entry in ledger_entries:
+                events_fee_map.setdefault(entry.event, []).append(("ledger", entry))
+
+            ledger_entry_ids_for_invoice = []
 
             for ev, recs in events_fee_map.items():
                 total_event_fee = Decimal("0.00")
                 record_details = []
 
-                for r in recs:
+                for record_type, r in recs:
+                    if record_type == "ledger":
+                        if r.currency == billing_currency:
+                            fee_val = r.amount
+                        elif (
+                            rates_dict
+                            and r.currency in rates_dict
+                            and billing_currency in rates_dict
+                        ):
+                            try:
+                                rate = Decimal(
+                                    str(rates_dict[billing_currency])
+                                ) / Decimal(str(rates_dict[r.currency]))
+                                fee_val = (r.amount * rate).quantize(Decimal("0.01"))
+                            except (
+                                InvalidOperation,
+                                ArithmeticError,
+                                TypeError,
+                            ) as exc:
+                                logger.warning(
+                                    "Failed to convert platform fee ledger entry %s from %s to %s: %s",
+                                    r.source_key,
+                                    r.currency,
+                                    billing_currency,
+                                    exc,
+                                )
+                                continue
+                        else:
+                            logger.warning(
+                                "Exchange rate unavailable to convert platform fee ledger entry %s from %s to %s. Skipping entry.",
+                                r.source_key,
+                                r.currency,
+                                billing_currency,
+                            )
+                            continue
+                        total_event_fee += fee_val
+                        record_details.append(
+                            {
+                                "source_id": r.source_key,
+                                "fee_amount": str(fee_val),
+                                "currency": r.currency,
+                                "fee_base": str(r.fee_base),
+                                "fee_percent": str(r.percentage),
+                                "entry_type": r.entry_type,
+                            }
+                        )
+                        ledger_entry_ids_for_invoice.append(r.pk)
+                        continue
+
                     meta = r.metadata or {}
                     rec_currency = meta.get("currency", r.unit)
                     converted = meta.get("billing_currency_fee_amount")
@@ -505,7 +568,7 @@ def generate_business_invoice_for_organizer(
                         }
                     )
 
-                if total_event_fee > Decimal("0.00") and record_details:
+                if total_event_fee != Decimal("0.00") and record_details:
                     event_name = ev.name if ev else "General"
                     lines_data.append(
                         {
@@ -647,6 +710,10 @@ def generate_business_invoice_for_organizer(
                 for data in lines_data
             ]
             BusinessInvoiceLine.objects.bulk_create(line_objects)
+            PlatformFeeLedgerEntry.objects.filter(
+                pk__in=ledger_entry_ids_for_invoice,
+                invoice__isnull=True,
+            ).update(invoice=invoice)
 
             return invoice
     except IntegrityError:

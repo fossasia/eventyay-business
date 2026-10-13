@@ -856,6 +856,13 @@ class InvoiceLineType(models.TextChoices):
     OTHER = "other", _("Other")
 
 
+class PlatformFeeLedgerEntryType(models.TextChoices):
+    CHARGE = "charge", _("Charge")
+    REFUND = "refund", _("Refund")
+    CANCELLATION = "cancellation", _("Cancellation")
+    CORRECTION = "correction", _("Correction")
+
+
 class BusinessInvoice(models.Model):
     organizer = models.ForeignKey(
         "base.Organizer",
@@ -987,6 +994,169 @@ class BusinessInvoiceLine(models.Model):
 
     def __str__(self):
         return f"{self.description}: {self.amount}"
+
+
+class PlatformFeeLedgerEntry(models.Model):
+    IMMUTABLE_FIELDS = (
+        "organizer_id",
+        "event_id",
+        "order_id",
+        "payment_id",
+        "refund_id",
+        "related_entry_id",
+        "entry_type",
+        "source_key",
+        "occurred_at",
+        "billing_period",
+        "currency",
+        "fee_base",
+        "percentage",
+        "maximum_fee",
+        "calculated_fee",
+        "collected_at_checkout",
+        "amount",
+        "policy_source",
+        "is_override",
+        "metadata",
+    )
+
+    organizer = models.ForeignKey(
+        "base.Organizer",
+        on_delete=models.PROTECT,
+        related_name="platform_fee_ledger_entries",
+        verbose_name=_("Organizer"),
+    )
+    event = models.ForeignKey(
+        "base.Event",
+        on_delete=models.PROTECT,
+        related_name="platform_fee_ledger_entries",
+        verbose_name=_("Event"),
+    )
+    order = models.ForeignKey(
+        "base.Order",
+        on_delete=models.PROTECT,
+        related_name="platform_fee_ledger_entries",
+        verbose_name=_("Order"),
+    )
+    payment = models.ForeignKey(
+        "base.OrderPayment",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="platform_fee_ledger_entries",
+        verbose_name=_("Payment"),
+    )
+    refund = models.ForeignKey(
+        "base.OrderRefund",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="platform_fee_ledger_entries",
+        verbose_name=_("Refund"),
+    )
+    related_entry = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="adjustments",
+        verbose_name=_("Related ledger entry"),
+    )
+    invoice = models.ForeignKey(
+        BusinessInvoice,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="platform_fee_ledger_entries",
+        verbose_name=_("Business invoice"),
+    )
+    entry_type = models.CharField(
+        max_length=20,
+        choices=PlatformFeeLedgerEntryType.choices,
+        verbose_name=_("Entry type"),
+    )
+    source_key = models.CharField(max_length=255, verbose_name=_("Source key"))
+    occurred_at = models.DateTimeField(verbose_name=_("Occurred at"))
+    billing_period = models.DateField(verbose_name=_("Billing period"))
+    currency = models.CharField(max_length=3, verbose_name=_("Currency"))
+    fee_base = models.DecimalField(
+        max_digits=12, decimal_places=2, verbose_name=_("Eligible fee base")
+    )
+    percentage = models.DecimalField(
+        max_digits=7, decimal_places=4, verbose_name=_("Fee percentage")
+    )
+    maximum_fee = models.DecimalField(
+        max_digits=12, decimal_places=2, verbose_name=_("Order fee maximum")
+    )
+    calculated_fee = models.DecimalField(
+        max_digits=12, decimal_places=2, verbose_name=_("Calculated fee")
+    )
+    collected_at_checkout = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        verbose_name=_("Collected at checkout"),
+    )
+    amount = models.DecimalField(
+        max_digits=12, decimal_places=2, verbose_name=_("Accrued amount")
+    )
+    policy_source = models.CharField(max_length=100, verbose_name=_("Policy source"))
+    is_override = models.BooleanField(default=False, verbose_name=_("Is override"))
+    metadata = models.JSONField(default=dict, blank=True, verbose_name=_("Metadata"))
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("Created at"))
+
+    class Meta:
+        ordering = ["occurred_at", "id"]
+        verbose_name = _("Platform fee ledger entry")
+        verbose_name_plural = _("Platform fee ledger entries")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["organizer", "source_key"],
+                name="unique_platform_fee_source_per_organizer",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        entry_type=PlatformFeeLedgerEntryType.CHARGE,
+                        amount__gte=0,
+                        payment__isnull=False,
+                        refund__isnull=True,
+                        related_entry__isnull=True,
+                    )
+                    | models.Q(
+                        entry_type=PlatformFeeLedgerEntryType.REFUND,
+                        amount__lt=0,
+                        refund__isnull=False,
+                        related_entry__isnull=False,
+                    )
+                    | models.Q(
+                        entry_type=PlatformFeeLedgerEntryType.CANCELLATION,
+                        amount__lt=0,
+                        refund__isnull=True,
+                        related_entry__isnull=False,
+                    )
+                    | models.Q(entry_type=PlatformFeeLedgerEntryType.CORRECTION)
+                ),
+                name="platform_fee_ledger_entry_shape",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.entry_type}: {self.amount} {self.currency} ({self.source_key})"
+
+    def save(self, *args, **kwargs):
+        if self.pk and not self._state.adding:
+            previous = type(self).objects.only(*self.IMMUTABLE_FIELDS).get(pk=self.pk)
+            changed_fields = [
+                field
+                for field in self.IMMUTABLE_FIELDS
+                if getattr(previous, field) != getattr(self, field)
+            ]
+            if changed_fields:
+                raise ValidationError(
+                    _("Platform fee ledger financial fields cannot be changed.")
+                )
+        return super().save(*args, **kwargs)
 
 
 class CountryFeeSetting(models.Model):

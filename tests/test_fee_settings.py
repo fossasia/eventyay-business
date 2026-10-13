@@ -4,19 +4,19 @@ from django.core.exceptions import ValidationError
 from django.urls import reverse
 from django.utils.timezone import now
 from eventyay.base.models import Event, Organizer, User
-from unittest.mock import MagicMock
 
 from eventyay_business.forms import CountryFeeSettingForm
 from eventyay_business.models import (
     CountryFeeSetting,
+    PlatformFeeLedgerEntry,
     Subscription,
     Tier,
     TierEntitlement,
     TierVersion,
-    UsageRecord,
 )
 from eventyay_business.services import get_event_country, resolve_fee_settings
 from eventyay_business.signals import record_platform_fee_on_order_paid
+from tests.test_platform_fee import create_paid_order
 
 
 @pytest.fixture
@@ -224,30 +224,23 @@ class TestPlatformFeeWithCountryOverrides:
             maximum_fee=Decimal("15.00"),
         )
 
-        event = Event.objects.create(
-            organizer=organizer_with_tier,
-            name="Paris Conference",
-            slug="paris-conf",
+        event, order, _ = create_paid_order(
+            organizer_with_tier,
+            code="FEE123",
             currency="EUR",
-            date_from=now(),
+            position_price=Decimal("2000.00"),
+            tax_value=Decimal("0.00"),
+            payment_amounts=(Decimal("2000.00"),),
         )
         event.settings.set("invoice_address_from_country", "FR")
-
-        order = MagicMock()
-        order.code = "FEE123"
-        order.total = Decimal("2000.00")
-        del order.invoice_address
-        order.positions.all.return_value = [
-            MagicMock(price=Decimal("2000.00"), tax_value=Decimal("0.00"))
-        ]
 
         # 2% of 2000 = 40.00 EUR, but capped at 15.00 EUR
         record_platform_fee_on_order_paid(sender=event, order=order)
 
-        record = UsageRecord.objects.get(source_id="FEE123")
-        assert record.quantity == Decimal("15.00")
-        assert record.metadata["maximum_fee"] == "15.00"
-        assert record.metadata["is_fee_override"] == "True"
+        entry = PlatformFeeLedgerEntry.objects.get(order=order)
+        assert entry.amount == Decimal("15.00")
+        assert entry.maximum_fee == Decimal("15.00")
+        assert entry.is_override is True
 
     def test_order_paid_without_cap_when_maximum_fee_zero(self, organizer_with_tier):
         CountryFeeSetting.objects.create(
@@ -257,28 +250,21 @@ class TestPlatformFeeWithCountryOverrides:
             maximum_fee=Decimal("0.00"),  # Unlimited
         )
 
-        event = Event.objects.create(
-            organizer=organizer_with_tier,
-            name="Tokyo Event",
-            slug="tokyo-event",
+        event, order, _ = create_paid_order(
+            organizer_with_tier,
+            code="JPY999",
             currency="JPY",
-            date_from=now(),
+            position_price=Decimal("100000.00"),
+            tax_value=Decimal("0.00"),
+            payment_amounts=(Decimal("100000.00"),),
         )
         event.settings.set("invoice_address_from_country", "JP")
-
-        order = MagicMock()
-        order.code = "JPY999"
-        order.total = Decimal("100000.00")
-        del order.invoice_address
-        order.positions.all.return_value = [
-            MagicMock(price=Decimal("100000.00"), tax_value=Decimal("0.00"))
-        ]
 
         # 3% of 100,000 = 3000 JPY, not capped
         record_platform_fee_on_order_paid(sender=event, order=order)
 
-        record = UsageRecord.objects.get(source_id="JPY999")
-        assert record.quantity == Decimal("3000.00")
+        entry = PlatformFeeLedgerEntry.objects.get(order=order)
+        assert entry.amount == Decimal("3000.00")
 
 
 @pytest.fixture
