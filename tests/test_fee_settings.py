@@ -1,4 +1,5 @@
 import pytest
+from datetime import timedelta
 from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.urls import reverse
@@ -14,6 +15,7 @@ from eventyay_business.models import (
     TierEntitlement,
     TierVersion,
 )
+from eventyay_business.platform_fee_ledger import BILLING_CUTOVER_SETTING
 from eventyay_business.services import get_event_country, resolve_fee_settings
 from eventyay_business.signals import record_platform_fee_on_order_paid
 from tests.test_platform_fee import create_paid_order
@@ -40,6 +42,9 @@ def sample_organizer(db):
 
 @pytest.fixture
 def organizer_with_tier(db, sample_organizer):
+    sample_organizer.settings.set(
+        BILLING_CUTOVER_SETTING, (now() - timedelta(days=60)).isoformat()
+    )
     tier = Tier.objects.create(slug="standard", name="Standard Tier")
     version = TierVersion.objects.create(tier=tier, version=1, published_at=now())
     TierEntitlement.objects.create(

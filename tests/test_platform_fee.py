@@ -27,6 +27,7 @@ from eventyay_business.models import (
     TierVersion,
     UsageRecord,
 )
+from eventyay_business.platform_fee_ledger import BILLING_CUTOVER_SETTING
 from eventyay_business.signals import (
     record_platform_fee_on_order_canceled,
     record_platform_fee_on_order_paid,
@@ -37,6 +38,9 @@ from eventyay_business.signals import (
 @pytest.fixture
 def organizer_with_fee_tier(db):
     organizer = Organizer.objects.create(name="Fee Org", slug="fee-org")
+    organizer.settings.set(
+        BILLING_CUTOVER_SETTING, (now() - timedelta(days=60)).isoformat()
+    )
     tier = Tier.objects.create(slug="paid", name="Paid Tier")
     version = TierVersion.objects.create(tier=tier, version=1, published_at=now())
     TierEntitlement.objects.create(
@@ -223,6 +227,45 @@ def test_historical_application_fee_is_not_accrued_again(organizer_with_fee_tier
 
 
 @pytest.mark.django_db
+def test_pre_cutover_payment_without_fee_is_not_accrued(organizer_with_fee_tier):
+    cutover_at = now() + timedelta(days=1)
+    organizer_with_fee_tier.settings.set(
+        BILLING_CUTOVER_SETTING, cutover_at.isoformat()
+    )
+    event, order, _ = create_paid_order(
+        organizer_with_fee_tier,
+        code="PRECUTOVER",
+    )
+
+    record_platform_fee_on_order_paid(sender=event, order=order)
+
+    entry = PlatformFeeLedgerEntry.objects.get()
+    assert entry.calculated_fee == Decimal("5.00")
+    assert entry.amount == Decimal("0.00")
+    assert entry.metadata["collection_path"] == "historical_pre_cutover"
+    assert entry.metadata["cutover_relation"] == "pre_cutover"
+    assert entry.metadata["billing_cutover_at"] == cutover_at.isoformat()
+    assert entry.metadata["seconds_from_cutover"] < 0
+    assert entry.metadata["unreconciled_historical_amount"] == "5.00"
+
+
+@pytest.mark.django_db
+def test_missing_cutover_does_not_enable_accrual(organizer_with_fee_tier):
+    organizer_with_fee_tier.settings.set(BILLING_CUTOVER_SETTING, "")
+    event, order, _ = create_paid_order(
+        organizer_with_fee_tier,
+        code="NOCUTOVER",
+    )
+
+    record_platform_fee_on_order_paid(sender=event, order=order)
+
+    entry = PlatformFeeLedgerEntry.objects.get()
+    assert entry.amount == Decimal("0.00")
+    assert entry.metadata["collection_path"] == "migration_not_enabled"
+    assert entry.metadata["cutover_relation"] == "not_configured"
+
+
+@pytest.mark.django_db
 def test_legacy_usage_debt_is_not_accrued_again(organizer_with_fee_tier):
     event, order, _ = create_paid_order(
         organizer_with_fee_tier,
@@ -332,6 +375,34 @@ def test_invoice_claims_ledger_entry_once(organizer_with_fee_tier):
             currency="USD",
         )
         == invoice
+    )
+
+
+@pytest.mark.django_db
+def test_invoice_carries_forward_unassigned_older_entry(organizer_with_fee_tier):
+    event, order, _ = create_paid_order(
+        organizer_with_fee_tier,
+        code="LATEENTRY",
+        position_price=Decimal("100.00"),
+        tax_value=Decimal("0.00"),
+        payment_amounts=(Decimal("100.00"),),
+    )
+    record_platform_fee_on_order_paid(sender=event, order=order)
+    entry = PlatformFeeLedgerEntry.objects.get()
+    period_start = entry.occurred_at + timedelta(days=1)
+    period_end = period_start + timedelta(days=31)
+
+    invoice = generate_business_invoice_for_organizer(
+        organizer_with_fee_tier,
+        period_start,
+        period_end,
+        currency="USD",
+    )
+
+    entry.refresh_from_db()
+    assert entry.invoice == invoice
+    assert invoice.lines.get(line_type=InvoiceLineType.PLATFORM_FEE).amount == Decimal(
+        "5.00"
     )
 
 

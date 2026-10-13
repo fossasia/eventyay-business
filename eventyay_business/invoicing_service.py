@@ -446,7 +446,6 @@ def generate_business_invoice_for_organizer(
                 .filter(
                     organizer=organizer,
                     invoice__isnull=True,
-                    occurred_at__gte=start_date,
                     occurred_at__lte=end_date,
                 )
                 .select_related("event")

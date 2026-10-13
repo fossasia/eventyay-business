@@ -4,6 +4,8 @@ from decimal import ROUND_HALF_UP, Decimal
 from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.db.models import Sum
+from django.utils.dateparse import parse_datetime
+from django.utils.timezone import is_naive, make_aware
 from django_scopes import scope
 from eventyay.base.models import Order, OrderPayment, OrderRefund
 
@@ -19,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 CENT = Decimal("0.01")
 ZERO = Decimal("0.00")
+BILLING_CUTOVER_SETTING = "business_billing_cutover_at"
 
 
 def resolve_payment_date(order, payment=None, payment_date=None):
@@ -33,7 +36,30 @@ def resolve_payment_date(order, payment=None, payment_date=None):
     if not payment_date:
         payment_date = order.datetime
 
+    if isinstance(payment_date, datetime.date) and not isinstance(
+        payment_date, datetime.datetime
+    ):
+        payment_date = datetime.datetime.combine(payment_date, datetime.time.min)
+    if is_naive(payment_date):
+        payment_date = make_aware(payment_date)
     return payment_date
+
+
+def organizer_billing_cutover_at(organizer) -> datetime.datetime | None:
+    value = organizer.settings.get(BILLING_CUTOVER_SETTING, as_type=str)
+    if not value:
+        return None
+
+    cutover_at = parse_datetime(value)
+    if cutover_at is None:
+        logger.error(
+            "Invalid billing cutover timestamp configured for organizer %s",
+            organizer.pk,
+        )
+        return None
+    if is_naive(cutover_at):
+        cutover_at = make_aware(cutover_at)
+    return cutover_at
 
 
 def checkout_application_fee(payment, currency_places: int) -> Decimal:
@@ -71,6 +97,7 @@ def policy_source(subscription, is_override: bool) -> str:
 def record_platform_fees_for_paid_order(event, order) -> list[PlatformFeeLedgerEntry]:
     organizer = event.organizer
     created_entries = []
+    cutover_at = organizer_billing_cutover_at(organizer)
 
     with transaction.atomic(), scope(organizer=organizer, event=event):
         locked_order = (
@@ -159,24 +186,42 @@ def record_platform_fees_for_paid_order(event, order) -> list[PlatformFeeLedgerE
             checkout_fee_remaining -= checkout_offset
             legacy_offset = min(calculated_fee - checkout_offset, legacy_debt_remaining)
             legacy_debt_remaining -= legacy_offset
-            accrued_amount = calculated_fee - checkout_offset - legacy_offset
+            uncollected_amount = calculated_fee - checkout_offset - legacy_offset
+            is_post_cutover = cutover_at is not None and payment_date >= cutover_at
+            accrued_amount = uncollected_amount if is_post_cutover else ZERO
+            if checkout_offset > ZERO:
+                collection_path = "historical_immediate"
+            elif legacy_offset > ZERO:
+                collection_path = "legacy_usage_record"
+            elif cutover_at is None:
+                collection_path = "migration_not_enabled"
+            elif is_post_cutover:
+                collection_path = "monthly_accrual"
+            else:
+                collection_path = "historical_pre_cutover"
             source_key = f"payment:{payment.pk}"
             metadata = {
                 "order_code": locked_order.code,
                 "order_total": str(locked_order.total),
                 "payment_amount": str(payment.amount),
                 "payment_provider": payment.provider,
-                "collection_path": (
-                    "historical_immediate"
-                    if checkout_offset > ZERO
-                    else (
-                        "legacy_usage_record"
-                        if legacy_offset > ZERO
-                        else "monthly_accrual"
-                    )
-                ),
+                "collection_path": collection_path,
                 "legacy_accrued_amount": str(legacy_offset),
                 "tier_version_id": tier_version.pk if tier_version else None,
+                "billing_cutover_at": cutover_at.isoformat() if cutover_at else None,
+                "cutover_relation": (
+                    "post_cutover"
+                    if is_post_cutover
+                    else "pre_cutover" if cutover_at else "not_configured"
+                ),
+                "seconds_from_cutover": (
+                    int((payment_date - cutover_at).total_seconds())
+                    if cutover_at
+                    else None
+                ),
+                "unreconciled_historical_amount": str(
+                    uncollected_amount if not is_post_cutover else ZERO
+                ),
             }
 
             try:
