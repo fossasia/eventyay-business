@@ -1,6 +1,8 @@
 import pytest
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from decimal import Decimal
+from django.core import mail
+from django.core.exceptions import ValidationError
 from django.test import override_settings
 from django.utils.timezone import make_aware, now
 from eventyay.base.models import Event, Organizer, User
@@ -10,6 +12,7 @@ from eventyay.base.settings import GlobalSettingsObject
 from unittest.mock import patch
 
 from eventyay_business.invoicing_service import (
+    finalize_business_invoice,
     generate_all_business_invoices,
     generate_business_invoice_for_organizer,
     generate_invoice_number,
@@ -22,6 +25,7 @@ from eventyay_business.models import (
     BillingCollectionAuthorization,
     BillingInterval,
     BusinessInvoice,
+    BusinessInvoiceLine,
     BusinessInvoiceStatus,
     EventAddon,
     InvoiceLineType,
@@ -167,6 +171,10 @@ def test_invoice_subscription_fee(test_setup):
     assert invoice.currency == "EUR"
     assert invoice.subtotal == Decimal("49.00")
     assert invoice.total == Decimal("49.00")
+    assert invoice.finalized_at is not None
+    assert invoice.issue_date is not None
+    assert invoice.due_date == invoice.issue_date + timedelta(days=14)
+    assert invoice.billing_address_snapshot["organization_name"] == "Acme Corp"
 
     lines = invoice.lines.all()
     assert lines.count() == 1
@@ -176,6 +184,83 @@ def test_invoice_subscription_fee(test_setup):
     assert sub_line.amount == Decimal("49.00")
     assert "Pro Tier" in sub_line.description
     assert sub_line.calculation_metadata["tier_name"] == "Pro Tier"
+    assert sub_line.service_period_start == period_start
+    assert sub_line.service_period_end == period_end
+
+
+@pytest.mark.django_db
+def test_finalized_invoice_is_immutable_and_can_be_corrected(test_setup):
+    org, _, _, _ = test_setup
+    period_start = make_aware(datetime(2026, 8, 1, 0, 0, 0))
+    period_end = make_aware(datetime(2026, 8, 31, 23, 59, 59))
+    invoice = generate_business_invoice_for_organizer(org, period_start, period_end)
+
+    invoice.total = Decimal("1.00")
+    with pytest.raises(ValidationError, match="cannot be changed"):
+        invoice.save()
+
+    line = invoice.lines.first()
+    line.amount = Decimal("1.00")
+    with pytest.raises(ValidationError, match="cannot be changed"):
+        line.save()
+
+    correction = BusinessInvoice.objects.create(
+        organizer=org,
+        invoice_number="COR-202608-0001",
+        billing_period_start=period_start,
+        billing_period_end=period_end,
+        currency="USD",
+        status=BusinessInvoiceStatus.DRAFT,
+        corrects_invoice=invoice,
+    )
+    BusinessInvoiceLine.objects.create(
+        invoice=correction,
+        line_type=InvoiceLineType.CREDIT,
+        description="Billing correction",
+        amount=Decimal("-5.00"),
+        unit_price=Decimal("-5.00"),
+        service_period_start=period_start,
+        service_period_end=period_end,
+    )
+    correction = finalize_business_invoice(correction)
+    assert correction.total == Decimal("-5.00")
+    assert correction.status == BusinessInvoiceStatus.PAID
+    assert correction.corrects_invoice == invoice
+
+
+@pytest.mark.django_db
+@override_settings(
+    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    DEFAULT_FROM_EMAIL="billing@eventyay.com",
+)
+def test_finalization_snapshots_billing_address_and_notifies(
+    test_setup, django_capture_on_commit_callbacks
+):
+    org, _, _, _ = test_setup
+    OrganizerBillingModel.objects.create(
+        organizer=org,
+        primary_contact_name="Acme Billing",
+        primary_contact_email="accounts@example.com",
+        company_or_organization_name="Acme Legal GmbH",
+        address_line_1="Example Street 1",
+        address_line_2="",
+        city="Berlin",
+        zip_code="10115",
+        country="DE",
+        preferred_language="en",
+        tax_id="DE123",
+    )
+    with django_capture_on_commit_callbacks(execute=True):
+        invoice = generate_business_invoice_for_organizer(
+            org,
+            make_aware(datetime(2026, 8, 1, 0, 0, 0)),
+            make_aware(datetime(2026, 8, 31, 23, 59, 59)),
+        )
+    assert invoice.billing_address_snapshot["organization_name"] == "Acme Legal GmbH"
+    assert invoice.billing_address_snapshot["tax_id"] == "DE123"
+    assert len(mail.outbox) == 1
+    assert invoice.invoice_number in mail.outbox[0].subject
+    assert mail.outbox[0].to == ["accounts@example.com"]
 
 
 @pytest.mark.django_db
@@ -484,6 +569,14 @@ def test_organizer_invoice_views(client, organizer_user, test_setup):
     assert resp.status_code == 200
     assert invoice.invoice_number.encode() in resp.content
     assert b"Pro Tier" in resp.content
+    assert b"Download PDF" in resp.content
+
+    resp = client.get(
+        f"/control/organizer/{org.slug}/business/invoices/{invoice.pk}/download/"
+    )
+    assert resp.status_code == 200
+    assert resp["Content-Type"] == "application/pdf"
+    assert resp.content.startswith(b"%PDF")
 
     # Another organizer's invoice should not be accessible
     other_org = Organizer.objects.create(name="Other Org", slug="other")

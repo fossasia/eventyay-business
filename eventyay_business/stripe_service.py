@@ -8,7 +8,7 @@ from django.db import transaction
 from django.utils.timezone import now
 from eventyay.base.models.organizer import OrganizerBillingModel
 
-from .invoicing_service import generate_invoice_number
+from .invoicing_service import finalize_business_invoice, generate_invoice_number
 from .models import (
     AddonDefinition,
     AddonPricingMode,
@@ -526,6 +526,8 @@ def _record_checkout_invoice_for_subscription(
         quantity=Decimal("1.00"),
         unit_price=total,
         amount=total,
+        service_period_start=start_date,
+        service_period_end=end_date,
         tier_version=tier_version,
         usage_reference=f"subscription_{subscription.pk}",
         calculation_metadata={
@@ -545,7 +547,7 @@ def _record_checkout_invoice_for_subscription(
         currency,
         subscription.pk,
     )
-    return invoice
+    return finalize_business_invoice(invoice)
 
 
 def _record_checkout_invoice_for_addon(
@@ -653,6 +655,8 @@ def _record_checkout_invoice_for_addon(
         quantity=Decimal(str(quantity)),
         unit_price=unit_price,
         amount=total,
+        service_period_start=start_date,
+        service_period_end=end_date,
         addon=addon,
         usage_reference=f"addon_assignment_{assignment.pk}",
         calculation_metadata={
@@ -673,7 +677,7 @@ def _record_checkout_invoice_for_addon(
         currency,
         addon.slug,
     )
-    return invoice
+    return finalize_business_invoice(invoice)
 
 
 def process_addon_checkout_completed(session_data: dict):
@@ -1266,6 +1270,8 @@ def process_invoice_paid(invoice_data: dict):
                                 quantity=Decimal("1.00"),
                                 unit_price=total,
                                 amount=total,
+                                service_period_start=p_start,
+                                service_period_end=p_end,
                                 tier_version=sub.tier_version,
                                 usage_reference=f"subscription_{sub.pk}",
                                 calculation_metadata={
@@ -1277,6 +1283,7 @@ def process_invoice_paid(invoice_data: dict):
                                     ),
                                 },
                             )
+                            finalize_business_invoice(rec_inv)
 
             # Also restore linked recurring add-ons back to ACTIVE
             org_addons = OrganizerAddon.objects.select_for_update().filter(

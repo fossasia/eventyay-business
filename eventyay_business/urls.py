@@ -73,6 +73,11 @@ urlpatterns = [
         name="invoices.detail",
     ),
     path(
+        "admin/global/business/invoices/<int:pk>/download/",
+        views.AdminInvoiceDownloadView.as_view(),
+        name="invoices.download",
+    ),
+    path(
         "admin/global/business/current-charges/",
         views.AdminCurrentChargesView.as_view(),
         name="current_charges.list",
@@ -209,6 +214,11 @@ urlpatterns = [
         "control/organizer/<str:organizer>/business/invoices/<int:pk>/",
         views.OrganizerInvoiceDetailView.as_view(),
         name="organizer.invoices.detail",
+    ),
+    path(
+        "control/organizer/<str:organizer>/business/invoices/<int:pk>/download/",
+        views.OrganizerInvoiceDownloadView.as_view(),
+        name="organizer.invoices.download",
     ),
     path(
         "control/organizer/<str:organizer>/business/addons/<int:pk>/purchase/",

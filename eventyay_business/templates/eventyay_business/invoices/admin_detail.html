@@ -6,6 +6,11 @@
 {% block content %}
     <div class="page-header">
         <div class="pull-right">
+            {% if invoice.finalized_at %}
+                <a href="{% url 'plugins:eventyay_business:invoices.download' pk=invoice.pk %}" class="btn btn-primary">
+                    <i class="fa fa-download"></i> {% trans "Download PDF" %}
+                </a>
+            {% endif %}
             <a href="{% url "plugins:eventyay_business:invoices.list" %}" class="btn btn-default">
                 <i class="fa fa-arrow-left"></i> {% trans "Back to Invoices" %}
             </a>
@@ -51,8 +56,14 @@
                         <dt>{% trans "Billing Period" %}</dt>
                         <dd>{{ invoice.billing_period_start|date:"SHORT_DATE_FORMAT" }} – {{ invoice.billing_period_end|date:"SHORT_DATE_FORMAT" }}</dd>
 
-                        <dt>{% trans "Date" %}</dt>
-                        <dd>{{ invoice.created_at|date:"SHORT_DATE_FORMAT" }}</dd>
+                        <dt>{% trans "Issue date" %}</dt>
+                        <dd>{{ invoice.issue_date|date:"SHORT_DATE_FORMAT"|default:"—" }}</dd>
+
+                        <dt>{% trans "Due date" %}</dt>
+                        <dd>{{ invoice.due_date|date:"SHORT_DATE_FORMAT"|default:"—" }}</dd>
+
+                        <dt>{% trans "Payment" %}</dt>
+                        <dd>{{ invoice.get_payment_state_display }}</dd>
                     </dl>
                 </div>
             </div>
@@ -94,6 +105,7 @@
                         <th>{% trans "Type" %}</th>
                         <th>{% trans "Description" %}</th>
                         <th>{% trans "Event" %}</th>
+                        <th>{% trans "Service period" %}</th>
                         <th class="text-right">{% trans "Quantity" %}</th>
                         <th class="text-right">{% trans "Unit Price" %}</th>
                         <th class="text-right">{% trans "Subtotal" %}</th>
@@ -130,13 +142,18 @@
                                     <span class="text-muted">-</span>
                                 {% endif %}
                             </td>
+                            <td>
+                                {% if line.service_period_start and line.service_period_end %}
+                                    {{ line.service_period_start|date:"SHORT_DATE_FORMAT" }} – {{ line.service_period_end|date:"SHORT_DATE_FORMAT" }}
+                                {% else %}—{% endif %}
+                            </td>
                             <td class="text-right">{{ line.quantity }}</td>
                             <td class="text-right">{{ line.unit_price }} {{ invoice.currency }}</td>
                             <td class="text-right"><strong>{{ line.amount }} {{ invoice.currency }}</strong></td>
                         </tr>
                     {% empty %}
                         <tr>
-                            <td colspan="7" class="text-center text-muted">
+                            <td colspan="8" class="text-center text-muted">
                                 {% trans "No line items found." %}
                             </td>
                         </tr>

@@ -1,10 +1,13 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
+from django.conf import settings
+from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils.timezone import is_aware, make_aware, now
 from eventyay.base.models import Organizer
+from eventyay.base.models.organizer import OrganizerBillingModel
 from eventyay.base.settings import GlobalSettingsObject
 
 from .models import (
@@ -16,6 +19,7 @@ from .models import (
     BusinessInvoiceStatus,
     EventAddon,
     InvoiceLineType,
+    InvoicePaymentState,
     OrganizerAddon,
     PlatformFeeLedgerEntry,
     Subscription,
@@ -24,6 +28,79 @@ from .models import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def billing_address_snapshot(organizer) -> dict:
+    billing = OrganizerBillingModel.objects.filter(organizer=organizer).first()
+    if not billing:
+        return {"organization_name": organizer.name}
+    return {
+        "contact_name": billing.primary_contact_name,
+        "contact_email": billing.primary_contact_email,
+        "organization_name": billing.company_or_organization_name,
+        "address_line_1": billing.address_line_1,
+        "address_line_2": billing.address_line_2,
+        "city": billing.city,
+        "postal_code": billing.zip_code,
+        "country": billing.country,
+        "tax_id": billing.tax_id,
+    }
+
+
+def notify_invoice_issued(invoice: BusinessInvoice) -> None:
+    recipient = invoice.billing_address_snapshot.get("contact_email")
+    if not recipient:
+        return
+    send_mail(
+        f"Eventyay invoice {invoice.invoice_number}",
+        (
+            f"Invoice {invoice.invoice_number} for {invoice.total} "
+            f"{invoice.currency} was issued on {invoice.issue_date}. "
+            "Sign in to Eventyay to review and download it."
+        ),
+        settings.DEFAULT_FROM_EMAIL,
+        [recipient],
+        fail_silently=True,
+    )
+
+
+def finalize_business_invoice(
+    invoice: BusinessInvoice, finalized_by=None, due_days: int = 14
+) -> BusinessInvoice:
+    with transaction.atomic():
+        invoice = BusinessInvoice.objects.select_for_update().get(pk=invoice.pk)
+        if invoice.finalized_at:
+            return invoice
+
+        line_total = sum((line.amount for line in invoice.lines.all()), Decimal("0.00"))
+        tax = sum(
+            (
+                line.amount
+                for line in invoice.lines.filter(line_type=InvoiceLineType.TAX)
+            ),
+            Decimal("0.00"),
+        )
+        finalized_at = now()
+        invoice.subtotal = line_total - tax
+        invoice.tax = tax
+        invoice.total = line_total
+        invoice.issue_date = finalized_at.date()
+        invoice.due_date = invoice.issue_date + timedelta(days=due_days)
+        invoice.finalized_at = finalized_at
+        invoice.finalized_by = finalized_by
+        invoice.billing_address_snapshot = billing_address_snapshot(invoice.organizer)
+        if invoice.status == BusinessInvoiceStatus.PAID or invoice.total <= Decimal(
+            "0.00"
+        ):
+            invoice.status = BusinessInvoiceStatus.PAID
+            invoice.payment_state = InvoicePaymentState.SUCCEEDED
+            invoice.paid_at = finalized_at
+        else:
+            invoice.status = BusinessInvoiceStatus.OPEN
+            invoice.payment_state = InvoicePaymentState.NOT_STARTED
+        invoice.save()
+        transaction.on_commit(lambda: notify_invoice_issued(invoice))
+        return invoice
 
 
 def generate_invoice_number(organizer, period_start: datetime) -> str:
@@ -179,19 +256,11 @@ def generate_business_invoice_for_organizer(
     overages for an organizer across a billing period into a BusinessInvoice with
     itemized BusinessInvoiceLine records.
     """
+    billing_currency = currency
     try:
         with transaction.atomic():
             # Acquire exclusive row-level lock on organizer to serialize concurrent requests per organizer
             Organizer.objects.select_for_update().filter(pk=organizer.pk).first()
-
-            # 1. Check idempotency: if invoice already exists for this exact cycle, return it.
-            existing = BusinessInvoice.objects.filter(
-                organizer=organizer,
-                billing_period_start=start_date,
-                billing_period_end=end_date,
-            ).first()
-            if existing:
-                return existing
 
             gs = GlobalSettingsObject()
             rates_dict = gs.settings.get("ecb_rates_dict", as_type=dict)
@@ -222,6 +291,15 @@ def generate_business_invoice_for_organizer(
             billing_currency = (
                 currency or (active_sub.currency if active_sub else None) or "EUR"
             )
+
+            existing = BusinessInvoice.objects.filter(
+                organizer=organizer,
+                billing_period_start=start_date,
+                billing_period_end=end_date,
+                currency=billing_currency,
+            ).first()
+            if existing:
+                return existing
 
             lines_data = []
 
@@ -347,6 +425,8 @@ def generate_business_invoice_for_organizer(
                                         "service_period_end": service_period_end.isoformat(),
                                         "exchange_rate": sub_rate,
                                     },
+                                    "service_period_start": service_period_start,
+                                    "service_period_end": service_period_end,
                                 }
                             )
 
@@ -682,11 +762,7 @@ def generate_business_invoice_for_organizer(
                 billing_period_start=start_date,
                 billing_period_end=end_date,
                 currency=billing_currency,
-                status=(
-                    BusinessInvoiceStatus.OPEN
-                    if total > Decimal("0.00")
-                    else BusinessInvoiceStatus.PAID
-                ),
+                status=BusinessInvoiceStatus.DRAFT,
                 subtotal=subtotal,
                 tax=tax,
                 total=total,
@@ -701,6 +777,8 @@ def generate_business_invoice_for_organizer(
                     quantity=data["quantity"],
                     unit_price=data["unit_price"],
                     amount=data["amount"],
+                    service_period_start=data.get("service_period_start", start_date),
+                    service_period_end=data.get("service_period_end", end_date),
                     tier_version=data["tier_version"],
                     addon=data["addon"],
                     usage_reference=data["usage_reference"],
@@ -714,13 +792,16 @@ def generate_business_invoice_for_organizer(
                 invoice__isnull=True,
             ).update(invoice=invoice)
 
-            return invoice
+            return finalize_business_invoice(invoice)
     except IntegrityError:
-        existing = BusinessInvoice.objects.filter(
+        existing_query = BusinessInvoice.objects.filter(
             organizer=organizer,
             billing_period_start=start_date,
             billing_period_end=end_date,
-        ).first()
+        )
+        if billing_currency:
+            existing_query = existing_query.filter(currency=billing_currency)
+        existing = existing_query.first()
         if existing:
             return existing
         raise

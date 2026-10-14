@@ -845,6 +845,14 @@ class BusinessInvoiceStatus(models.TextChoices):
     UNCOLLECTIBLE = "uncollectible", _("Uncollectible")
 
 
+class InvoicePaymentState(models.TextChoices):
+    NOT_STARTED = "not_started", _("Not started")
+    PROCESSING = "processing", _("Processing")
+    REQUIRES_ACTION = "requires_action", _("Action required")
+    FAILED = "failed", _("Failed")
+    SUCCEEDED = "succeeded", _("Succeeded")
+
+
 class InvoiceLineType(models.TextChoices):
     SUBSCRIPTION = "subscription", _("Subscription plan")
     ADDON = "addon", _("Add-on package")
@@ -853,6 +861,9 @@ class InvoiceLineType(models.TextChoices):
         "registration_overage",
         _("Free ticket registration overage"),
     )
+    MANUAL_ADJUSTMENT = "manual_adjustment", _("Manual adjustment")
+    CREDIT = "credit", _("Credit")
+    TAX = "tax", _("Tax")
     OTHER = "other", _("Other")
 
 
@@ -864,6 +875,21 @@ class PlatformFeeLedgerEntryType(models.TextChoices):
 
 
 class BusinessInvoice(models.Model):
+    IMMUTABLE_AFTER_FINALIZATION = (
+        "organizer_id",
+        "invoice_number",
+        "billing_period_start",
+        "billing_period_end",
+        "currency",
+        "subtotal",
+        "tax",
+        "total",
+        "issue_date",
+        "due_date",
+        "finalized_at",
+        "billing_address_snapshot",
+        "corrects_invoice_id",
+    )
     organizer = models.ForeignKey(
         "base.Organizer",
         on_delete=models.CASCADE,
@@ -881,6 +907,46 @@ class BusinessInvoice(models.Model):
         choices=BusinessInvoiceStatus.choices,
         default=BusinessInvoiceStatus.OPEN,
         verbose_name=_("Status"),
+    )
+    payment_state = models.CharField(
+        max_length=20,
+        choices=InvoicePaymentState.choices,
+        default=InvoicePaymentState.NOT_STARTED,
+        verbose_name=_("Payment state"),
+    )
+    issue_date = models.DateField(null=True, blank=True, verbose_name=_("Issue date"))
+    due_date = models.DateField(null=True, blank=True, verbose_name=_("Due date"))
+    finalized_at = models.DateTimeField(
+        null=True, blank=True, verbose_name=_("Finalized at")
+    )
+    finalized_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="finalized_business_invoices",
+        verbose_name=_("Finalized by"),
+    )
+    paid_at = models.DateTimeField(null=True, blank=True, verbose_name=_("Paid at"))
+    billing_address_snapshot = models.JSONField(
+        default=dict, blank=True, verbose_name=_("Billing address snapshot")
+    )
+    collection_attempt_count = models.PositiveIntegerField(
+        default=0, verbose_name=_("Collection attempt count")
+    )
+    last_collection_attempt_at = models.DateTimeField(
+        null=True, blank=True, verbose_name=_("Last collection attempt at")
+    )
+    collection_metadata = models.JSONField(
+        default=dict, blank=True, verbose_name=_("Collection metadata")
+    )
+    corrects_invoice = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="correction_invoices",
+        verbose_name=_("Corrects invoice"),
     )
     subtotal = models.DecimalField(
         max_digits=12,
@@ -918,8 +984,13 @@ class BusinessInvoice(models.Model):
         verbose_name_plural = _("Business invoices")
         constraints = [
             models.UniqueConstraint(
-                fields=["organizer", "billing_period_start", "billing_period_end"],
-                name="unique_business_invoice_period_per_organizer",
+                fields=[
+                    "organizer",
+                    "billing_period_start",
+                    "billing_period_end",
+                    "currency",
+                ],
+                name="unique_business_invoice_period_currency",
             )
         ]
 
@@ -927,6 +998,23 @@ class BusinessInvoice(models.Model):
         return (
             f"{self.invoice_number} - {self.organizer} ({self.total} {self.currency})"
         )
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            previous = type(self).objects.filter(pk=self.pk).first()
+            if previous and previous.finalized_at:
+                changed = [
+                    field
+                    for field in self.IMMUTABLE_AFTER_FINALIZATION
+                    if getattr(previous, field) != getattr(self, field)
+                ]
+                if changed:
+                    raise ValidationError(
+                        _(
+                            "Finalized invoice financial and customer data cannot be changed."
+                        )
+                    )
+        return super().save(*args, **kwargs)
 
 
 class BusinessInvoiceLine(models.Model):
@@ -966,6 +1054,12 @@ class BusinessInvoiceLine(models.Model):
         default=Decimal("0.00"),
         verbose_name=_("Amount"),
     )
+    service_period_start = models.DateTimeField(
+        null=True, blank=True, verbose_name=_("Service period start")
+    )
+    service_period_end = models.DateTimeField(
+        null=True, blank=True, verbose_name=_("Service period end")
+    )
     tier_version = models.ForeignKey(
         TierVersion,
         on_delete=models.SET_NULL,
@@ -994,6 +1088,16 @@ class BusinessInvoiceLine(models.Model):
 
     def __str__(self):
         return f"{self.description}: {self.amount}"
+
+    def save(self, *args, **kwargs):
+        if self.invoice.finalized_at:
+            raise ValidationError(_("Finalized invoice lines cannot be changed."))
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        if self.invoice.finalized_at:
+            raise ValidationError(_("Finalized invoice lines cannot be deleted."))
+        return super().delete(*args, **kwargs)
 
 
 class BillingCollectionAuthorization(models.Model):

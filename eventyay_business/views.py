@@ -51,6 +51,7 @@ from .forms import (
     TierPriceFormSet,
     TierVersionForm,
 )
+from .invoice_document import render_invoice_pdf
 from .models import (
     AddonAssignmentScope,
     AddonDefinition,
@@ -2070,6 +2071,27 @@ class OrganizerInvoiceDetailView(OrganizerPermissionRequiredMixin, DetailView):
         return ctx
 
 
+class OrganizerInvoiceDownloadView(
+    OrganizerPermissionRequiredMixin, OrganizerDetailViewMixin, View
+):
+    permission = "can_change_organizer_settings"
+
+    def get(self, request, *args, **kwargs):
+        invoice = get_object_or_404(
+            BusinessInvoice.objects.prefetch_related("lines"),
+            pk=kwargs["pk"],
+            organizer=request.organizer,
+            finalized_at__isnull=False,
+        )
+        response = HttpResponse(
+            render_invoice_pdf(invoice), content_type="application/pdf"
+        )
+        response["Content-Disposition"] = (
+            f'attachment; filename="{invoice.invoice_number}.pdf"'
+        )
+        return response
+
+
 class AdminInvoiceListView(AdministratorPermissionRequiredMixin, ListView):
     model = BusinessInvoice
     template_name = "eventyay_business/invoices/admin_list.html"
@@ -2114,6 +2136,22 @@ class AdminInvoiceDetailView(AdministratorPermissionRequiredMixin, DetailView):
         ctx = super().get_context_data(**kwargs)
         ctx["lines"] = self.object.lines.all()
         return ctx
+
+
+class AdminInvoiceDownloadView(AdministratorPermissionRequiredMixin, View):
+    def get(self, request, *args, **kwargs):
+        invoice = get_object_or_404(
+            BusinessInvoice.objects.prefetch_related("lines"),
+            pk=kwargs["pk"],
+            finalized_at__isnull=False,
+        )
+        response = HttpResponse(
+            render_invoice_pdf(invoice), content_type="application/pdf"
+        )
+        response["Content-Disposition"] = (
+            f'attachment; filename="{invoice.invoice_number}.pdf"'
+        )
+        return response
 
 
 class AdminCurrentChargesMixin:
