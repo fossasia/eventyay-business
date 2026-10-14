@@ -438,7 +438,7 @@ class UsageRecord(models.Model):
         "base.Event",
         null=True,
         blank=True,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         related_name="usage_records",
         verbose_name=_("Event"),
     )

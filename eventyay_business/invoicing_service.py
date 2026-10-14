@@ -447,6 +447,9 @@ def generate_business_invoice_for_organizer(
     overages for an organizer across a billing period into a BusinessInvoice with
     itemized BusinessInvoiceLine records.
     """
+    if end_date.microsecond == 0:
+        end_date = end_date.replace(microsecond=999999)
+
     billing_currency = currency
     try:
         with transaction.atomic():
@@ -521,6 +524,38 @@ def generate_business_invoice_for_organizer(
 
             lines_data = []
 
+            # Charge the closed month once when an existing monthly subscription
+            # first moves from arrears billing to advance billing. On later runs,
+            # the preceding invoice has already claimed this service period.
+            if (
+                active_sub
+                and active_sub.tier_version
+                and (active_sub.billing_interval or BillingInterval.MONTHLY)
+                == BillingInterval.MONTHLY
+            ):
+                catch_up_period = effective_service_period(
+                    active_sub.starts_at,
+                    active_sub.ends_at,
+                    active_sub.cancel_at,
+                    None,
+                    start_date,
+                    end_date,
+                )
+                if catch_up_period:
+                    line = build_subscription_invoice_line(
+                        active_sub,
+                        catch_up_period[0],
+                        catch_up_period[1],
+                        start_date,
+                        end_date,
+                        billing_currency,
+                        rates_dict,
+                        rates_date,
+                        prorate=catch_up_period != (start_date, end_date),
+                    )
+                    if line:
+                        lines_data.append(line)
+
             # Add the fixed plan charge for the upcoming period in advance.
             if fixed_sub and fixed_sub.tier_version:
                 interval = fixed_sub.billing_interval or BillingInterval.MONTHLY
@@ -570,16 +605,26 @@ def generate_business_invoice_for_organizer(
                             annual_end = anniversary.replace(
                                 year=anniversary.year + 1, day=28
                             )
-                        line = build_subscription_invoice_line(
-                            fixed_sub,
+                        annual_period = effective_service_period(
+                            fixed_sub.starts_at,
+                            fixed_sub.ends_at,
+                            fixed_sub.cancel_at,
+                            None,
                             anniversary,
                             annual_end,
+                        )
+                        if not annual_period or annual_period[1] <= annual_period[0]:
+                            break
+                        line = build_subscription_invoice_line(
+                            fixed_sub,
+                            annual_period[0],
+                            annual_period[1],
                             anniversary,
                             annual_end,
                             billing_currency,
                             rates_dict,
                             rates_date,
-                            prorate=False,
+                            prorate=annual_period != (anniversary, annual_end),
                         )
                         if line:
                             lines_data.append(line)
@@ -593,30 +638,7 @@ def generate_business_invoice_for_organizer(
                 and start_date < active_sub.starts_at <= end_date
             ):
                 interval = active_sub.billing_interval or BillingInterval.MONTHLY
-                if interval == BillingInterval.MONTHLY:
-                    initial_period = effective_service_period(
-                        active_sub.starts_at,
-                        active_sub.ends_at,
-                        active_sub.cancel_at,
-                        None,
-                        start_date,
-                        end_date,
-                    )
-                    if initial_period:
-                        line = build_subscription_invoice_line(
-                            active_sub,
-                            initial_period[0],
-                            initial_period[1],
-                            start_date,
-                            end_date,
-                            billing_currency,
-                            rates_dict,
-                            rates_date,
-                            prorate=True,
-                        )
-                        if line:
-                            lines_data.append(line)
-                else:
+                if interval == BillingInterval.ANNUAL:
                     try:
                         initial_end = active_sub.starts_at.replace(
                             year=active_sub.starts_at.year + 1
@@ -625,23 +647,33 @@ def generate_business_invoice_for_organizer(
                         initial_end = active_sub.starts_at.replace(
                             year=active_sub.starts_at.year + 1, day=28
                         )
-                    line = build_subscription_invoice_line(
-                        active_sub,
+                    initial_period = effective_service_period(
+                        active_sub.starts_at,
+                        active_sub.ends_at,
+                        active_sub.cancel_at,
+                        None,
                         active_sub.starts_at,
                         initial_end,
-                        active_sub.starts_at,
-                        initial_end,
-                        billing_currency,
-                        rates_dict,
-                        rates_date,
-                        prorate=False,
                     )
-                    if line:
-                        lines_data.append(line)
+                    if initial_period and initial_period[1] > initial_period[0]:
+                        line = build_subscription_invoice_line(
+                            active_sub,
+                            initial_period[0],
+                            initial_period[1],
+                            active_sub.starts_at,
+                            initial_end,
+                            billing_currency,
+                            rates_dict,
+                            rates_date,
+                            prorate=initial_period
+                            != (active_sub.starts_at, initial_end),
+                        )
+                        if line:
+                            lines_data.append(line)
 
             # Add recurring add-ons for the upcoming period and one-time add-ons
             # activated during the closed period.
-            recurring_filter = (
+            advance_recurring_filter = (
                 Q(addon__pricing_mode=AddonPricingMode.RECURRING)
                 & (
                     (
@@ -670,13 +702,41 @@ def generate_business_invoice_for_organizer(
                 )
                 & Q(starts_at__lte=advance_end)
             )
+            closed_recurring_filter = (
+                Q(addon__pricing_mode=AddonPricingMode.RECURRING)
+                & (
+                    (
+                        Q(status__in=[AddonStatus.ACTIVE, AddonStatus.PAST_DUE])
+                        & (Q(ends_at__isnull=True) | Q(ends_at__gte=start_date))
+                        & (Q(cancel_at__isnull=True) | Q(cancel_at__gte=start_date))
+                        & (Q(canceled_at__isnull=True) | Q(canceled_at__gte=start_date))
+                    )
+                    | (
+                        Q(status__in=[AddonStatus.CANCELED, AddonStatus.EXPIRED])
+                        & (
+                            (Q(ends_at__isnull=False) & Q(ends_at__gte=start_date))
+                            | (
+                                Q(cancel_at__isnull=False)
+                                & Q(cancel_at__gte=start_date)
+                            )
+                            | (
+                                Q(canceled_at__isnull=False)
+                                & Q(canceled_at__gte=start_date)
+                            )
+                        )
+                    )
+                )
+                & Q(starts_at__lte=end_date)
+            )
             onetime_filter = (
                 Q(addon__pricing_mode=AddonPricingMode.ONE_TIME)
                 & Q(starts_at__gte=start_date)
                 & Q(starts_at__lte=end_date)
                 & ~Q(status=AddonStatus.CANCELED)
             )
-            addon_filter = recurring_filter | onetime_filter
+            addon_filter = (
+                advance_recurring_filter | closed_recurring_filter | onetime_filter
+            )
 
             # 4a. Organizer-level add-ons
             org_addons = (
@@ -687,40 +747,37 @@ def generate_business_invoice_for_organizer(
 
             for oa in org_addons:
                 if oa.addon.pricing_mode == AddonPricingMode.RECURRING:
-                    if start_date < oa.starts_at <= end_date:
-                        initial_period = effective_service_period(
-                            oa.starts_at,
-                            oa.ends_at,
-                            oa.cancel_at,
-                            oa.canceled_at,
-                            start_date,
-                            end_date,
+                    initial_period = effective_service_period(
+                        oa.starts_at,
+                        oa.ends_at,
+                        oa.cancel_at,
+                        oa.canceled_at,
+                        start_date,
+                        end_date,
+                    )
+                    if initial_period:
+                        initial_source_key = (
+                            f"organizer-addon:{oa.pk}:"
+                            f"{initial_period[0].isoformat()}:"
+                            f"{initial_period[1].isoformat()}"
                         )
-                        if initial_period:
-                            initial_source_key = (
-                                f"organizer-addon:{oa.pk}:"
-                                f"{initial_period[0].isoformat()}:"
-                                f"{initial_period[1].isoformat()}"
+                        if not invoice_source_claimed(initial_source_key):
+                            initial_line = _build_addon_invoice_line(
+                                addon_assignment=oa,
+                                description=f"Add-on: {oa.addon.name} (Organisation)",
+                                usage_reference=initial_source_key,
+                                scope_meta={"organizer_addon_id": oa.pk},
+                                event=None,
+                                billing_currency=billing_currency,
+                                rates_dict=rates_dict,
+                                rates_date=rates_date,
+                                service_period_start=initial_period[0],
+                                service_period_end=initial_period[1],
+                                full_period_start=start_date,
+                                full_period_end=end_date,
                             )
-                            if not invoice_source_claimed(initial_source_key):
-                                initial_line = _build_addon_invoice_line(
-                                    addon_assignment=oa,
-                                    description=(
-                                        f"Add-on: {oa.addon.name} (Organisation)"
-                                    ),
-                                    usage_reference=initial_source_key,
-                                    scope_meta={"organizer_addon_id": oa.pk},
-                                    event=None,
-                                    billing_currency=billing_currency,
-                                    rates_dict=rates_dict,
-                                    rates_date=rates_date,
-                                    service_period_start=initial_period[0],
-                                    service_period_end=initial_period[1],
-                                    full_period_start=start_date,
-                                    full_period_end=end_date,
-                                )
-                                if initial_line:
-                                    lines_data.append(initial_line)
+                            if initial_line:
+                                lines_data.append(initial_line)
                     service_period = effective_service_period(
                         oa.starts_at,
                         oa.ends_at,
@@ -768,44 +825,43 @@ def generate_business_invoice_for_organizer(
 
             for ea in event_addons:
                 if ea.addon.pricing_mode == AddonPricingMode.RECURRING:
-                    if start_date < ea.starts_at <= end_date:
-                        initial_period = effective_service_period(
-                            ea.starts_at,
-                            ea.ends_at,
-                            ea.cancel_at,
-                            ea.canceled_at,
-                            start_date,
-                            end_date,
+                    initial_period = effective_service_period(
+                        ea.starts_at,
+                        ea.ends_at,
+                        ea.cancel_at,
+                        ea.canceled_at,
+                        start_date,
+                        end_date,
+                    )
+                    if initial_period:
+                        initial_source_key = (
+                            f"event-addon:{ea.pk}:"
+                            f"{initial_period[0].isoformat()}:"
+                            f"{initial_period[1].isoformat()}"
                         )
-                        if initial_period:
-                            initial_source_key = (
-                                f"event-addon:{ea.pk}:"
-                                f"{initial_period[0].isoformat()}:"
-                                f"{initial_period[1].isoformat()}"
+                        if not invoice_source_claimed(initial_source_key):
+                            initial_line = _build_addon_invoice_line(
+                                addon_assignment=ea,
+                                description=(
+                                    f"Add-on: {ea.addon.name} "
+                                    f"(Event: {ea.event.name})"
+                                ),
+                                usage_reference=initial_source_key,
+                                scope_meta={
+                                    "event_addon_id": ea.pk,
+                                    "event_slug": ea.event.slug,
+                                },
+                                event=ea.event,
+                                billing_currency=billing_currency,
+                                rates_dict=rates_dict,
+                                rates_date=rates_date,
+                                service_period_start=initial_period[0],
+                                service_period_end=initial_period[1],
+                                full_period_start=start_date,
+                                full_period_end=end_date,
                             )
-                            if not invoice_source_claimed(initial_source_key):
-                                initial_line = _build_addon_invoice_line(
-                                    addon_assignment=ea,
-                                    description=(
-                                        f"Add-on: {ea.addon.name} "
-                                        f"(Event: {ea.event.name})"
-                                    ),
-                                    usage_reference=initial_source_key,
-                                    scope_meta={
-                                        "event_addon_id": ea.pk,
-                                        "event_slug": ea.event.slug,
-                                    },
-                                    event=ea.event,
-                                    billing_currency=billing_currency,
-                                    rates_dict=rates_dict,
-                                    rates_date=rates_date,
-                                    service_period_start=initial_period[0],
-                                    service_period_end=initial_period[1],
-                                    full_period_start=start_date,
-                                    full_period_end=end_date,
-                                )
-                                if initial_line:
-                                    lines_data.append(initial_line)
+                            if initial_line:
+                                lines_data.append(initial_line)
                     service_period = effective_service_period(
                         ea.starts_at,
                         ea.ends_at,

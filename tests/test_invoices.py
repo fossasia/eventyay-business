@@ -3,6 +3,7 @@ from datetime import datetime, time, timedelta
 from decimal import Decimal
 from django.core import mail
 from django.core.exceptions import ValidationError
+from django.db import models
 from django.test import override_settings
 from django.utils.timezone import make_aware, now
 from eventyay.base.models import Event, Organizer, User
@@ -170,23 +171,29 @@ def test_invoice_subscription_fee(test_setup):
     assert invoice is not None
     assert invoice.status == BusinessInvoiceStatus.OPEN
     assert invoice.currency == "EUR"
-    assert invoice.subtotal == Decimal("49.00")
-    assert invoice.total == Decimal("49.00")
+    assert invoice.subtotal == Decimal("98.00")
+    assert invoice.total == Decimal("98.00")
     assert invoice.finalized_at is not None
     assert invoice.issue_date is not None
     assert invoice.due_date == invoice.issue_date + timedelta(days=14)
     assert invoice.billing_address_snapshot["organization_name"] == "Acme Corp"
 
-    lines = invoice.lines.all()
-    assert lines.count() == 1
-    sub_line = lines.first()
-    assert sub_line.line_type == InvoiceLineType.SUBSCRIPTION
-    assert sub_line.unit_price == Decimal("49.00")
-    assert sub_line.amount == Decimal("49.00")
-    assert "Pro Tier" in sub_line.description
-    assert sub_line.calculation_metadata["tier_name"] == "Pro Tier"
-    assert sub_line.service_period_start == make_aware(datetime(2026, 9, 1, 0, 0, 0))
-    assert sub_line.service_period_end == make_aware(
+    lines = list(
+        invoice.lines.filter(line_type=InvoiceLineType.SUBSCRIPTION).order_by(
+            "service_period_start"
+        )
+    )
+    assert len(lines) == 2
+    assert all(line.unit_price == Decimal("49.00") for line in lines)
+    assert all(line.amount == Decimal("49.00") for line in lines)
+    assert all("Pro Tier" in line.description for line in lines)
+    assert all(line.calculation_metadata["tier_name"] == "Pro Tier" for line in lines)
+    assert lines[0].service_period_start == period_start
+    assert lines[0].service_period_end == make_aware(
+        datetime(2026, 8, 31, 23, 59, 59, 999999)
+    )
+    assert lines[1].service_period_start == make_aware(datetime(2026, 9, 1, 0, 0, 0))
+    assert lines[1].service_period_end == make_aware(
         datetime(2026, 9, 30, 23, 59, 59, 999999)
     )
 
@@ -316,22 +323,24 @@ def test_invoice_addons_aggregation(test_setup):
 
     invoice = generate_business_invoice_for_organizer(org, period_start, period_end)
     assert invoice is not None
-    # Sub: 49.00, Org Addon: 2 * 15.00 = 30.00, Event Addon: 1 * 10.00 = 10.00. Total = 89.00
-    assert invoice.subtotal == Decimal("89.00")
-    assert invoice.total == Decimal("89.00")
+    # The transition invoice catches up August and bills September in advance.
+    assert invoice.subtotal == Decimal("178.00")
+    assert invoice.total == Decimal("178.00")
 
     addon_lines = invoice.lines.filter(line_type=InvoiceLineType.ADDON)
-    assert addon_lines.count() == 2
+    assert addon_lines.count() == 4
 
-    org_line = addon_lines.filter(event__isnull=True).first()
-    assert org_line.quantity == Decimal("2")
-    assert org_line.unit_price == Decimal("15.00")
-    assert org_line.amount == Decimal("30.00")
+    org_lines = addon_lines.filter(event__isnull=True)
+    assert org_lines.count() == 2
+    assert all(line.quantity == Decimal("2") for line in org_lines)
+    assert all(line.unit_price == Decimal("15.00") for line in org_lines)
+    assert all(line.amount == Decimal("30.00") for line in org_lines)
 
-    ev_line = addon_lines.filter(event=event).first()
-    assert ev_line.quantity == Decimal("1")
-    assert ev_line.unit_price == Decimal("10.00")
-    assert ev_line.amount == Decimal("10.00")
+    ev_lines = addon_lines.filter(event=event)
+    assert ev_lines.count() == 2
+    assert all(line.quantity == Decimal("1") for line in ev_lines)
+    assert all(line.unit_price == Decimal("10.00") for line in ev_lines)
+    assert all(line.amount == Decimal("10.00") for line in ev_lines)
 
 
 @pytest.mark.django_db
@@ -895,6 +904,84 @@ def test_annual_subscription_billed_only_on_renewal(test_setup):
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("boundary_field", ["ends_at", "cancel_at"])
+def test_annual_renewal_respects_service_boundary(test_setup, boundary_field):
+    org, _, version, _ = test_setup
+    TierPrice.objects.create(
+        tier_version=version,
+        billing_interval=BillingInterval.ANNUAL,
+        amount=Decimal("490.00"),
+        currency="EUR",
+    )
+    subscription = Subscription.objects.get(organizer=org)
+    subscription.billing_interval = BillingInterval.ANNUAL
+    subscription.starts_at = make_aware(datetime(2025, 9, 10, 0, 0, 0))
+    setattr(
+        subscription,
+        boundary_field,
+        make_aware(datetime(2026, 9, 10, 0, 0, 0)),
+    )
+    subscription.save()
+
+    august_start = make_aware(datetime(2026, 8, 1, 0, 0, 0))
+    august_end = make_aware(datetime(2026, 8, 31, 23, 59, 59))
+    assert (
+        generate_business_invoice_for_organizer(org, august_start, august_end) is None
+    )
+
+    setattr(
+        subscription,
+        boundary_field,
+        make_aware(datetime(2027, 3, 10, 0, 0, 0)),
+    )
+    subscription.save()
+    invoice = generate_business_invoice_for_organizer(org, august_start, august_end)
+
+    line = invoice.lines.get(line_type=InvoiceLineType.SUBSCRIPTION)
+    assert Decimal("0.00") < line.amount < Decimal("490.00")
+    assert line.service_period_start == make_aware(datetime(2026, 9, 10, 0, 0, 0))
+    assert line.service_period_end == make_aware(datetime(2027, 3, 10, 0, 0, 0))
+    assert line.calculation_metadata["prorated"] is True
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("boundary_field", ["ends_at", "cancel_at"])
+def test_initial_annual_term_respects_service_boundary(test_setup, boundary_field):
+    org, _, version, _ = test_setup
+    TierPrice.objects.create(
+        tier_version=version,
+        billing_interval=BillingInterval.ANNUAL,
+        amount=Decimal("490.00"),
+        currency="EUR",
+    )
+    subscription = Subscription.objects.get(organizer=org)
+    subscription.billing_interval = BillingInterval.ANNUAL
+    subscription.starts_at = make_aware(datetime(2026, 8, 10, 0, 0, 0))
+    setattr(subscription, boundary_field, subscription.starts_at)
+    subscription.save()
+
+    august_start = make_aware(datetime(2026, 8, 1, 0, 0, 0))
+    august_end = make_aware(datetime(2026, 8, 31, 23, 59, 59))
+    assert (
+        generate_business_invoice_for_organizer(org, august_start, august_end) is None
+    )
+
+    setattr(
+        subscription,
+        boundary_field,
+        make_aware(datetime(2027, 2, 10, 0, 0, 0)),
+    )
+    subscription.save()
+    invoice = generate_business_invoice_for_organizer(org, august_start, august_end)
+
+    line = invoice.lines.get(line_type=InvoiceLineType.SUBSCRIPTION)
+    assert Decimal("0.00") < line.amount < Decimal("490.00")
+    assert line.service_period_start == subscription.starts_at
+    assert line.service_period_end == make_aware(datetime(2027, 2, 10, 0, 0, 0))
+    assert line.calculation_metadata["prorated"] is True
+
+
+@pytest.mark.django_db
 def test_onetime_addon_billed_only_in_start_period(test_setup):
     org, tier, version, event = test_setup
 
@@ -979,24 +1066,35 @@ def test_addon_and_subscription_currency_conversion(test_setup):
         )
 
     # Case B: Rates present: 1 EUR = 1.20 USD
-    # Sub: 120 USD / 1.2 = 100 EUR
-    # Addon: 24 USD / 1.2 = 20 EUR
+    # Both August catch-up and September advance charges are converted.
     gs.settings.ecb_rates_dict = {"EUR": "1.0000", "USD": "1.2000"}
     inv = generate_business_invoice_for_organizer(
         org, period_start, period_end, currency="EUR"
     )
     assert inv is not None
     assert inv.currency == "EUR"
-    assert inv.total == Decimal("120.00")  # 100 + 20
-    sub_line = inv.lines.get(line_type=InvoiceLineType.SUBSCRIPTION)
-    assert sub_line.amount == Decimal("100.00")
-    assert sub_line.calculation_metadata["price_currency"] == "USD"
-    assert sub_line.calculation_metadata["exchange_rate_date"] == "2026-08-31"
+    assert inv.total == Decimal("240.00")
+    sub_lines = inv.lines.filter(line_type=InvoiceLineType.SUBSCRIPTION)
+    assert sub_lines.count() == 2
+    assert all(line.amount == Decimal("100.00") for line in sub_lines)
+    assert all(
+        line.calculation_metadata["price_currency"] == "USD" for line in sub_lines
+    )
+    assert all(
+        line.calculation_metadata["exchange_rate_date"] == "2026-08-31"
+        for line in sub_lines
+    )
 
-    addon_line = inv.lines.get(line_type=InvoiceLineType.ADDON)
-    assert addon_line.amount == Decimal("20.00")
-    assert addon_line.calculation_metadata["original_currency"] == "USD"
-    assert addon_line.calculation_metadata["exchange_rate_date"] == "2026-08-31"
+    addon_lines = inv.lines.filter(line_type=InvoiceLineType.ADDON)
+    assert addon_lines.count() == 2
+    assert all(line.amount == Decimal("20.00") for line in addon_lines)
+    assert all(
+        line.calculation_metadata["original_currency"] == "USD" for line in addon_lines
+    )
+    assert all(
+        line.calculation_metadata["exchange_rate_date"] == "2026-08-31"
+        for line in addon_lines
+    )
 
 
 @pytest.mark.django_db
@@ -1014,9 +1112,11 @@ def test_historical_terminal_subscription_and_past_due_cutoff(test_setup):
     sub.ends_at = make_aware(datetime(2026, 8, 15, 0, 0, 0))
     sub.save()
 
-    # It ends before the upcoming fixed-charge period, so no new plan line is added.
+    # The transition run catches up only the active part of August.
     inv_aug = generate_business_invoice_for_organizer(org, aug_start, aug_end)
-    assert inv_aug is None
+    assert inv_aug is not None
+    assert inv_aug.total == Decimal("22.13")
+    assert inv_aug.lines.get().service_period_end == sub.ends_at
 
     # In September, it was already ended -> excluded
     inv_sep = generate_business_invoice_for_organizer(org, sep_start, sep_end)
@@ -1127,6 +1227,77 @@ def test_new_recurring_addon_includes_first_partial_and_upcoming_period(test_set
     assert lines[1].service_period_start == make_aware(datetime(2026, 9, 1))
     assert lines[1].amount == Decimal("31.00")
     assert invoice.total == Decimal("47.00")
+
+
+@pytest.mark.django_db
+def test_advance_lines_are_not_duplicated_in_next_closed_period(test_setup):
+    org, _, _, _ = test_setup
+    subscription = Subscription.objects.get(organizer=org)
+    subscription.starts_at = make_aware(datetime(2026, 9, 16, 0, 0, 0))
+    subscription.save()
+    addon = AddonDefinition.objects.create(
+        slug="future-recurring-addon",
+        name="Future recurring add-on",
+        pricing_mode=AddonPricingMode.RECURRING,
+        price=Decimal("30.00"),
+        currency="EUR",
+        capability="storage.future_gb",
+    )
+    assignment = OrganizerAddon.objects.create(
+        organizer=org,
+        addon=addon,
+        starts_at=make_aware(datetime(2026, 9, 16, 0, 0, 0)),
+    )
+
+    august_invoice = generate_business_invoice_for_organizer(
+        org,
+        make_aware(datetime(2026, 8, 1, 0, 0, 0)),
+        make_aware(datetime(2026, 8, 31, 23, 59, 59)),
+    )
+    september_invoice = generate_business_invoice_for_organizer(
+        org,
+        make_aware(datetime(2026, 9, 1, 0, 0, 0)),
+        make_aware(datetime(2026, 9, 30, 23, 59, 59)),
+    )
+
+    assert (
+        august_invoice.lines.filter(
+            line_type=InvoiceLineType.SUBSCRIPTION,
+            service_period_start=subscription.starts_at,
+        ).count()
+        == 1
+    )
+    assert (
+        august_invoice.lines.filter(
+            line_type=InvoiceLineType.ADDON,
+            service_period_start=assignment.starts_at,
+        ).count()
+        == 1
+    )
+    assert not september_invoice.lines.filter(
+        service_period_start=subscription.starts_at
+    ).exists()
+    assert (
+        BusinessInvoiceLine.objects.filter(
+            line_type=InvoiceLineType.SUBSCRIPTION,
+            service_period_start=subscription.starts_at,
+        ).count()
+        == 1
+    )
+    assert (
+        BusinessInvoiceLine.objects.filter(
+            line_type=InvoiceLineType.ADDON,
+            service_period_start=assignment.starts_at,
+        ).count()
+        == 1
+    )
+
+
+def test_usage_record_preserves_history_when_event_is_deleted():
+    event_field = UsageRecord._meta.get_field("event")
+
+    assert event_field.null is True
+    assert event_field.remote_field.on_delete is models.SET_NULL
 
 
 @pytest.mark.django_db
