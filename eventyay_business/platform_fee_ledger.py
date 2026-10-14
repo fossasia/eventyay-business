@@ -298,35 +298,83 @@ def record_platform_fee_refund(refund) -> list[PlatformFeeLedgerEntry]:
             return created_entries
         refund_ratio = min(refunded_total / denominator, Decimal("1"))
         occurred_at = locked_refund.execution_date or locked_refund.created
-
-        for charge in charges:
-            target_reversal = (charge.amount * refund_ratio).quantize(
-                CENT, rounding=ROUND_HALF_UP
-            )
-            refund_adjustments = charge.adjustments.filter(
-                entry_type=PlatformFeeLedgerEntryType.REFUND
-            )
-            if locked_refund.payment_id:
-                scoped_adjustments = refund_adjustments.filter(
-                    refund__payment=locked_refund.payment
-                )
-            else:
-                scoped_adjustments = refund_adjustments.filter(
-                    refund__payment__isnull=True
-                )
-            scoped_reversed_amount = -(
-                scoped_adjustments.aggregate(total=Sum("amount"))["total"] or ZERO
-            )
-            total_reversed_amount = -(
+        charges = list(charges.order_by("payment_id", "pk"))
+        total_reversed_by_charge = {
+            charge.pk: -(
                 charge.adjustments.filter(amount__lt=ZERO).aggregate(
                     total=Sum("amount")
                 )["total"]
                 or ZERO
             )
-            adjustment_amount = min(
-                max(target_reversal - scoped_reversed_amount, ZERO),
-                charge.amount - total_reversed_amount,
+            for charge in charges
+        }
+        order_refund_allocations = {}
+
+        if not locked_refund.payment_id:
+            scoped_reversed_by_charge = {
+                charge.pk: -(
+                    charge.adjustments.filter(
+                        entry_type=PlatformFeeLedgerEntryType.REFUND,
+                        refund__payment__isnull=True,
+                    ).aggregate(total=Sum("amount"))["total"]
+                    or ZERO
+                )
+                for charge in charges
+            }
+            target_reversal = (
+                sum((charge.amount for charge in charges), ZERO) * refund_ratio
+            ).quantize(CENT, rounding=ROUND_HALF_UP)
+            remaining_target = max(
+                target_reversal - sum(scoped_reversed_by_charge.values(), ZERO),
+                ZERO,
             )
+
+            for charge in charges:
+                charge_target = (charge.amount * refund_ratio).quantize(
+                    CENT, rounding=ROUND_HALF_UP
+                )
+                remaining_charge = max(
+                    charge.amount - total_reversed_by_charge[charge.pk], ZERO
+                )
+                allocation = min(
+                    max(charge_target - scoped_reversed_by_charge[charge.pk], ZERO),
+                    remaining_charge,
+                    remaining_target,
+                )
+                order_refund_allocations[charge.pk] = allocation
+                remaining_target -= allocation
+
+            for charge in charges:
+                if remaining_target <= ZERO:
+                    break
+                remaining_charge = max(
+                    charge.amount
+                    - total_reversed_by_charge[charge.pk]
+                    - order_refund_allocations[charge.pk],
+                    ZERO,
+                )
+                allocation = min(remaining_charge, remaining_target)
+                order_refund_allocations[charge.pk] += allocation
+                remaining_target -= allocation
+
+        for charge in charges:
+            if locked_refund.payment_id:
+                target_reversal = (charge.amount * refund_ratio).quantize(
+                    CENT, rounding=ROUND_HALF_UP
+                )
+                scoped_reversed_amount = -(
+                    charge.adjustments.filter(
+                        entry_type=PlatformFeeLedgerEntryType.REFUND,
+                        refund__payment=locked_refund.payment,
+                    ).aggregate(total=Sum("amount"))["total"]
+                    or ZERO
+                )
+                adjustment_amount = min(
+                    max(target_reversal - scoped_reversed_amount, ZERO),
+                    charge.amount - total_reversed_by_charge[charge.pk],
+                )
+            else:
+                adjustment_amount = order_refund_allocations[charge.pk]
             if adjustment_amount <= ZERO:
                 continue
 
