@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from django.db.models import Prefetch, Q
 from django.utils.timezone import is_aware, make_aware, now
+from eventyay.base.models.organizer import OrganizerBillingModel
 
 from .models import (
     AddonPricingMode,
@@ -352,6 +353,17 @@ def build_organizer_billing_overview(organizer, reference: datetime | None = Non
     for row in fee_rows:
         _add_amount(totals, row["currency"], "ticket_fees", row["net"])
 
+    billing = OrganizerBillingModel.objects.filter(organizer=organizer).first()
+    authorization = getattr(organizer, "business_billing_authorization", None)
+    customer_ready = bool(billing and billing.stripe_customer_id)
+    payment_method_ready = bool(billing and billing.stripe_payment_method_id)
+    collection_authorized = bool(
+        authorization
+        and authorization.is_active
+        and billing
+        and authorization.stripe_customer_id == billing.stripe_customer_id
+    )
+
     return {
         "period_start": period_start,
         "period_end": period_end,
@@ -365,5 +377,10 @@ def build_organizer_billing_overview(organizer, reference: datetime | None = Non
             {"currency": currency, **amounts}
             for currency, amounts in sorted(totals.items())
         ],
-        "billing_profile_ready": bool(subscription and subscription.stripe_customer_id),
+        "billing_customer_ready": customer_ready,
+        "billing_payment_method_ready": payment_method_ready,
+        "billing_collection_authorized": collection_authorized,
+        "billing_profile_ready": customer_ready
+        and payment_method_ready
+        and collection_authorized,
     }

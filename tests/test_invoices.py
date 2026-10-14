@@ -5,6 +5,7 @@ from django.test import override_settings
 from django.utils.timezone import make_aware, now
 from eventyay.base.models import Event, Organizer, User
 from eventyay.base.models.auth import StaffSession
+from eventyay.base.models.organizer import OrganizerBillingModel
 from eventyay.base.settings import GlobalSettingsObject
 from unittest.mock import patch
 
@@ -18,6 +19,7 @@ from eventyay_business.models import (
     AddonDefinition,
     AddonPricingMode,
     AddonStatus,
+    BillingCollectionAuthorization,
     BillingInterval,
     BusinessInvoice,
     BusinessInvoiceStatus,
@@ -444,6 +446,38 @@ def test_organizer_invoice_views(client, organizer_user, test_setup):
     assert b"Pro Tier" in resp.content
     assert b"49.00 EUR" in resp.content
     assert b"stripe_customer_id" not in resp.content
+
+    billing = OrganizerBillingModel.objects.create(
+        organizer=org,
+        primary_contact_name="Acme Billing",
+        primary_contact_email="billing@example.com",
+        company_or_organization_name="Acme Corp",
+        address_line_1="Example Street 1",
+        address_line_2="",
+        city="Berlin",
+        zip_code="10115",
+        country="DE",
+        preferred_language="en",
+        tax_id="",
+        stripe_customer_id="cus_acme",
+        stripe_payment_method_id="pm_acme",
+    )
+    authorize_url = f"/control/organizer/{org.slug}/business/billing/authorize/"
+    resp = client.post(authorize_url, {"authorize": "yes"})
+    assert resp.status_code == 302
+    authorization = BillingCollectionAuthorization.objects.get(organizer=org)
+    assert authorization.stripe_customer_id == billing.stripe_customer_id
+    assert authorization.authorized_by == organizer_user
+    assert authorization.revoked_at is None
+
+    resp = client.get(current_charges_url)
+    assert b"automatic invoice collection is authorized" in resp.content
+
+    revoke_url = f"/control/organizer/{org.slug}/business/billing/revoke/"
+    resp = client.post(revoke_url)
+    assert resp.status_code == 302
+    authorization.refresh_from_db()
+    assert authorization.revoked_at is not None
 
     # Test detail view
     resp = client.get(url_detail)

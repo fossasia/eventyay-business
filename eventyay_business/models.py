@@ -996,6 +996,42 @@ class BusinessInvoiceLine(models.Model):
         return f"{self.description}: {self.amount}"
 
 
+class BillingCollectionAuthorization(models.Model):
+    organizer = models.OneToOneField(
+        "base.Organizer",
+        on_delete=models.CASCADE,
+        related_name="business_billing_authorization",
+        verbose_name=_("Organizer"),
+    )
+    stripe_customer_id = models.CharField(
+        max_length=255, verbose_name=_("Authorized Stripe customer ID")
+    )
+    authorized_at = models.DateTimeField(verbose_name=_("Authorized at"))
+    authorized_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="business_billing_authorizations",
+        verbose_name=_("Authorized by"),
+    )
+    revoked_at = models.DateTimeField(
+        null=True, blank=True, verbose_name=_("Revoked at")
+    )
+    terms_version = models.CharField(
+        max_length=20, default="1", verbose_name=_("Terms version")
+    )
+    updated_at = models.DateTimeField(auto_now=True, verbose_name=_("Updated at"))
+
+    class Meta:
+        verbose_name = _("Billing collection authorization")
+        verbose_name_plural = _("Billing collection authorizations")
+
+    @property
+    def is_active(self):
+        return self.revoked_at is None
+
+
 class PlatformFeeLedgerEntry(models.Model):
     IMMUTABLE_FIELDS = (
         "organizer_id",

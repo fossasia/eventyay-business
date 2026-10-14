@@ -6,6 +6,7 @@ from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils.timezone import now
+from eventyay.base.models.organizer import OrganizerBillingModel
 
 from .invoicing_service import generate_invoice_number
 from .models import (
@@ -61,7 +62,10 @@ def get_stripe_secret_key_safe() -> Optional[str]:
 
 def get_or_create_stripe_customer(organizer, user=None) -> Optional[str]:
     """
-    Retrieve existing stripe_customer_id or create a new Stripe customer.
+    Return the organizer's canonical Stripe customer from Core billing settings.
+
+    Customer creation belongs to Core's organizer billing flow. This function keeps
+    legacy subscription references synchronized but never creates a second customer.
     """
     secret_key = get_stripe_secret_key_safe()
     if not secret_key or stripe is None:
@@ -69,65 +73,14 @@ def get_or_create_stripe_customer(organizer, user=None) -> Optional[str]:
 
     stripe.api_key = secret_key
 
-    # 1. Check existing subscription
-    sub = (
-        organizer.subscriptions.filter(stripe_customer_id__isnull=False)
-        .exclude(stripe_customer_id="")
-        .first()
-    )
-    if sub and sub.stripe_customer_id:
-        return sub.stripe_customer_id
-
-    # 2. Check OrganizerBillingModel
-    try:
-        from eventyay.base.models.organizer import OrganizerBillingModel
-
-        billing = OrganizerBillingModel.objects.filter(
-            organizer_id=organizer.id, stripe_customer_id__isnull=False
-        ).first()
-        if billing and billing.stripe_customer_id:
-            return billing.stripe_customer_id
-    except Exception:
-        pass
-
-    # 3. Create customer in Stripe
-    try:
-        email = (
-            user.email if user and user.email else f"billing@{organizer.slug}.eventyay"
-        )
-        customer = stripe.Customer.create(
-            email=email,
-            name=organizer.name,
-            metadata={"organizer_slug": organizer.slug},
-        )
-        # Persist customer.id so subsequent calls do not create duplicate customers
-        active_sub = (
-            organizer.subscriptions.filter(status=SubscriptionStatus.ACTIVE).first()
-            or organizer.subscriptions.first()
-        )
-        if active_sub:
-            active_sub.stripe_customer_id = customer.id
-            active_sub.save(update_fields=["stripe_customer_id"])
-        else:
-            try:
-                from eventyay.base.models.organizer import OrganizerBillingModel
-
-                billing, _ = OrganizerBillingModel.objects.get_or_create(
-                    organizer=organizer,
-                    defaults={
-                        "primary_contact_name": organizer.name,
-                        "primary_contact_email": email,
-                    },
-                )
-                billing.stripe_customer_id = customer.id
-                billing.save(update_fields=["stripe_customer_id"])
-            except Exception:
-                pass
-
-        return customer.id
-    except Exception as exc:
-        logger.error("Failed to create Stripe customer for %s: %s", organizer.slug, exc)
+    billing = OrganizerBillingModel.objects.filter(organizer=organizer).first()
+    if not billing or not billing.stripe_customer_id:
         return None
+
+    organizer.subscriptions.exclude(
+        stripe_customer_id=billing.stripe_customer_id
+    ).update(stripe_customer_id=billing.stripe_customer_id)
+    return billing.stripe_customer_id
 
 
 def sync_tier_price_to_stripe(tier_price: TierPrice) -> Optional[str]:

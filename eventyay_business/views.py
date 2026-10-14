@@ -21,6 +21,7 @@ from django.views.generic import (
     View,
 )
 from eventyay.base.models import Event, Organizer, User
+from eventyay.base.models.organizer import OrganizerBillingModel
 from eventyay.control.permissions import (
     AdministratorPermissionRequiredMixin,
     EventPermissionRequiredMixin,
@@ -54,6 +55,7 @@ from .models import (
     AddonAssignmentScope,
     AddonDefinition,
     AddonStatus,
+    BillingCollectionAuthorization,
     BillingInterval,
     BusinessInvoice,
     BusinessInvoiceStatus,
@@ -1988,6 +1990,66 @@ class OrganizerCurrentChargesView(
         ctx["organizer"] = self.request.organizer
         ctx.update(build_organizer_billing_overview(self.request.organizer))
         return ctx
+
+
+class OrganizerBillingAuthorizationView(
+    OrganizerPermissionRequiredMixin, OrganizerDetailViewMixin, View
+):
+    permission = "can_change_organizer_settings"
+
+    def post(self, request, *args, **kwargs):
+        billing = OrganizerBillingModel.objects.filter(
+            organizer=request.organizer
+        ).first()
+        if not billing or not billing.stripe_customer_id:
+            messages.error(
+                request,
+                _(
+                    "Complete the organizer billing details before authorizing collection."
+                ),
+            )
+        elif not billing.stripe_payment_method_id:
+            messages.error(
+                request,
+                _("Save a payment method before authorizing automatic collection."),
+            )
+        elif request.POST.get("authorize") != "yes":
+            messages.error(
+                request, _("Confirm the automatic collection authorization.")
+            )
+        else:
+            BillingCollectionAuthorization.objects.update_or_create(
+                organizer=request.organizer,
+                defaults={
+                    "stripe_customer_id": billing.stripe_customer_id,
+                    "authorized_at": now(),
+                    "authorized_by": request.user,
+                    "revoked_at": None,
+                },
+            )
+            messages.success(request, _("Automatic invoice collection is authorized."))
+        return redirect(
+            "plugins:eventyay_business:organizer.current_charges",
+            organizer=request.organizer.slug,
+        )
+
+
+class OrganizerBillingAuthorizationRevokeView(
+    OrganizerPermissionRequiredMixin, OrganizerDetailViewMixin, View
+):
+    permission = "can_change_organizer_settings"
+
+    def post(self, request, *args, **kwargs):
+        BillingCollectionAuthorization.objects.filter(
+            organizer=request.organizer, revoked_at__isnull=True
+        ).update(revoked_at=now())
+        messages.success(
+            request, _("Automatic invoice collection authorization was revoked.")
+        )
+        return redirect(
+            "plugins:eventyay_business:organizer.current_charges",
+            organizer=request.organizer.slug,
+        )
 
 
 class OrganizerInvoiceDetailView(OrganizerPermissionRequiredMixin, DetailView):

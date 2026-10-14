@@ -23,12 +23,41 @@
     {% if billing_profile_ready %}
         <div class="alert alert-success">
             <i class="fa fa-check-circle" aria-hidden="true"></i>
-            {% trans "A Stripe billing customer is connected for this organizer." %}
+            {% trans "A payment method is ready and automatic invoice collection is authorized." %}
+            <form method="post" action="{% url 'plugins:eventyay_business:organizer.billing.revoke' organizer=organizer.slug %}" class="form-inline" style="margin-top: 10px;">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-default btn-sm">{% trans "Revoke authorization" %}</button>
+            </form>
         </div>
     {% else %}
         <div class="alert alert-warning">
             <i class="fa fa-exclamation-triangle" aria-hidden="true"></i>
-            {% trans "No Stripe billing customer is connected. A payment method will be required before automatic collection can begin." %}
+            {% if not billing_customer_ready %}
+                {% trans "Complete the organizer billing details to create the canonical Stripe billing customer." %}
+            {% elif not billing_payment_method_ready %}
+                {% trans "Save a payment method before automatic collection can begin." %}
+            {% else %}
+                {% trans "The saved payment method has not been authorized for automatic invoice collection." %}
+            {% endif %}
+            <p style="margin-top: 10px;">
+                <a href="{% url 'eventyay_common:organizer.billing' organizer=organizer.slug %}" class="btn btn-default btn-sm">
+                    {% trans "Open billing settings" %}
+                </a>
+            </p>
+            {% if billing_customer_ready and billing_payment_method_ready and not billing_collection_authorized %}
+                <form method="post" action="{% url 'plugins:eventyay_business:organizer.billing.authorize' organizer=organizer.slug %}">
+                    {% csrf_token %}
+                    <div class="checkbox">
+                        <label>
+                            <input type="checkbox" name="authorize" value="yes" required>
+                            {% trans "I authorize Eventyay to automatically collect finalized Business invoices from this saved payment method, including off-session charges." %}
+                        </label>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-sm" style="margin-top: 10px;">
+                        {% trans "Authorize automatic collection" %}
+                    </button>
+                </form>
+            {% endif %}
         </div>
     {% endif %}
 

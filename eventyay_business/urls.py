@@ -196,6 +196,16 @@ urlpatterns = [
         name="organizer.current_charges",
     ),
     path(
+        "control/organizer/<str:organizer>/business/billing/authorize/",
+        views.OrganizerBillingAuthorizationView.as_view(),
+        name="organizer.billing.authorize",
+    ),
+    path(
+        "control/organizer/<str:organizer>/business/billing/revoke/",
+        views.OrganizerBillingAuthorizationRevokeView.as_view(),
+        name="organizer.billing.revoke",
+    ),
+    path(
         "control/organizer/<str:organizer>/business/invoices/<int:pk>/",
         views.OrganizerInvoiceDetailView.as_view(),
         name="organizer.invoices.detail",

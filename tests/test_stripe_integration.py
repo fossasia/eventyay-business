@@ -6,6 +6,7 @@ from django.urls import reverse
 from django.utils.timezone import now
 from eventyay.base.models import Event, Organizer, User
 from eventyay.base.models.auth import StaffSession
+from eventyay.base.models.organizer import OrganizerBillingModel
 from unittest.mock import MagicMock, patch
 
 from eventyay_business.models import (
@@ -149,7 +150,7 @@ def test_get_or_create_stripe_customer(setup_data):
     ):
         assert get_or_create_stripe_customer(organizer, user=user) is None
 
-    # When stripe is configured and customer already exists on subscription
+    # A legacy subscription reference is not canonical on its own.
     sub = organizer.subscriptions.filter(status=SubscriptionStatus.ACTIVE).first()
     if not sub:
         sub = Subscription.objects.create(
@@ -164,27 +165,32 @@ def test_get_or_create_stripe_customer(setup_data):
         "eventyay_business.stripe_service.get_stripe_secret_key_safe",
         return_value="sk_test_123",
     ):
-        assert (
-            get_or_create_stripe_customer(organizer, user=user)
-            == "cus_existing_sub_123"
-        )
+        assert get_or_create_stripe_customer(organizer, user=user) is None
 
-    # When no existing customer, calls stripe.Customer.create
-    organizer.subscriptions.all().delete()
+    OrganizerBillingModel.objects.create(
+        organizer=organizer,
+        primary_contact_name="Stripe Organizer",
+        primary_contact_email="billing@example.com",
+        company_or_organization_name="Stripe Org",
+        address_line_1="Example Street 1",
+        address_line_2="",
+        city="Berlin",
+        zip_code="10115",
+        country="DE",
+        preferred_language="en",
+        tax_id="",
+        stripe_customer_id="cus_canonical_456",
+    )
     with patch(
         "eventyay_business.stripe_service.get_stripe_secret_key_safe",
         return_value="sk_test_123",
     ):
-        with patch("stripe.Customer.create") as mock_create:
-            mock_create.return_value = MagicMock(id="cus_new_456")
-            res = get_or_create_stripe_customer(organizer, user=user)
-            assert res == "cus_new_456"
-            mock_create.assert_called_once()
-            from eventyay.base.models.organizer import OrganizerBillingModel
+        assert (
+            get_or_create_stripe_customer(organizer, user=user) == "cus_canonical_456"
+        )
 
-            assert OrganizerBillingModel.objects.filter(
-                organizer=organizer, stripe_customer_id="cus_new_456"
-            ).exists()
+    sub.refresh_from_db()
+    assert sub.stripe_customer_id == "cus_canonical_456"
 
 
 @pytest.mark.django_db
