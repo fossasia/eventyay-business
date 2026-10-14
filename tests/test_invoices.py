@@ -12,6 +12,7 @@ from eventyay.base.settings import GlobalSettingsObject
 from unittest.mock import patch
 
 from eventyay_business.invoicing_service import (
+    InvoiceCalculationError,
     finalize_business_invoice,
     generate_all_business_invoices,
     generate_business_invoice_for_organizer,
@@ -184,8 +185,10 @@ def test_invoice_subscription_fee(test_setup):
     assert sub_line.amount == Decimal("49.00")
     assert "Pro Tier" in sub_line.description
     assert sub_line.calculation_metadata["tier_name"] == "Pro Tier"
-    assert sub_line.service_period_start == period_start
-    assert sub_line.service_period_end == period_end
+    assert sub_line.service_period_start == make_aware(datetime(2026, 9, 1, 0, 0, 0))
+    assert sub_line.service_period_end == make_aware(
+        datetime(2026, 9, 30, 23, 59, 59, 999999)
+    )
 
 
 @pytest.mark.django_db
@@ -731,13 +734,14 @@ def test_platform_fee_ecb_conversion_and_missing_rate(test_setup):
     )
 
     gs = GlobalSettingsObject()
+    gs.settings.ecb_rates_date = "2026-08-31"
 
-    # Case A: Missing exchange rate -> record skipped, no invoice generated
+    # Case A: Missing exchange rate blocks an incomplete invoice.
     gs.settings.ecb_rates_dict = {"EUR": "1.0000"}  # USD missing
-    inv_none = generate_business_invoice_for_organizer(
-        org, period_start, period_end, currency="EUR"
-    )
-    assert inv_none is None
+    with pytest.raises(InvoiceCalculationError, match="No exchange rate"):
+        generate_business_invoice_for_organizer(
+            org, period_start, period_end, currency="EUR"
+        )
 
     # Case B: Exchange rate present: 1 EUR = 1.20 USD -> 12.00 USD = 10.00 EUR
     gs.settings.ecb_rates_dict = {"EUR": "1.0000", "USD": "1.2000"}
@@ -750,6 +754,9 @@ def test_platform_fee_ecb_conversion_and_missing_rate(test_setup):
     line = inv.lines.first()
     assert line.line_type == InvoiceLineType.PLATFORM_FEE
     assert line.amount == Decimal("10.00")
+    assert line.calculation_metadata["fee_records"][0]["exchange_rate_date"] == (
+        "2026-08-31"
+    )
 
 
 @pytest.mark.django_db
@@ -789,7 +796,7 @@ def test_concurrent_invoice_generation_integrity_handling(test_setup):
             "duplicate key value violates unique constraint"
         )
         raced_inv = generate_business_invoice_for_organizer(
-            org, period_start, period_end
+            org, period_start, period_end, allow_empty=True
         )
         mock_create.assert_called_once()
         assert raced_inv == existing_inv
@@ -828,14 +835,15 @@ def test_ecb_conversion_exceptions_handled(test_setup):
     price.save()
 
     gs = GlobalSettingsObject()
+    gs.settings.ecb_rates_date = "2026-08-31"
     # Malformed rate (e.g. division by zero in exchange rate)
     gs.settings.ecb_rates_dict = {"EUR": "1.0000", "USD": "0.0000"}
 
-    # Should catch ArithmeticError / InvalidOperation, log, fallback to 0.00 and skip line
-    inv = generate_business_invoice_for_organizer(
-        org, period_start, period_end, currency="EUR"
-    )
-    assert inv is None
+    # Invalid conversion data blocks invoice finalization.
+    with pytest.raises(InvoiceCalculationError, match="Could not convert"):
+        generate_business_invoice_for_organizer(
+            org, period_start, period_end, currency="EUR"
+        )
 
 
 @pytest.mark.django_db
@@ -857,8 +865,8 @@ def test_annual_subscription_billed_only_on_renewal(test_setup):
     jan_end = make_aware(datetime(2026, 1, 31, 23, 59, 59))
     feb_start = make_aware(datetime(2026, 2, 1, 0, 0, 0))
     feb_end = make_aware(datetime(2026, 2, 28, 23, 59, 59))
-    next_jan_start = make_aware(datetime(2027, 1, 1, 0, 0, 0))
-    next_jan_end = make_aware(datetime(2027, 1, 31, 23, 59, 59))
+    next_renewal_run_start = make_aware(datetime(2026, 12, 1, 0, 0, 0))
+    next_renewal_run_end = make_aware(datetime(2026, 12, 31, 23, 59, 59))
 
     # 1. Initial subscription month (Jan 2026) covers starts_at -> billed
     inv_jan = generate_business_invoice_for_organizer(org, jan_start, jan_end)
@@ -874,9 +882,9 @@ def test_annual_subscription_billed_only_on_renewal(test_setup):
     inv_feb = generate_business_invoice_for_organizer(org, feb_start, feb_end)
     assert inv_feb is None
 
-    # 3. Subsequent renewal year (Jan 2027) -> billed
+    # 3. The December run bills the January 2027 renewal in advance.
     inv_next_jan = generate_business_invoice_for_organizer(
-        org, next_jan_start, next_jan_end
+        org, next_renewal_run_start, next_renewal_run_end
     )
     assert inv_next_jan is not None
     assert inv_next_jan.lines.filter(line_type=InvoiceLineType.SUBSCRIPTION).exists()
@@ -923,7 +931,7 @@ def test_onetime_addon_billed_only_in_start_period(test_setup):
     assert line.line_type == InvoiceLineType.ADDON
     assert line.amount == Decimal("150.00")
     assert line.calculation_metadata["pricing_mode"] == "one_time"
-    assert "2026-08-01" in line.calculation_metadata["billed_period"]
+    assert "2026-08-10" in line.calculation_metadata["service_period_start"]
 
     # 2. September invoice does NOT cover starts_at -> NOT billed
     inv_sep = generate_business_invoice_for_organizer(org, sep_start, sep_end)
@@ -961,13 +969,14 @@ def test_addon_and_subscription_currency_conversion(test_setup):
     )
 
     gs = GlobalSettingsObject()
+    gs.settings.ecb_rates_date = "2026-08-31"
 
-    # Case A: Missing USD rate -> both skipped, no invoice produced
+    # Case A: Missing USD rate blocks an incomplete invoice.
     gs.settings.ecb_rates_dict = {"EUR": "1.0000"}
-    inv_missing = generate_business_invoice_for_organizer(
-        org, period_start, period_end, currency="EUR"
-    )
-    assert inv_missing is None
+    with pytest.raises(InvoiceCalculationError, match="No exchange rate"):
+        generate_business_invoice_for_organizer(
+            org, period_start, period_end, currency="EUR"
+        )
 
     # Case B: Rates present: 1 EUR = 1.20 USD
     # Sub: 120 USD / 1.2 = 100 EUR
@@ -982,10 +991,12 @@ def test_addon_and_subscription_currency_conversion(test_setup):
     sub_line = inv.lines.get(line_type=InvoiceLineType.SUBSCRIPTION)
     assert sub_line.amount == Decimal("100.00")
     assert sub_line.calculation_metadata["price_currency"] == "USD"
+    assert sub_line.calculation_metadata["exchange_rate_date"] == "2026-08-31"
 
     addon_line = inv.lines.get(line_type=InvoiceLineType.ADDON)
     assert addon_line.amount == Decimal("20.00")
     assert addon_line.calculation_metadata["original_currency"] == "USD"
+    assert addon_line.calculation_metadata["exchange_rate_date"] == "2026-08-31"
 
 
 @pytest.mark.django_db
@@ -1003,10 +1014,9 @@ def test_historical_terminal_subscription_and_past_due_cutoff(test_setup):
     sub.ends_at = make_aware(datetime(2026, 8, 15, 0, 0, 0))
     sub.save()
 
-    # In August, it was active until the 15th -> included
+    # It ends before the upcoming fixed-charge period, so no new plan line is added.
     inv_aug = generate_business_invoice_for_organizer(org, aug_start, aug_end)
-    assert inv_aug is not None
-    assert inv_aug.lines.filter(line_type=InvoiceLineType.SUBSCRIPTION).exists()
+    assert inv_aug is None
 
     # In September, it was already ended -> excluded
     inv_sep = generate_business_invoice_for_organizer(org, sep_start, sep_end)
@@ -1021,3 +1031,138 @@ def test_historical_terminal_subscription_and_past_due_cutoff(test_setup):
 
     inv_aug_past = generate_business_invoice_for_organizer(org, aug_start, aug_end)
     assert inv_aug_past is None
+
+
+@pytest.mark.django_db
+def test_new_monthly_subscription_is_prorated_then_billed_in_advance(test_setup):
+    org, _, _, _ = test_setup
+    period_start = make_aware(datetime(2026, 8, 1, 0, 0, 0))
+    period_end = make_aware(datetime(2026, 8, 31, 23, 59, 59))
+    subscription = Subscription.objects.get(organizer=org)
+    subscription.starts_at = make_aware(datetime(2026, 8, 16, 0, 0, 0))
+    subscription.save()
+
+    invoice = generate_business_invoice_for_organizer(org, period_start, period_end)
+
+    lines = list(
+        invoice.lines.filter(line_type=InvoiceLineType.SUBSCRIPTION).order_by(
+            "service_period_start"
+        )
+    )
+    assert len(lines) == 2
+    assert lines[0].service_period_start == subscription.starts_at
+    assert lines[0].amount == Decimal("25.29")
+    assert lines[0].calculation_metadata["prorated"] is True
+    assert lines[1].service_period_start == make_aware(datetime(2026, 9, 1))
+    assert lines[1].amount == Decimal("49.00")
+    assert lines[1].calculation_metadata["prorated"] is False
+    assert invoice.total == Decimal("74.29")
+
+
+@pytest.mark.django_db
+def test_recurring_addon_is_prorated_for_upcoming_service_period(test_setup):
+    org, _, _, _ = test_setup
+    subscription = Subscription.objects.get(organizer=org)
+    subscription.status = SubscriptionStatus.CANCELED
+    subscription.save()
+    addon = AddonDefinition.objects.create(
+        slug="mid-month-addon",
+        name="Mid-month add-on",
+        pricing_mode=AddonPricingMode.RECURRING,
+        price=Decimal("30.00"),
+        currency="EUR",
+        capability="storage.extra_gb",
+    )
+    OrganizerAddon.objects.create(
+        organizer=org,
+        addon=addon,
+        starts_at=make_aware(datetime(2026, 9, 16, 0, 0, 0)),
+    )
+
+    invoice = generate_business_invoice_for_organizer(
+        org,
+        make_aware(datetime(2026, 8, 1, 0, 0, 0)),
+        make_aware(datetime(2026, 8, 31, 23, 59, 59)),
+    )
+
+    line = invoice.lines.get(line_type=InvoiceLineType.ADDON)
+    assert line.service_period_start == make_aware(datetime(2026, 9, 16, 0, 0, 0))
+    assert line.amount == Decimal("15.00")
+
+
+@pytest.mark.django_db
+def test_new_recurring_addon_includes_first_partial_and_upcoming_period(test_setup):
+    org, _, _, _ = test_setup
+    subscription = Subscription.objects.get(organizer=org)
+    subscription.status = SubscriptionStatus.CANCELED
+    subscription.save()
+    addon = AddonDefinition.objects.create(
+        slug="new-recurring-addon",
+        name="New recurring add-on",
+        pricing_mode=AddonPricingMode.RECURRING,
+        price=Decimal("31.00"),
+        currency="EUR",
+        capability="storage.extra_gb",
+    )
+    assignment = OrganizerAddon.objects.create(
+        organizer=org,
+        addon=addon,
+        starts_at=make_aware(datetime(2026, 8, 16, 0, 0, 0)),
+    )
+
+    invoice = generate_business_invoice_for_organizer(
+        org,
+        make_aware(datetime(2026, 8, 1, 0, 0, 0)),
+        make_aware(datetime(2026, 8, 31, 23, 59, 59)),
+    )
+
+    lines = list(
+        invoice.lines.filter(line_type=InvoiceLineType.ADDON).order_by(
+            "service_period_start"
+        )
+    )
+    assert len(lines) == 2
+    assert lines[0].service_period_start == assignment.starts_at
+    assert lines[0].amount == Decimal("16.00")
+    assert lines[1].service_period_start == make_aware(datetime(2026, 9, 1))
+    assert lines[1].amount == Decimal("31.00")
+    assert invoice.total == Decimal("47.00")
+
+
+@pytest.mark.django_db
+def test_usage_records_are_claimed_with_the_finalized_invoice(test_setup):
+    org, _, _, event = test_setup
+    fee_record = UsageRecord.objects.create(
+        organizer=org,
+        event=event,
+        capability="commerce.platform_fee_percent",
+        quantity=Decimal("5.00"),
+        unit="EUR",
+        occurred_at=make_aware(datetime(2026, 8, 5, 12, 0, 0)),
+        source_type="order",
+        source_id="CLAIM-FEE",
+        idempotency_key="claim-fee",
+        metadata={"currency": "EUR"},
+    )
+    included_usage = UsageRecord.objects.create(
+        organizer=org,
+        event=event,
+        capability="registration.free_allowance_per_event",
+        quantity=Decimal("10"),
+        unit="count",
+        occurred_at=make_aware(datetime(2026, 8, 6, 12, 0, 0)),
+        source_type="order",
+        source_id="CLAIM-USAGE",
+        idempotency_key="claim-usage",
+    )
+
+    invoice = generate_business_invoice_for_organizer(
+        org,
+        make_aware(datetime(2026, 8, 1, 0, 0, 0)),
+        make_aware(datetime(2026, 8, 31, 23, 59, 59)),
+    )
+
+    fee_record.refresh_from_db()
+    included_usage.refresh_from_db()
+    assert fee_record.invoice == invoice
+    assert included_usage.invoice == invoice

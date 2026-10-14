@@ -454,6 +454,14 @@ class UsageRecord(models.Model):
         max_length=255, verbose_name=_("Idempotency key")
     )
     metadata = models.JSONField(default=dict, blank=True, verbose_name=_("Metadata"))
+    invoice = models.ForeignKey(
+        "BusinessInvoice",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="usage_records",
+        verbose_name=_("Business invoice"),
+    )
 
     class Meta:
         ordering = ["-occurred_at", "-id"]

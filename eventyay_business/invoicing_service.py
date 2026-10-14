@@ -1,6 +1,6 @@
 import logging
-from datetime import datetime, timedelta
-from decimal import Decimal, InvalidOperation
+from datetime import date, datetime, timedelta
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from django.conf import settings
 from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
@@ -28,6 +28,173 @@ from .models import (
 )
 
 logger = logging.getLogger(__name__)
+
+CENT = Decimal("0.01")
+
+
+class InvoiceCalculationError(ValueError):
+    pass
+
+
+def next_calendar_month_range(
+    period_end: datetime,
+) -> tuple[datetime, datetime]:
+    current_month = period_end.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    if current_month.month == 12:
+        start = current_month.replace(year=current_month.year + 1, month=1)
+    else:
+        start = current_month.replace(month=current_month.month + 1)
+    if start.month == 12:
+        following = start.replace(year=start.year + 1, month=1)
+    else:
+        following = start.replace(month=start.month + 1)
+    return start, following - timedelta(microseconds=1)
+
+
+def prorated_amount(
+    amount: Decimal,
+    period_start: datetime,
+    period_end: datetime,
+    active_start: datetime,
+    active_end: datetime,
+) -> Decimal:
+    period_seconds = Decimal(
+        str((period_end - period_start + timedelta(microseconds=1)).total_seconds())
+    )
+    active_seconds = Decimal(
+        str((active_end - active_start + timedelta(microseconds=1)).total_seconds())
+    )
+    return (amount * active_seconds / period_seconds).quantize(
+        CENT, rounding=ROUND_HALF_UP
+    )
+
+
+def effective_service_period(
+    starts_at: datetime,
+    ends_at: datetime | None,
+    cancel_at: datetime | None,
+    canceled_at: datetime | None,
+    period_start: datetime,
+    period_end: datetime,
+) -> tuple[datetime, datetime] | None:
+    service_start = max(starts_at, period_start)
+    boundaries = [value for value in (ends_at, cancel_at, canceled_at) if value]
+    service_end = min([period_end, *boundaries])
+    if service_start > service_end:
+        return None
+    return service_start, service_end
+
+
+def invoice_source_claimed(source_key: str) -> bool:
+    return BusinessInvoiceLine.objects.filter(usage_reference=source_key).exists()
+
+
+def build_subscription_invoice_line(
+    subscription: Subscription,
+    service_period_start: datetime,
+    service_period_end: datetime,
+    full_period_start: datetime,
+    full_period_end: datetime,
+    billing_currency: str,
+    rates_dict: dict | None,
+    rates_date: date | None,
+    prorate: bool,
+) -> dict | None:
+    tier_version = subscription.tier_version
+    tier = tier_version.tier
+    interval = subscription.billing_interval or BillingInterval.MONTHLY
+    price = (
+        tier_version.prices.filter(
+            active=True,
+            billing_interval=interval,
+            currency=billing_currency,
+        ).first()
+        or tier_version.prices.filter(
+            active=True,
+            billing_interval=interval,
+        ).first()
+    )
+    if not price:
+        logger.warning(
+            "No active price found for tier %s matching billing interval %s. Skipping subscription line.",
+            tier.slug,
+            interval,
+        )
+        return None
+
+    exchange_rate = None
+    if price.currency == billing_currency:
+        unit_price = price.amount
+    elif (
+        rates_dict
+        and rates_date
+        and price.currency in rates_dict
+        and billing_currency in rates_dict
+    ):
+        try:
+            rate = Decimal(str(rates_dict[billing_currency])) / Decimal(
+                str(rates_dict[price.currency])
+            )
+            unit_price = (price.amount * rate).quantize(CENT)
+            exchange_rate = str(rate.quantize(Decimal("0.0001")))
+        except (InvalidOperation, ArithmeticError, TypeError) as exc:
+            raise InvoiceCalculationError(
+                f"Could not convert the {tier.slug} subscription price from "
+                f"{price.currency} to {billing_currency}."
+            ) from exc
+    else:
+        raise InvoiceCalculationError(
+            f"No exchange rate is available to convert the {tier.slug} subscription "
+            f"price from {price.currency} to {billing_currency}."
+        )
+
+    amount = unit_price
+    if prorate:
+        amount = prorated_amount(
+            unit_price,
+            full_period_start,
+            full_period_end,
+            service_period_start,
+            service_period_end,
+        )
+    if amount <= Decimal("0.00"):
+        return None
+
+    source_key = (
+        f"subscription:{subscription.pk}:{service_period_start.isoformat()}:"
+        f"{service_period_end.isoformat()}"
+    )
+    if invoice_source_claimed(source_key):
+        return None
+
+    return {
+        "line_type": InvoiceLineType.SUBSCRIPTION,
+        "event": None,
+        "description": f"Plan Subscription: {tier.name} ({price.get_billing_interval_display()})",
+        "quantity": Decimal("1.00"),
+        "unit_price": unit_price,
+        "amount": amount,
+        "tier_version": tier_version,
+        "addon": None,
+        "usage_reference": source_key,
+        "calculation_metadata": {
+            "subscription_id": subscription.pk,
+            "tier_slug": tier.slug,
+            "tier_name": tier.name,
+            "tier_version": tier_version.version,
+            "billing_interval": str(interval),
+            "price_currency": price.currency,
+            "price_amount": str(price.amount),
+            "service_period_start": service_period_start.isoformat(),
+            "service_period_end": service_period_end.isoformat(),
+            "exchange_rate": exchange_rate,
+            "exchange_rate_date": rates_date.isoformat() if exchange_rate else None,
+            "prorated": prorate,
+            "charged_amount": str(amount),
+        },
+        "service_period_start": service_period_start,
+        "service_period_end": service_period_end,
+    }
 
 
 def billing_address_snapshot(organizer) -> dict:
@@ -171,7 +338,11 @@ def _build_addon_invoice_line(
     event=None,
     billing_currency: str = "EUR",
     rates_dict: dict | None = None,
-    billed_period_str: str = "",
+    rates_date: date | None = None,
+    service_period_start: datetime | None = None,
+    service_period_end: datetime | None = None,
+    full_period_start: datetime | None = None,
+    full_period_end: datetime | None = None,
 ) -> dict | None:
     raw_price = (
         addon_assignment.price
@@ -188,7 +359,12 @@ def _build_addon_invoice_line(
 
     if addon_currency == billing_currency:
         price = raw_price
-    elif rates_dict and addon_currency in rates_dict and billing_currency in rates_dict:
+    elif (
+        rates_dict
+        and rates_date
+        and addon_currency in rates_dict
+        and billing_currency in rates_dict
+    ):
         try:
             rate = Decimal(str(rates_dict[billing_currency])) / Decimal(
                 str(rates_dict[addon_currency])
@@ -196,26 +372,33 @@ def _build_addon_invoice_line(
             price = (raw_price * rate).quantize(Decimal("0.01"))
             rate_applied = str(rate.quantize(Decimal("0.0001")))
         except (InvalidOperation, ArithmeticError, TypeError) as exc:
-            logger.warning(
-                "Failed to convert add-on amount %s from %s to %s: %s",
-                raw_price,
-                addon_currency,
-                billing_currency,
-                exc,
-            )
-            price = Decimal("0.00")
-            return None
+            raise InvoiceCalculationError(
+                f"Could not convert add-on {addon_assignment.addon.slug} from "
+                f"{addon_currency} to {billing_currency}."
+            ) from exc
     else:
-        logger.warning(
-            "Add-on %s currency %s mismatch with billing currency %s and no exchange rate available. Skipping line.",
-            addon_assignment.addon.name,
-            addon_currency,
-            billing_currency,
+        raise InvoiceCalculationError(
+            f"No exchange rate is available to convert add-on "
+            f"{addon_assignment.addon.slug} from {addon_currency} to "
+            f"{billing_currency}."
         )
-        return None
 
     qty = Decimal(addon_assignment.quantity or 1)
     line_amount = (price * qty).quantize(Decimal("0.01"))
+    if (
+        addon_assignment.addon.pricing_mode == AddonPricingMode.RECURRING
+        and service_period_start
+        and service_period_end
+        and full_period_start
+        and full_period_end
+    ):
+        line_amount = prorated_amount(
+            line_amount,
+            full_period_start,
+            full_period_end,
+            service_period_start,
+            service_period_end,
+        )
 
     calc_meta = {
         **scope_meta,
@@ -227,7 +410,13 @@ def _build_addon_invoice_line(
         "original_currency": addon_currency,
         "original_price": str(raw_price),
         "exchange_rate": rate_applied,
-        "billed_period": billed_period_str,
+        "exchange_rate_date": rates_date.isoformat() if rate_applied else None,
+        "service_period_start": (
+            service_period_start.isoformat() if service_period_start else None
+        ),
+        "service_period_end": (
+            service_period_end.isoformat() if service_period_end else None
+        ),
     }
 
     return {
@@ -241,6 +430,8 @@ def _build_addon_invoice_line(
         "addon": addon_assignment.addon,
         "usage_reference": usage_reference,
         "calculation_metadata": calc_meta,
+        "service_period_start": service_period_start,
+        "service_period_end": service_period_end,
     }
 
 
@@ -264,8 +455,9 @@ def generate_business_invoice_for_organizer(
 
             gs = GlobalSettingsObject()
             rates_dict = gs.settings.get("ecb_rates_dict", as_type=dict)
+            rates_date = gs.settings.get("ecb_rates_date", as_type=date)
 
-            # 2. Determine billing currency and active subscription
+            # Determine the subscription for variable charges in the closed period.
             sub_filter = (
                 Q(status__in=[SubscriptionStatus.ACTIVE, SubscriptionStatus.PAST_DUE])
                 & (Q(ends_at__isnull=True) | Q(ends_at__gte=start_date))
@@ -288,8 +480,34 @@ def generate_business_invoice_for_organizer(
                 .first()
             )
 
+            advance_start, advance_end = next_calendar_month_range(end_date)
+            fixed_sub_filter = (
+                Q(status__in=[SubscriptionStatus.ACTIVE, SubscriptionStatus.PAST_DUE])
+                & (Q(ends_at__isnull=True) | Q(ends_at__gte=advance_start))
+                & (Q(cancel_at__isnull=True) | Q(cancel_at__gte=advance_start))
+            ) | (
+                Q(status__in=[SubscriptionStatus.CANCELED, SubscriptionStatus.EXPIRED])
+                & (
+                    (Q(ends_at__isnull=False) & Q(ends_at__gte=advance_start))
+                    | (Q(cancel_at__isnull=False) & Q(cancel_at__gte=advance_start))
+                )
+            )
+            fixed_sub = (
+                Subscription.objects.filter(
+                    organizer=organizer,
+                    starts_at__lte=advance_end,
+                )
+                .filter(fixed_sub_filter)
+                .select_related("tier_version__tier")
+                .order_by("-starts_at")
+                .first()
+            )
+
             billing_currency = (
-                currency or (active_sub.currency if active_sub else None) or "EUR"
+                currency
+                or (fixed_sub.currency if fixed_sub else None)
+                or (active_sub.currency if active_sub else None)
+                or "EUR"
             )
 
             existing = BusinessInvoice.objects.filter(
@@ -303,159 +521,154 @@ def generate_business_invoice_for_organizer(
 
             lines_data = []
 
-            # 3. Aggregate Subscription Plan Fee
-            if active_sub and active_sub.tier_version:
-                tier_ver = active_sub.tier_version
-                tier = tier_ver.tier
-                interval = active_sub.billing_interval or BillingInterval.MONTHLY
-
-                is_billable_period = True
-                service_period_start = start_date
-                service_period_end = end_date
-
-                if interval == BillingInterval.ANNUAL:
-                    sub_start = active_sub.starts_at
-                    is_renewal_period = False
+            # Add the fixed plan charge for the upcoming period in advance.
+            if fixed_sub and fixed_sub.tier_version:
+                interval = fixed_sub.billing_interval or BillingInterval.MONTHLY
+                if interval == BillingInterval.MONTHLY:
+                    service_period = effective_service_period(
+                        fixed_sub.starts_at,
+                        fixed_sub.ends_at,
+                        fixed_sub.cancel_at,
+                        None,
+                        advance_start,
+                        advance_end,
+                    )
+                    if service_period:
+                        line = build_subscription_invoice_line(
+                            fixed_sub,
+                            service_period[0],
+                            service_period[1],
+                            advance_start,
+                            advance_end,
+                            billing_currency,
+                            rates_dict,
+                            rates_date,
+                            prorate=service_period != (advance_start, advance_end),
+                        )
+                        if line:
+                            lines_data.append(line)
+                else:
                     for test_year in (
-                        start_date.year,
-                        start_date.year - 1,
-                        start_date.year + 1,
+                        advance_start.year,
+                        advance_start.year - 1,
+                        advance_start.year + 1,
                     ):
                         try:
-                            anniversary = sub_start.replace(year=test_year)
+                            anniversary = fixed_sub.starts_at.replace(year=test_year)
                         except ValueError:
-                            anniversary = sub_start.replace(year=test_year, day=28)
-
-                        if (
-                            start_date <= anniversary <= end_date
-                            and anniversary >= sub_start
+                            anniversary = fixed_sub.starts_at.replace(
+                                year=test_year, day=28
+                            )
+                        if not (
+                            advance_start <= anniversary <= advance_end
+                            and anniversary >= fixed_sub.starts_at
                         ):
-                            is_renewal_period = True
-                            service_period_start = anniversary
-                            try:
-                                service_period_end = anniversary.replace(
-                                    year=anniversary.year + 1
-                                )
-                            except ValueError:
-                                service_period_end = anniversary.replace(
-                                    year=anniversary.year + 1, day=28
-                                )
-                            break
-
-                    is_billable_period = is_renewal_period
-
-                if is_billable_period:
-                    price_obj = (
-                        tier_ver.prices.filter(
-                            active=True,
-                            billing_interval=interval,
-                            currency=billing_currency,
-                        ).first()
-                        or tier_ver.prices.filter(
-                            active=True, billing_interval=interval
-                        ).first()
-                    )
-
-                    if not price_obj:
-                        logger.warning(
-                            "No active price found for tier %s matching billing interval %s. Skipping subscription line.",
-                            tier.slug,
-                            interval,
+                            continue
+                        try:
+                            annual_end = anniversary.replace(year=anniversary.year + 1)
+                        except ValueError:
+                            annual_end = anniversary.replace(
+                                year=anniversary.year + 1, day=28
+                            )
+                        line = build_subscription_invoice_line(
+                            fixed_sub,
+                            anniversary,
+                            annual_end,
+                            anniversary,
+                            annual_end,
+                            billing_currency,
+                            rates_dict,
+                            rates_date,
+                            prorate=False,
                         )
-                    else:
-                        sub_rate = None
-                        sub_currency = price_obj.currency
-                        if sub_currency == billing_currency:
-                            sub_amount = price_obj.amount
-                        elif (
-                            rates_dict
-                            and sub_currency in rates_dict
-                            and billing_currency in rates_dict
-                        ):
-                            try:
-                                rate = Decimal(
-                                    str(rates_dict[billing_currency])
-                                ) / Decimal(str(rates_dict[sub_currency]))
-                                sub_amount = (price_obj.amount * rate).quantize(
-                                    Decimal("0.01")
-                                )
-                                sub_rate = str(rate.quantize(Decimal("0.0001")))
-                            except (
-                                InvalidOperation,
-                                ArithmeticError,
-                                TypeError,
-                            ) as exc:
-                                logger.warning(
-                                    "Failed to convert subscription amount %s from %s to %s: %s",
-                                    price_obj.amount,
-                                    sub_currency,
-                                    billing_currency,
-                                    exc,
-                                )
-                                sub_amount = Decimal("0.00")
-                        else:
-                            logger.warning(
-                                "Subscription price currency %s mismatch with billing currency %s and no exchange rate available. Skipping subscription line.",
-                                sub_currency,
-                                billing_currency,
-                            )
-                            sub_amount = Decimal("0.00")
+                        if line:
+                            lines_data.append(line)
+                        break
 
-                        if sub_amount > Decimal("0.00"):
-                            lines_data.append(
-                                {
-                                    "line_type": InvoiceLineType.SUBSCRIPTION,
-                                    "event": None,
-                                    "description": f"Plan Subscription: {tier.name} ({price_obj.get_billing_interval_display()})",
-                                    "quantity": Decimal("1.00"),
-                                    "unit_price": sub_amount,
-                                    "amount": sub_amount,
-                                    "tier_version": tier_ver,
-                                    "addon": None,
-                                    "usage_reference": f"subscription_{active_sub.pk}",
-                                    "calculation_metadata": {
-                                        "subscription_id": active_sub.pk,
-                                        "tier_slug": tier.slug,
-                                        "tier_name": tier.name,
-                                        "tier_version": tier_ver.version,
-                                        "billing_interval": str(interval),
-                                        "price_currency": price_obj.currency,
-                                        "price_amount": str(price_obj.amount),
-                                        "service_period_start": service_period_start.isoformat(),
-                                        "service_period_end": service_period_end.isoformat(),
-                                        "exchange_rate": sub_rate,
-                                    },
-                                    "service_period_start": service_period_start,
-                                    "service_period_end": service_period_end,
-                                }
-                            )
+            # Include a new subscription's first partial period when it began
+            # after the preceding calendar-boundary invoice was generated.
+            if (
+                active_sub
+                and active_sub.tier_version
+                and start_date < active_sub.starts_at <= end_date
+            ):
+                interval = active_sub.billing_interval or BillingInterval.MONTHLY
+                if interval == BillingInterval.MONTHLY:
+                    initial_period = effective_service_period(
+                        active_sub.starts_at,
+                        active_sub.ends_at,
+                        active_sub.cancel_at,
+                        None,
+                        start_date,
+                        end_date,
+                    )
+                    if initial_period:
+                        line = build_subscription_invoice_line(
+                            active_sub,
+                            initial_period[0],
+                            initial_period[1],
+                            start_date,
+                            end_date,
+                            billing_currency,
+                            rates_dict,
+                            rates_date,
+                            prorate=True,
+                        )
+                        if line:
+                            lines_data.append(line)
+                else:
+                    try:
+                        initial_end = active_sub.starts_at.replace(
+                            year=active_sub.starts_at.year + 1
+                        )
+                    except ValueError:
+                        initial_end = active_sub.starts_at.replace(
+                            year=active_sub.starts_at.year + 1, day=28
+                        )
+                    line = build_subscription_invoice_line(
+                        active_sub,
+                        active_sub.starts_at,
+                        initial_end,
+                        active_sub.starts_at,
+                        initial_end,
+                        billing_currency,
+                        rates_dict,
+                        rates_date,
+                        prorate=False,
+                    )
+                    if line:
+                        lines_data.append(line)
 
-            # 4. Aggregate Active Add-ons
+            # Add recurring add-ons for the upcoming period and one-time add-ons
+            # activated during the closed period.
             recurring_filter = (
                 Q(addon__pricing_mode=AddonPricingMode.RECURRING)
                 & (
                     (
                         Q(status__in=[AddonStatus.ACTIVE, AddonStatus.PAST_DUE])
-                        & (Q(ends_at__isnull=True) | Q(ends_at__gte=start_date))
-                        & (Q(cancel_at__isnull=True) | Q(cancel_at__gte=start_date))
-                        & (Q(canceled_at__isnull=True) | Q(canceled_at__gte=start_date))
+                        & (Q(ends_at__isnull=True) | Q(ends_at__gte=advance_start))
+                        & (Q(cancel_at__isnull=True) | Q(cancel_at__gte=advance_start))
+                        & (
+                            Q(canceled_at__isnull=True)
+                            | Q(canceled_at__gte=advance_start)
+                        )
                     )
                     | (
                         Q(status__in=[AddonStatus.CANCELED, AddonStatus.EXPIRED])
                         & (
-                            (Q(ends_at__isnull=False) & Q(ends_at__gte=start_date))
+                            (Q(ends_at__isnull=False) & Q(ends_at__gte=advance_start))
                             | (
                                 Q(cancel_at__isnull=False)
-                                & Q(cancel_at__gte=start_date)
+                                & Q(cancel_at__gte=advance_start)
                             )
                             | (
                                 Q(canceled_at__isnull=False)
-                                & Q(canceled_at__gte=start_date)
+                                & Q(canceled_at__gte=advance_start)
                             )
                         )
                     )
                 )
-                & Q(starts_at__lte=end_date)
+                & Q(starts_at__lte=advance_end)
             )
             onetime_filter = (
                 Q(addon__pricing_mode=AddonPricingMode.ONE_TIME)
@@ -465,10 +678,6 @@ def generate_business_invoice_for_organizer(
             )
             addon_filter = recurring_filter | onetime_filter
 
-            billed_period_str = (
-                f"{start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
-            )
-
             # 4a. Organizer-level add-ons
             org_addons = (
                 OrganizerAddon.objects.filter(organizer=organizer)
@@ -477,15 +686,75 @@ def generate_business_invoice_for_organizer(
             )
 
             for oa in org_addons:
+                if oa.addon.pricing_mode == AddonPricingMode.RECURRING:
+                    if start_date < oa.starts_at <= end_date:
+                        initial_period = effective_service_period(
+                            oa.starts_at,
+                            oa.ends_at,
+                            oa.cancel_at,
+                            oa.canceled_at,
+                            start_date,
+                            end_date,
+                        )
+                        if initial_period:
+                            initial_source_key = (
+                                f"organizer-addon:{oa.pk}:"
+                                f"{initial_period[0].isoformat()}:"
+                                f"{initial_period[1].isoformat()}"
+                            )
+                            if not invoice_source_claimed(initial_source_key):
+                                initial_line = _build_addon_invoice_line(
+                                    addon_assignment=oa,
+                                    description=(
+                                        f"Add-on: {oa.addon.name} (Organisation)"
+                                    ),
+                                    usage_reference=initial_source_key,
+                                    scope_meta={"organizer_addon_id": oa.pk},
+                                    event=None,
+                                    billing_currency=billing_currency,
+                                    rates_dict=rates_dict,
+                                    rates_date=rates_date,
+                                    service_period_start=initial_period[0],
+                                    service_period_end=initial_period[1],
+                                    full_period_start=start_date,
+                                    full_period_end=end_date,
+                                )
+                                if initial_line:
+                                    lines_data.append(initial_line)
+                    service_period = effective_service_period(
+                        oa.starts_at,
+                        oa.ends_at,
+                        oa.cancel_at,
+                        oa.canceled_at,
+                        advance_start,
+                        advance_end,
+                    )
+                    if not service_period:
+                        continue
+                    service_period_start, service_period_end = service_period
+                    source_key = (
+                        f"organizer-addon:{oa.pk}:{service_period_start.isoformat()}:"
+                        f"{service_period_end.isoformat()}"
+                    )
+                else:
+                    service_period_start = oa.starts_at
+                    service_period_end = oa.starts_at
+                    source_key = f"organizer-addon:{oa.pk}:one-time"
+                if invoice_source_claimed(source_key):
+                    continue
                 line = _build_addon_invoice_line(
                     addon_assignment=oa,
                     description=f"Add-on: {oa.addon.name} (Organisation)",
-                    usage_reference=f"organizer_addon_{oa.pk}",
+                    usage_reference=source_key,
                     scope_meta={"organizer_addon_id": oa.pk},
                     event=None,
                     billing_currency=billing_currency,
                     rates_dict=rates_dict,
-                    billed_period_str=billed_period_str,
+                    rates_date=rates_date,
+                    service_period_start=service_period_start,
+                    service_period_end=service_period_end,
+                    full_period_start=advance_start,
+                    full_period_end=advance_end,
                 )
                 if line:
                     lines_data.append(line)
@@ -498,10 +767,70 @@ def generate_business_invoice_for_organizer(
             )
 
             for ea in event_addons:
+                if ea.addon.pricing_mode == AddonPricingMode.RECURRING:
+                    if start_date < ea.starts_at <= end_date:
+                        initial_period = effective_service_period(
+                            ea.starts_at,
+                            ea.ends_at,
+                            ea.cancel_at,
+                            ea.canceled_at,
+                            start_date,
+                            end_date,
+                        )
+                        if initial_period:
+                            initial_source_key = (
+                                f"event-addon:{ea.pk}:"
+                                f"{initial_period[0].isoformat()}:"
+                                f"{initial_period[1].isoformat()}"
+                            )
+                            if not invoice_source_claimed(initial_source_key):
+                                initial_line = _build_addon_invoice_line(
+                                    addon_assignment=ea,
+                                    description=(
+                                        f"Add-on: {ea.addon.name} "
+                                        f"(Event: {ea.event.name})"
+                                    ),
+                                    usage_reference=initial_source_key,
+                                    scope_meta={
+                                        "event_addon_id": ea.pk,
+                                        "event_slug": ea.event.slug,
+                                    },
+                                    event=ea.event,
+                                    billing_currency=billing_currency,
+                                    rates_dict=rates_dict,
+                                    rates_date=rates_date,
+                                    service_period_start=initial_period[0],
+                                    service_period_end=initial_period[1],
+                                    full_period_start=start_date,
+                                    full_period_end=end_date,
+                                )
+                                if initial_line:
+                                    lines_data.append(initial_line)
+                    service_period = effective_service_period(
+                        ea.starts_at,
+                        ea.ends_at,
+                        ea.cancel_at,
+                        ea.canceled_at,
+                        advance_start,
+                        advance_end,
+                    )
+                    if not service_period:
+                        continue
+                    service_period_start, service_period_end = service_period
+                    source_key = (
+                        f"event-addon:{ea.pk}:{service_period_start.isoformat()}:"
+                        f"{service_period_end.isoformat()}"
+                    )
+                else:
+                    service_period_start = ea.starts_at
+                    service_period_end = ea.starts_at
+                    source_key = f"event-addon:{ea.pk}:one-time"
+                if invoice_source_claimed(source_key):
+                    continue
                 line = _build_addon_invoice_line(
                     addon_assignment=ea,
                     description=f"Add-on: {ea.addon.name} (Event: {ea.event.name})",
-                    usage_reference=f"event_addon_{ea.pk}",
+                    usage_reference=source_key,
                     scope_meta={
                         "event_addon_id": ea.pk,
                         "event_slug": ea.event.slug,
@@ -509,18 +838,27 @@ def generate_business_invoice_for_organizer(
                     event=ea.event,
                     billing_currency=billing_currency,
                     rates_dict=rates_dict,
-                    billed_period_str=billed_period_str,
+                    rates_date=rates_date,
+                    service_period_start=service_period_start,
+                    service_period_end=service_period_end,
+                    full_period_start=advance_start,
+                    full_period_end=advance_end,
                 )
                 if line:
                     lines_data.append(line)
 
             # 5. Aggregate Paid-Order Platform Fees
-            fee_records = UsageRecord.objects.filter(
-                organizer=organizer,
-                capability="commerce.platform_fee_percent",
-                occurred_at__gte=start_date,
-                occurred_at__lte=end_date,
-            ).select_related("event")
+            fee_records = (
+                UsageRecord.objects.select_for_update(of=("self",))
+                .filter(
+                    organizer=organizer,
+                    capability="commerce.platform_fee_percent",
+                    invoice__isnull=True,
+                    occurred_at__gte=start_date,
+                    occurred_at__lte=end_date,
+                )
+                .select_related("event")
+            )
             ledger_entries = (
                 PlatformFeeLedgerEntry.objects.select_for_update()
                 .filter(
@@ -539,6 +877,7 @@ def generate_business_invoice_for_organizer(
                 events_fee_map.setdefault(entry.event, []).append(("ledger", entry))
 
             ledger_entry_ids_for_invoice = []
+            usage_record_ids_for_invoice = []
 
             for ev, recs in events_fee_map.items():
                 total_event_fee = Decimal("0.00")
@@ -546,10 +885,12 @@ def generate_business_invoice_for_organizer(
 
                 for record_type, r in recs:
                     if record_type == "ledger":
+                        exchange_rate = None
                         if r.currency == billing_currency:
                             fee_val = r.amount
                         elif (
                             rates_dict
+                            and rates_date
                             and r.currency in rates_dict
                             and billing_currency in rates_dict
                         ):
@@ -558,27 +899,21 @@ def generate_business_invoice_for_organizer(
                                     str(rates_dict[billing_currency])
                                 ) / Decimal(str(rates_dict[r.currency]))
                                 fee_val = (r.amount * rate).quantize(Decimal("0.01"))
+                                exchange_rate = str(rate.quantize(Decimal("0.0001")))
                             except (
                                 InvalidOperation,
                                 ArithmeticError,
                                 TypeError,
                             ) as exc:
-                                logger.warning(
-                                    "Failed to convert platform fee ledger entry %s from %s to %s: %s",
-                                    r.source_key,
-                                    r.currency,
-                                    billing_currency,
-                                    exc,
-                                )
-                                continue
+                                raise InvoiceCalculationError(
+                                    f"Could not convert platform fee {r.source_key} "
+                                    f"from {r.currency} to {billing_currency}."
+                                ) from exc
                         else:
-                            logger.warning(
-                                "Exchange rate unavailable to convert platform fee ledger entry %s from %s to %s. Skipping entry.",
-                                r.source_key,
-                                r.currency,
-                                billing_currency,
+                            raise InvoiceCalculationError(
+                                f"No exchange rate is available to convert platform fee "
+                                f"{r.source_key} from {r.currency} to {billing_currency}."
                             )
-                            continue
                         total_event_fee += fee_val
                         record_details.append(
                             {
@@ -588,6 +923,10 @@ def generate_business_invoice_for_organizer(
                                 "fee_base": str(r.fee_base),
                                 "fee_percent": str(r.percentage),
                                 "entry_type": r.entry_type,
+                                "exchange_rate": exchange_rate,
+                                "exchange_rate_date": (
+                                    rates_date.isoformat() if exchange_rate else None
+                                ),
                             }
                         )
                         ledger_entry_ids_for_invoice.append(r.pk)
@@ -596,6 +935,8 @@ def generate_business_invoice_for_organizer(
                     meta = r.metadata or {}
                     rec_currency = meta.get("currency", r.unit)
                     converted = meta.get("billing_currency_fee_amount")
+                    exchange_rate = meta.get("exchange_rate")
+                    exchange_rate_date = meta.get("exchange_rate_date")
 
                     if converted and meta.get("billing_currency") == billing_currency:
                         fee_val = Decimal(str(converted))
@@ -603,6 +944,7 @@ def generate_business_invoice_for_organizer(
                         fee_val = Decimal(str(r.quantity))
                     elif (
                         rates_dict
+                        and rates_date
                         and rec_currency in rates_dict
                         and billing_currency in rates_dict
                     ):
@@ -613,28 +955,22 @@ def generate_business_invoice_for_organizer(
                             fee_val = (Decimal(str(r.quantity)) * rate).quantize(
                                 Decimal("0.01")
                             )
+                            exchange_rate = str(rate.quantize(Decimal("0.0001")))
+                            exchange_rate_date = rates_date.isoformat()
                         except (
                             InvalidOperation,
                             ArithmeticError,
                             TypeError,
                         ) as exc:
-                            logger.warning(
-                                "Failed to convert platform fee amount %s from %s to %s: %s",
-                                r.quantity,
-                                rec_currency,
-                                billing_currency,
-                                exc,
-                            )
-                            fee_val = Decimal("0.00")
-                            continue
+                            raise InvoiceCalculationError(
+                                f"Could not convert platform fee usage record {r.pk} "
+                                f"from {rec_currency} to {billing_currency}."
+                            ) from exc
                     else:
-                        logger.warning(
-                            "Exchange rate unavailable to convert platform fee %s from %s to %s. Skipping record.",
-                            r.source_id,
-                            rec_currency,
-                            billing_currency,
+                        raise InvoiceCalculationError(
+                            f"No exchange rate is available to convert platform fee "
+                            f"{r.source_id} from {rec_currency} to {billing_currency}."
                         )
-                        continue
 
                     total_event_fee += fee_val
                     record_details.append(
@@ -644,8 +980,11 @@ def generate_business_invoice_for_organizer(
                             "currency": meta.get("currency", r.unit),
                             "fee_base": meta.get("fee_base"),
                             "fee_percent": meta.get("fee_percent"),
+                            "exchange_rate": exchange_rate,
+                            "exchange_rate_date": exchange_rate_date,
                         }
                     )
+                    usage_record_ids_for_invoice.append(r.pk)
 
                 if total_event_fee != Decimal("0.00") and record_details:
                     event_name = ev.name if ev else "General"
@@ -674,12 +1013,17 @@ def generate_business_invoice_for_organizer(
                     )
 
             # 6. Aggregate Free Registration Overages
-            free_reg_records = UsageRecord.objects.filter(
-                organizer=organizer,
-                capability="registration.free_allowance_per_event",
-                occurred_at__gte=start_date,
-                occurred_at__lte=end_date,
-            ).select_related("event")
+            free_reg_records = (
+                UsageRecord.objects.select_for_update(of=("self",))
+                .filter(
+                    organizer=organizer,
+                    capability="registration.free_allowance_per_event",
+                    invoice__isnull=True,
+                    occurred_at__gte=start_date,
+                    occurred_at__lte=end_date,
+                )
+                .select_related("event")
+            )
 
             events_reg_map = {}
             for rec in free_reg_records:
@@ -709,6 +1053,7 @@ def generate_business_invoice_for_organizer(
 
             for ev, recs in events_reg_map.items():
                 total_free_registrations = sum(r.quantity for r in recs)
+                usage_record_ids_for_invoice.extend(r.pk for r in recs)
                 if total_free_registrations <= allowance:
                     continue
 
@@ -789,6 +1134,10 @@ def generate_business_invoice_for_organizer(
             BusinessInvoiceLine.objects.bulk_create(line_objects)
             PlatformFeeLedgerEntry.objects.filter(
                 pk__in=ledger_entry_ids_for_invoice,
+                invoice__isnull=True,
+            ).update(invoice=invoice)
+            UsageRecord.objects.filter(
+                pk__in=usage_record_ids_for_invoice,
                 invoice__isnull=True,
             ).update(invoice=invoice)
 
