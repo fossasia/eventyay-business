@@ -339,6 +339,52 @@ def test_partial_and_full_refunds_create_linked_negative_entries(
 
 
 @pytest.mark.django_db
+def test_payment_and_order_refunds_track_separate_targets(organizer_with_fee_tier):
+    event, order, payments = create_paid_order(
+        organizer_with_fee_tier,
+        code="MIXEDREFUNDS",
+        position_price=Decimal("200.00"),
+        tax_value=Decimal("0.00"),
+        payment_amounts=(Decimal("100.00"), Decimal("100.00")),
+    )
+    record_platform_fee_on_order_paid(sender=event, order=order)
+    charges = list(
+        PlatformFeeLedgerEntry.objects.filter(
+            entry_type=PlatformFeeLedgerEntryType.CHARGE
+        ).order_by("payment_id")
+    )
+
+    with scope(organizer=organizer_with_fee_tier, event=event):
+        payment_refund = OrderRefund.objects.create(
+            order=order,
+            payment=payments[0],
+            state=OrderRefund.REFUND_STATE_DONE,
+            source=OrderRefund.REFUND_SOURCE_ADMIN,
+            amount=Decimal("40.00"),
+            execution_date=now(),
+            provider="stripe",
+        )
+        order_refund = OrderRefund.objects.create(
+            order=order,
+            state=OrderRefund.REFUND_STATE_DONE,
+            source=OrderRefund.REFUND_SOURCE_ADMIN,
+            amount=Decimal("40.00"),
+            execution_date=now(),
+            provider="stripe",
+        )
+
+    record_platform_fee_on_refund(sender=OrderRefund, instance=order_refund)
+    record_platform_fee_on_refund(sender=OrderRefund, instance=payment_refund)
+
+    assert -charges[0].adjustments.aggregate(total=Sum("amount"))["total"] == Decimal(
+        "3.00"
+    )
+    assert -charges[1].adjustments.aggregate(total=Sum("amount"))["total"] == Decimal(
+        "1.00"
+    )
+
+
+@pytest.mark.django_db
 def test_invoice_claims_ledger_entry_once(organizer_with_fee_tier):
     event, order, _ = create_paid_order(
         organizer_with_fee_tier,

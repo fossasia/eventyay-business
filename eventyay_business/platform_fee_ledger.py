@@ -288,7 +288,8 @@ def record_platform_fee_refund(refund) -> list[PlatformFeeLedgerEntry]:
             denominator = locked_refund.order.total
             refunded_total = (
                 locked_refund.order.refunds.filter(
-                    state=OrderRefund.REFUND_STATE_DONE
+                    state=OrderRefund.REFUND_STATE_DONE,
+                    payment__isnull=True,
                 ).aggregate(total=Sum("amount"))["total"]
                 or ZERO
             )
@@ -302,15 +303,29 @@ def record_platform_fee_refund(refund) -> list[PlatformFeeLedgerEntry]:
             target_reversal = (charge.amount * refund_ratio).quantize(
                 CENT, rounding=ROUND_HALF_UP
             )
-            reversed_amount = -(
+            refund_adjustments = charge.adjustments.filter(
+                entry_type=PlatformFeeLedgerEntryType.REFUND
+            )
+            if locked_refund.payment_id:
+                scoped_adjustments = refund_adjustments.filter(
+                    refund__payment=locked_refund.payment
+                )
+            else:
+                scoped_adjustments = refund_adjustments.filter(
+                    refund__payment__isnull=True
+                )
+            scoped_reversed_amount = -(
+                scoped_adjustments.aggregate(total=Sum("amount"))["total"] or ZERO
+            )
+            total_reversed_amount = -(
                 charge.adjustments.filter(amount__lt=ZERO).aggregate(
                     total=Sum("amount")
                 )["total"]
                 or ZERO
             )
             adjustment_amount = min(
-                max(target_reversal - reversed_amount, ZERO),
-                charge.amount - reversed_amount,
+                max(target_reversal - scoped_reversed_amount, ZERO),
+                charge.amount - total_reversed_amount,
             )
             if adjustment_amount <= ZERO:
                 continue
