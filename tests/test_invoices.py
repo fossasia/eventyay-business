@@ -499,10 +499,20 @@ def test_generate_all_business_invoices_and_task(test_setup):
     # Test celery task call
     with patch(
         "eventyay_business.invoicing_service.generate_all_business_invoices"
-    ) as mock_gen:
+    ) as mock_gen, patch(
+        "eventyay_business.tasks.collect_ready_business_invoices"
+    ) as mock_collect:
         mock_gen.return_value = []
+        mock_collect.return_value = {
+            "processed": 0,
+            "succeeded": 0,
+            "processing": 0,
+            "requires_action": 0,
+            "failed": 0,
+        }
         res = generate_monthly_business_invoices()
         assert mock_gen.called
+        mock_collect.assert_called_once_with()
         assert res["generated_invoices_count"] == 0
 
 

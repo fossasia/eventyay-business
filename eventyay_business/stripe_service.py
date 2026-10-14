@@ -8,6 +8,7 @@ from django.db import transaction
 from django.utils.timezone import now
 from eventyay.base.models.organizer import OrganizerBillingModel
 
+from .invoice_collection import process_business_payment_intent
 from .invoicing_service import finalize_business_invoice, generate_invoice_number
 from .models import (
     AddonDefinition,
@@ -383,6 +384,14 @@ def process_webhook_event(event_type: str, data_object: dict):
     """
     if event_type == "checkout.session.completed":
         return process_checkout_session_completed(data_object)
+    elif event_type in (
+        "payment_intent.succeeded",
+        "payment_intent.processing",
+        "payment_intent.payment_failed",
+        "payment_intent.requires_action",
+        "payment_intent.canceled",
+    ):
+        return process_business_payment_intent(data_object)
     elif event_type in (
         "customer.subscription.updated",
         "customer.subscription.deleted",

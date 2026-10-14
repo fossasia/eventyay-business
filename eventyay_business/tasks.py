@@ -4,6 +4,8 @@ from django.db.models import Q
 from django.dispatch import receiver
 from django.utils.timezone import now
 
+from .invoice_collection import collect_ready_business_invoices
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -292,11 +294,20 @@ def generate_monthly_business_invoices(start_date=None, end_date=None):
     from .invoicing_service import generate_all_business_invoices
 
     invoices = generate_all_business_invoices(start_date=start_date, end_date=end_date)
+    collection_result = collect_ready_business_invoices()
     logger.info(
         "generate_monthly_business_invoices completed: %d invoices generated",
         len(invoices),
     )
-    return {"generated_invoices_count": len(invoices)}
+    return {
+        "generated_invoices_count": len(invoices),
+        "collection": collection_result,
+    }
+
+
+@app.task(name="eventyay_business.collect_ready_business_invoices")
+def collect_ready_business_invoices_task():
+    return collect_ready_business_invoices()
 
 
 @app.task(name="eventyay_business.generate_monthly_business_invoices")

@@ -26,6 +26,7 @@ def stripe_business_webhook_view(request):
     - checkout.session.completed
     - customer.subscription.updated / deleted
     - invoice.paid / invoice.payment_failed
+    - payment_intent processing, action-required, failed, canceled, and succeeded
     """
     if stripe is None:
         logger.error("Stripe package is not installed")
