@@ -1,0 +1,136 @@
+{% extends "pretixcontrol/organizers/base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Current charges" %}{% endblock %}
+
+{% block inner %}
+    <div class="page-header">
+        <div class="pull-right">
+            <a href="{% url 'plugins:eventyay_business:organizer.invoices' organizer=organizer.slug %}" class="btn btn-default">
+                <i class="fa fa-file-text-o" aria-hidden="true"></i> {% trans "Invoices" %}
+            </a>
+        </div>
+        <h1>{% trans "Current charges" %}</h1>
+    </div>
+
+    <div class="alert alert-info">
+        <strong>{% trans "Estimated charges" %}</strong>
+        {% blocktrans trimmed with start=period_start|date:"SHORT_DATE_FORMAT" end=period_end|date:"SHORT_DATE_FORMAT" issue=expected_issue_date|date:"SHORT_DATE_FORMAT" %}
+            This estimate covers {{ start }} to {{ end }}. The invoice is expected after the period closes on {{ issue }} and can change before finalization.
+        {% endblocktrans %}
+    </div>
+
+    {% if billing_profile_ready %}
+        <div class="alert alert-success">
+            <i class="fa fa-check-circle" aria-hidden="true"></i>
+            {% trans "A Stripe billing customer is connected for this organizer." %}
+        </div>
+    {% else %}
+        <div class="alert alert-warning">
+            <i class="fa fa-exclamation-triangle" aria-hidden="true"></i>
+            {% trans "No Stripe billing customer is connected. A payment method will be required before automatic collection can begin." %}
+        </div>
+    {% endif %}
+
+    <h2>{% trans "Estimated invoice totals" %}</h2>
+    {% if totals %}
+        <div class="row">
+            {% for total in totals %}
+                <div class="col-sm-6 col-lg-4">
+                    <div class="panel panel-default">
+                        <div class="panel-heading">
+                            <strong>{{ total.currency }}</strong>
+                        </div>
+                        <div class="panel-body">
+                            <dl class="dl-horizontal">
+                                <dt>{% trans "Plan" %}</dt><dd>{{ total.plan|floatformat:2 }}</dd>
+                                <dt>{% trans "Add-ons" %}</dt><dd>{{ total.addons|floatformat:2 }}</dd>
+                                <dt>{% trans "Ticket fees" %}</dt><dd>{{ total.ticket_fees|floatformat:2 }}</dd>
+                                <dt>{% trans "Usage and overages" %}</dt><dd>{{ total.usage|floatformat:2 }}</dd>
+                                <dt>{% trans "Tax estimate" %}</dt><dd>{% trans "Not yet calculated" %}</dd>
+                                <dt>{% trans "Estimated total" %}</dt>
+                                <dd><strong>{{ total.total|floatformat:2 }} {{ total.currency }}</strong></dd>
+                            </dl>
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="empty-collection">
+            <p>{% trans "No estimated charges are available for this billing period." %}</p>
+        </div>
+    {% endif %}
+
+    <h2>{% trans "Plan and add-ons" %}</h2>
+    {% if plan %}
+        <p>
+            <strong>{{ plan.name }}</strong>
+            · {{ plan.interval }}
+            · {{ plan.amount|floatformat:2 }} {{ plan.currency }}
+        </p>
+    {% else %}
+        <p class="text-muted">{% trans "No billable plan price was found for this period." %}</p>
+    {% endif %}
+    {% if addons %}
+        <div class="table-responsive">
+            <table class="table table-condensed">
+                <thead>
+                    <tr>
+                        <th>{% trans "Add-on" %}</th>
+                        <th>{% trans "Scope" %}</th>
+                        <th>{% trans "Type" %}</th>
+                        <th class="text-right">{% trans "Amount" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for addon in addons %}
+                        <tr>
+                            <td>{{ addon.name }}</td>
+                            <td>{% if addon.event %}{{ addon.event.name }}{% else %}{% trans "Organizer" %}{% endif %}</td>
+                            <td>{{ addon.pricing_mode }}</td>
+                            <td class="text-right">{{ addon.amount|floatformat:2 }} {{ addon.currency }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+
+    <h2>{% trans "Usage and overages" %}</h2>
+    {% if usage %}
+        <div class="table-responsive">
+            <table class="table table-condensed">
+                <thead>
+                    <tr>
+                        <th>{% trans "Capability" %}</th>
+                        <th>{% trans "Event" %}</th>
+                        <th class="text-right">{% trans "Usage" %}</th>
+                        <th class="text-right">{% trans "Included" %}</th>
+                        <th class="text-right">{% trans "Overage" %}</th>
+                        <th class="text-right">{% trans "Estimate" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in usage %}
+                        <tr>
+                            <td>{{ item.capability }}</td>
+                            <td>{% if item.event %}{{ item.event.name }}{% else %}—{% endif %}</td>
+                            <td class="text-right">{{ item.quantity|floatformat:-2 }} {{ item.unit }}</td>
+                            <td class="text-right">{{ item.allowance|floatformat:-2 }}</td>
+                            <td class="text-right">{{ item.overage|floatformat:-2 }}</td>
+                            <td class="text-right">
+                                {% if item.currency %}{{ item.amount|floatformat:2 }} {{ item.currency }}{% else %}—{% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="text-muted">{% trans "No metered usage has been recorded for this period." %}</p>
+    {% endif %}
+
+    <h2>{% trans "Ticket fee breakdown" %}</h2>
+    {% include "eventyay_business/billing/fee_table.html" with show_organizer=False %}
+{% endblock %}

@@ -6,6 +6,9 @@
 {% block inner %}
     <div class="page-header">
         <div class="pull-right">
+            <a href="{% url 'plugins:eventyay_business:organizer.current_charges' organizer=organizer.slug %}" class="btn btn-default">
+                <i class="fa fa-calculator" aria-hidden="true"></i> {% trans "Current charges" %}
+            </a>
             <a href="{% url "plugins:eventyay_business:organizer.plan" organizer=organizer.slug %}" class="btn btn-default">
                 <i class="fa fa-arrow-left"></i> {% trans "Back to Plan & Billing" %}
             </a>

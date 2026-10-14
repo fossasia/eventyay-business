@@ -1,0 +1,67 @@
+{% load i18n %}
+
+{% if rows|default:fee_rows %}
+    <div class="table-responsive">
+        <table class="table table-hover table-condensed">
+            <thead>
+                <tr>
+                    {% if show_organizer %}<th>{% trans "Organizer" %}</th>{% endif %}
+                    <th>{% trans "Event" %}</th>
+                    <th>{% trans "Order / payment" %}</th>
+                    <th>{% trans "Paid" %}</th>
+                    <th class="text-right">{% trans "Eligible amount" %}</th>
+                    <th class="text-right">{% trans "Rate / cap" %}</th>
+                    <th class="text-right">{% trans "Fee" %}</th>
+                    <th class="text-right">{% trans "Refunds / credits" %}</th>
+                    <th class="text-right">{% trans "Net" %}</th>
+                    <th>{% trans "State" %}</th>
+                    {% if show_admin_details %}
+                        <th>{% trans "Policy" %}</th>
+                        <th>{% trans "Ledger source" %}</th>
+                    {% endif %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows|default:fee_rows %}
+                    <tr>
+                        {% if show_organizer %}<td>{{ row.organizer.name }}</td>{% endif %}
+                        <td>{{ row.event.name }}</td>
+                        <td>{{ row.order_code }} / {{ row.payment_reference|default:"—" }}</td>
+                        <td>{{ row.occurred_at|date:"SHORT_DATETIME_FORMAT" }}</td>
+                        <td class="text-right">{{ row.fee_base|floatformat:2 }} {{ row.currency }}</td>
+                        <td class="text-right">
+                            {{ row.percentage|floatformat:-4 }}%
+                            {% if row.maximum_fee %}/ {{ row.maximum_fee|floatformat:2 }} {{ row.currency }}{% else %}/ {% trans "No cap" %}{% endif %}
+                        </td>
+                        <td class="text-right">{{ row.calculated_fee|floatformat:2 }} {{ row.currency }}</td>
+                        <td class="text-right">{{ row.adjustment|floatformat:2 }} {{ row.currency }}</td>
+                        <td class="text-right"><strong>{{ row.net|floatformat:2 }} {{ row.currency }}</strong></td>
+                        <td>
+                            {% if row.state == "open" %}
+                                <span class="label label-info">{% trans "Open" %}</span>
+                            {% elif row.state == "invoiced" %}
+                                <span class="label label-success">{% trans "Invoiced" %}</span>
+                            {% else %}
+                                <span class="label label-warning">{% trans "Mixed" %}</span>
+                            {% endif %}
+                        </td>
+                        {% if show_admin_details %}
+                            <td>
+                                {{ row.policy_source }}
+                                {% if row.is_override %}<span class="label label-info">{% trans "Override" %}</span>{% endif %}
+                            </td>
+                            <td>
+                                <code>{{ row.source_key }}</code>
+                                {% if row.collection_path %}<br><small>{{ row.collection_path }}</small>{% endif %}
+                            </td>
+                        {% endif %}
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% else %}
+    <div class="empty-collection">
+        <p>{% trans "No ticket fee calculations match this period." %}</p>
+    </div>
+{% endif %}

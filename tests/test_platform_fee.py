@@ -15,6 +15,7 @@ from eventyay.base.models import (
     Product,
 )
 
+from eventyay_business.billing_overview import build_organizer_billing_overview
 from eventyay_business.invoicing_service import generate_business_invoice_for_organizer
 from eventyay_business.models import (
     CountryFeeSetting,
@@ -336,6 +337,42 @@ def test_partial_and_full_refunds_create_linked_negative_entries(
     assert refunds.count() == 2
     assert all(entry.related_entry == charge for entry in refunds)
     assert refunds.aggregate(total=Sum("amount"))["total"] == Decimal("-5.00")
+
+
+@pytest.mark.django_db
+def test_current_charge_estimate_uses_ledger_refund_adjustments(
+    organizer_with_fee_tier,
+):
+    event, order, payments = create_paid_order(
+        organizer_with_fee_tier,
+        code="CURRENTCHARGES",
+        position_price=Decimal("100.00"),
+        tax_value=Decimal("0.00"),
+        payment_amounts=(Decimal("100.00"),),
+    )
+    record_platform_fee_on_order_paid(sender=event, order=order)
+    with scope(organizer=organizer_with_fee_tier, event=event):
+        refund = OrderRefund.objects.create(
+            order=order,
+            payment=payments[0],
+            state=OrderRefund.REFUND_STATE_DONE,
+            source=OrderRefund.REFUND_SOURCE_ADMIN,
+            amount=Decimal("40.00"),
+            execution_date=now(),
+            provider="stripe",
+        )
+    record_platform_fee_on_refund(sender=OrderRefund, instance=refund)
+
+    overview = build_organizer_billing_overview(organizer_with_fee_tier)
+
+    assert len(overview["fee_rows"]) == 1
+    assert overview["fee_rows"][0]["calculated_fee"] == Decimal("5.00")
+    assert overview["fee_rows"][0]["adjustment"] == Decimal("-2.00")
+    assert overview["fee_rows"][0]["net"] == Decimal("3.00")
+    usd_total = next(
+        total for total in overview["totals"] if total["currency"] == "USD"
+    )
+    assert usd_total["ticket_fees"] == Decimal("3.00")
 
 
 @pytest.mark.django_db

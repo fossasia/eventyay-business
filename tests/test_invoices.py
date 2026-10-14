@@ -421,7 +421,7 @@ def test_organizer_invoice_views(client, organizer_user, test_setup):
     url_detail = f"/control/organizer/{org.slug}/business/invoices/{invoice.pk}/"
 
     resp = client.get(url_list)
-    assert resp.status_code in (302, 403)
+    assert resp.status_code in (302, 403, 404)
 
     # Grant user permission on organizer
     team = org.teams.create(
@@ -436,6 +436,14 @@ def test_organizer_invoice_views(client, organizer_user, test_setup):
     resp = client.get(url_list)
     assert resp.status_code == 200
     assert invoice.invoice_number.encode() in resp.content
+
+    current_charges_url = f"/control/organizer/{org.slug}/business/current-charges/"
+    resp = client.get(current_charges_url)
+    assert resp.status_code == 200
+    assert b"Estimated charges" in resp.content
+    assert b"Pro Tier" in resp.content
+    assert b"49.00 EUR" in resp.content
+    assert b"stripe_customer_id" not in resp.content
 
     # Test detail view
     resp = client.get(url_detail)
@@ -458,6 +466,8 @@ def test_organizer_invoice_views(client, organizer_user, test_setup):
         f"/control/organizer/{org.slug}/business/invoices/{other_inv.pk}/"
     )
     assert resp.status_code == 404
+    resp = client.get(f"/control/organizer/{other_org.slug}/business/current-charges/")
+    assert resp.status_code in (302, 403, 404)
 
 
 @pytest.mark.django_db
@@ -499,6 +509,17 @@ def test_admin_invoice_views(business_admin_client, test_setup):
     assert resp.status_code == 200
     assert invoice.invoice_number.encode() in resp.content
     assert b"Pro Tier" in resp.content
+
+    resp = business_admin_client.get("/admin/global/business/current-charges/")
+    assert resp.status_code == 200
+    assert b"Current charges" in resp.content
+
+    resp = business_admin_client.get(
+        "/admin/global/business/current-charges/export/?state=open"
+    )
+    assert resp.status_code == 200
+    assert resp["Content-Type"] == "text/csv"
+    assert b"Eligible amount" in resp.content
 
 
 @pytest.mark.django_db

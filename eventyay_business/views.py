@@ -1,10 +1,11 @@
+import csv
 import logging
+from collections import defaultdict
 from decimal import Decimal
 from django.contrib import messages
 from django.db import transaction
 from django.db.models import Q, Sum
-
-logger = logging.getLogger(__name__)
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils.timezone import now
@@ -29,6 +30,11 @@ from eventyay.control.views.organizer_views.organizer_detail_view_mixin import (
     OrganizerDetailViewMixin,
 )
 
+from .billing_overview import (
+    build_organizer_billing_overview,
+    parse_month,
+    platform_fee_rows,
+)
 from .capabilities import CapabilityValueType, get_all_capabilities, get_capability
 from .forms import (
     AddonDefinitionForm,
@@ -54,6 +60,7 @@ from .models import (
     CountryFeeSetting,
     EventAddon,
     OrganizerAddon,
+    PlatformFeeLedgerEntry,
     Subscription,
     SubscriptionStatus,
     Tier,
@@ -81,6 +88,8 @@ from .stripe_service import (
     sync_organizer_from_stripe,
     sync_tier_price_to_stripe,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class TierListView(AdministratorPermissionRequiredMixin, ListView):
@@ -1968,6 +1977,19 @@ class OrganizerInvoiceListView(
         return ctx
 
 
+class OrganizerCurrentChargesView(
+    OrganizerPermissionRequiredMixin, OrganizerDetailViewMixin, TemplateView
+):
+    template_name = "eventyay_business/billing/organizer_current.html"
+    permission = "can_change_organizer_settings"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["organizer"] = self.request.organizer
+        ctx.update(build_organizer_billing_overview(self.request.organizer))
+        return ctx
+
+
 class OrganizerInvoiceDetailView(OrganizerPermissionRequiredMixin, DetailView):
     model = BusinessInvoice
     template_name = "eventyay_business/invoices/organizer_detail.html"
@@ -2030,6 +2052,133 @@ class AdminInvoiceDetailView(AdministratorPermissionRequiredMixin, DetailView):
         ctx = super().get_context_data(**kwargs)
         ctx["lines"] = self.object.lines.all()
         return ctx
+
+
+class AdminCurrentChargesMixin:
+    def get_filters(self):
+        period_start, period_end, _issue_date = parse_month(
+            self.request.GET.get("period")
+        )
+        organizer = None
+        organizer_slug = self.request.GET.get("organizer", "")
+        if organizer_slug:
+            organizer = Organizer.objects.filter(slug=organizer_slug).first()
+        state = self.request.GET.get("state", "open")
+        if state not in {"open", "invoiced", "all"}:
+            state = "open"
+        return {
+            "organizer": organizer,
+            "invalid_organizer": bool(organizer_slug and organizer is None),
+            "period_start": period_start,
+            "period_end": period_end,
+            "state": state,
+            "currency": self.request.GET.get("currency", "").upper(),
+            "event_query": self.request.GET.get("event", ""),
+        }
+
+    def get_rows(self, filters=None):
+        filters = filters or self.get_filters()
+        if filters.pop("invalid_organizer"):
+            return []
+        return platform_fee_rows(**filters)
+
+
+class AdminCurrentChargesView(
+    AdministratorPermissionRequiredMixin, AdminCurrentChargesMixin, TemplateView
+):
+    template_name = "eventyay_business/billing/admin_current.html"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        filters = self.get_filters()
+        rows = self.get_rows(filters.copy())
+        totals = defaultdict(lambda: Decimal("0.00"))
+        for row in rows:
+            totals[row["currency"]] += row["net"]
+        ctx.update(
+            {
+                "rows": rows,
+                "totals": [
+                    {"currency": currency, "amount": amount}
+                    for currency, amount in sorted(totals.items())
+                ],
+                "organizers": Organizer.objects.order_by("name", "slug"),
+                "billing_attention": Subscription.objects.filter(
+                    status__in=[
+                        SubscriptionStatus.ACTIVE,
+                        SubscriptionStatus.PAST_DUE,
+                    ]
+                )
+                .filter(Q(stripe_customer_id__isnull=True) | Q(stripe_customer_id=""))
+                .select_related("organizer")
+                .order_by("organizer__name"),
+                "currencies": PlatformFeeLedgerEntry.objects.order_by()
+                .values_list("currency", flat=True)
+                .distinct(),
+                "current_organizer": self.request.GET.get("organizer", ""),
+                "current_period": filters["period_start"].strftime("%Y-%m"),
+                "current_state": filters["state"],
+                "current_currency": filters["currency"],
+                "current_event": filters["event_query"],
+                "export_query": self.request.GET.urlencode(),
+            }
+        )
+        return ctx
+
+
+class AdminCurrentChargesExportView(
+    AdministratorPermissionRequiredMixin, AdminCurrentChargesMixin, View
+):
+    def get(self, request, *args, **kwargs):
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = (
+            'attachment; filename="business-current-charges.csv"'
+        )
+        writer = csv.writer(response)
+        writer.writerow(
+            [
+                "Organizer",
+                "Event",
+                "Order",
+                "Payment",
+                "Payment date",
+                "Currency",
+                "Eligible amount",
+                "Rate",
+                "Cap",
+                "Calculated fee",
+                "Adjustments",
+                "Net amount",
+                "State",
+                "Policy source",
+                "Collection path",
+                "Cutover relation",
+                "Source key",
+            ]
+        )
+        for row in self.get_rows():
+            writer.writerow(
+                [
+                    row["organizer"].slug,
+                    row["event"].slug,
+                    row["order_code"],
+                    row["payment_reference"],
+                    row["occurred_at"].isoformat(),
+                    row["currency"],
+                    row["fee_base"],
+                    row["percentage"],
+                    row["maximum_fee"],
+                    row["calculated_fee"],
+                    row["adjustment"],
+                    row["net"],
+                    row["state"],
+                    row["policy_source"],
+                    row["collection_path"],
+                    row["cutover_relation"],
+                    row["source_key"],
+                ]
+            )
+        return response
 
 
 class FeeSettingsView(AdministratorPermissionRequiredMixin, TemplateView):
