@@ -10,6 +10,7 @@ from eventyay.base.models.organizer import OrganizerBillingModel
 from unittest.mock import patch
 
 from eventyay_business.invoice_collection import (
+    InvoiceCollectionError,
     collect_business_invoice,
     collect_ready_business_invoices,
     process_business_payment_intent,
@@ -85,6 +86,9 @@ def test_collects_finalized_invoice_once(
     with patch(
         "eventyay_business.invoice_collection.get_stripe_secret_key",
         return_value="sk_test_collection",
+    ), patch(
+        "eventyay_business.invoice_collection.stripe.PaymentIntent.search",
+        return_value={"data": []},
     ), patch(
         "eventyay_business.invoice_collection.stripe.PaymentIntent.create",
         return_value=payment_intent,
@@ -198,6 +202,9 @@ def test_authentication_required_is_recorded_for_organizer(collection_setup):
         "eventyay_business.invoice_collection.get_stripe_secret_key",
         return_value="sk_test_collection",
     ), patch(
+        "eventyay_business.invoice_collection.stripe.PaymentIntent.search",
+        return_value={"data": []},
+    ), patch(
         "eventyay_business.invoice_collection.stripe.PaymentIntent.create",
         side_effect=error,
     ):
@@ -246,6 +253,146 @@ def test_retry_confirms_existing_payment_intent(collection_setup):
     assert result.status == BusinessInvoiceStatus.PAID
     assert result.payment_state == InvoicePaymentState.SUCCEEDED
     assert result.collection_attempt_count == 2
+
+
+@pytest.mark.django_db
+def test_search_reuses_payment_intent_after_idempotency_window(collection_setup):
+    _, _, _, invoice = collection_setup
+    existing_intent = {
+        "id": "pi_recovered",
+        "status": "succeeded",
+        "amount": 1234,
+        "currency": "eur",
+        "metadata": {
+            "type": "eventyay_business_invoice",
+            "eventyay_business_invoice_id": str(invoice.pk),
+            "eventyay_business_invoice_number": invoice.invoice_number,
+            "organizer_id": str(invoice.organizer_id),
+        },
+    }
+
+    with patch(
+        "eventyay_business.invoice_collection.get_stripe_secret_key",
+        return_value="sk_test_collection",
+    ), patch(
+        "eventyay_business.invoice_collection.stripe.PaymentIntent.search",
+        return_value={"data": [existing_intent]},
+    ) as search, patch(
+        "eventyay_business.invoice_collection.stripe.PaymentIntent.create"
+    ) as create:
+        result = collect_business_invoice(invoice)
+
+    search.assert_called_once_with(
+        query=(
+            "metadata['eventyay_business_invoice_id']:"
+            f"'{invoice.pk}' AND metadata['type']:'eventyay_business_invoice'"
+        ),
+        limit=100,
+    )
+    create.assert_not_called()
+    assert result.stripe_payment_intent_id == "pi_recovered"
+    assert result.payment_state == InvoicePaymentState.SUCCEEDED
+
+
+@pytest.mark.django_db
+def test_requires_action_intent_is_not_automatically_retried(collection_setup):
+    _, _, _, invoice = collection_setup
+    invoice.stripe_payment_intent_id = "pi_action"
+    invoice.payment_state = InvoicePaymentState.REQUIRES_ACTION
+    invoice.save()
+
+    with patch(
+        "eventyay_business.invoice_collection.get_stripe_secret_key",
+        return_value="sk_test_collection",
+    ), patch(
+        "eventyay_business.invoice_collection.stripe.PaymentIntent.retrieve",
+        return_value={"id": "pi_action", "status": "requires_action"},
+    ), patch(
+        "eventyay_business.invoice_collection.stripe.PaymentIntent.confirm"
+    ) as confirm:
+        result = collect_business_invoice(invoice)
+
+    confirm.assert_not_called()
+    assert result.stripe_payment_intent_id == "pi_action"
+    assert result.payment_state == InvoicePaymentState.REQUIRES_ACTION
+
+
+@pytest.mark.django_db
+def test_canceled_intent_is_replaced_with_new_payment_intent(collection_setup):
+    _, _, _, invoice = collection_setup
+    invoice.stripe_payment_intent_id = "pi_canceled"
+    invoice.collection_attempt_count = 0
+    invoice.save()
+
+    with patch(
+        "eventyay_business.invoice_collection.get_stripe_secret_key",
+        return_value="sk_test_collection",
+    ), patch(
+        "eventyay_business.invoice_collection.stripe.PaymentIntent.retrieve",
+        return_value={"id": "pi_canceled", "status": "canceled"},
+    ), patch(
+        "eventyay_business.invoice_collection.stripe.PaymentIntent.create",
+        return_value={"id": "pi_recreated", "status": "succeeded"},
+    ) as create:
+        result = collect_business_invoice(invoice)
+
+    assert result.stripe_payment_intent_id == "pi_recreated"
+    assert result.payment_state == InvoicePaymentState.SUCCEEDED
+    assert create.call_args.kwargs["idempotency_key"] == (
+        f"eventyay-business-invoice-{invoice.pk}-recreate-1"
+    )
+
+
+@pytest.mark.django_db
+def test_connection_failure_remains_reconciliation_state(collection_setup):
+    _, subscription, _, invoice = collection_setup
+    connection_error = stripe.error.APIConnectionError("Stripe timed out")
+
+    with patch(
+        "eventyay_business.invoice_collection.get_stripe_secret_key",
+        return_value="sk_test_collection",
+    ), patch(
+        "eventyay_business.invoice_collection.stripe.PaymentIntent.search",
+        side_effect=connection_error,
+    ):
+        result = collect_business_invoice(invoice)
+
+    subscription.refresh_from_db()
+    assert result.payment_state == InvoicePaymentState.PROCESSING
+    assert result.collection_metadata["reconciliation_required"] is True
+    assert result.collection_metadata["last_error"]["code"] == (
+        "stripe_connection_error"
+    )
+    assert subscription.status == SubscriptionStatus.ACTIVE
+
+
+@pytest.mark.django_db
+def test_ready_collection_continues_after_one_invoice_failure(collection_setup):
+    organizer, _, _, invoice = collection_setup
+    second_invoice = BusinessInvoice.objects.create(
+        organizer=organizer,
+        invoice_number="INV-202611-0001-01",
+        billing_period_start=make_aware(datetime(2026, 10, 1)),
+        billing_period_end=make_aware(datetime(2026, 10, 31, 23, 59, 59, 999999)),
+        currency="EUR",
+        status=BusinessInvoiceStatus.OPEN,
+        payment_state=InvoicePaymentState.NOT_STARTED,
+        subtotal=Decimal("5.00"),
+        total=Decimal("5.00"),
+        finalized_at=now(),
+    )
+
+    with patch(
+        "eventyay_business.invoice_collection.collect_business_invoice",
+        side_effect=[InvoiceCollectionError("temporary failure"), second_invoice],
+    ) as collect:
+        result = collect_ready_business_invoices(
+            invoice_ids=[invoice.pk, second_invoice.pk]
+        )
+
+    assert collect.call_count == 2
+    assert result["processed"] == 2
+    assert result["failed"] == 1
 
 
 @pytest.mark.django_db

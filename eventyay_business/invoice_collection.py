@@ -4,7 +4,7 @@ from decimal import Decimal
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.mail import send_mail
-from django.db import transaction
+from django.db import DatabaseError, transaction
 from django.db.models import Q
 from django.utils.timezone import now
 from eventyay.base.models.organizer import OrganizerBillingModel
@@ -289,6 +289,28 @@ def fail_invoice_collection(invoice: BusinessInvoice, code: str) -> BusinessInvo
     return invoice
 
 
+def mark_collection_reconciliation(
+    invoice: BusinessInvoice, code: str
+) -> BusinessInvoice:
+    metadata = dict(invoice.collection_metadata or {})
+    metadata["reconciliation_required"] = True
+    metadata["last_error"] = {"code": code}
+    invoice.status = BusinessInvoiceStatus.OPEN
+    invoice.payment_state = InvoicePaymentState.PROCESSING
+    invoice.last_collection_attempt_at = now()
+    invoice.collection_metadata = metadata
+    invoice.save(
+        update_fields=[
+            "status",
+            "payment_state",
+            "last_collection_attempt_at",
+            "collection_metadata",
+            "updated_at",
+        ]
+    )
+    return invoice
+
+
 def validate_collection_configuration(invoice: BusinessInvoice):
     if stripe is None:
         raise InvoiceCollectionError("Stripe is unavailable.")
@@ -330,6 +352,25 @@ def begin_collection_attempt(invoice: BusinessInvoice, idempotency_key: str) -> 
             "updated_at",
         ]
     )
+
+
+def find_existing_payment_intent(invoice: BusinessInvoice):
+    result = stripe.PaymentIntent.search(
+        query=(
+            "metadata['eventyay_business_invoice_id']:"
+            f"'{invoice.pk}' AND metadata['type']:'{COLLECTION_METADATA_TYPE}'"
+        ),
+        limit=100,
+    )
+    for intent in payment_intent_value(result, "data", []) or []:
+        metadata = payment_intent_metadata(intent)
+        if metadata.get(
+            "eventyay_business_invoice_number"
+        ) == invoice.invoice_number and metadata.get("organizer_id") == str(
+            invoice.organizer_id
+        ):
+            return intent
+    return None
 
 
 def collect_business_invoice(invoice_or_id) -> BusinessInvoice:
@@ -377,14 +418,39 @@ def collect_business_invoice(invoice_or_id) -> BusinessInvoice:
 
         stripe.api_key = secret_key
         intent = None
+        recreate_intent = False
         try:
             if invoice.stripe_payment_intent_id:
                 intent = stripe.PaymentIntent.retrieve(invoice.stripe_payment_intent_id)
-                if payment_intent_value(intent, "status") in (
-                    "succeeded",
-                    "processing",
-                ):
-                    return update_invoice_from_payment_intent(invoice, intent)
+            else:
+                intent = find_existing_payment_intent(invoice)
+                if intent:
+                    invoice.stripe_payment_intent_id = payment_intent_value(
+                        intent, "id"
+                    )
+                    invoice.save(
+                        update_fields=["stripe_payment_intent_id", "updated_at"]
+                    )
+
+            intent_status = payment_intent_value(intent, "status") if intent else None
+            if intent_status in ("succeeded", "processing"):
+                return update_invoice_from_payment_intent(invoice, intent)
+            if intent_status == "requires_action":
+                return update_invoice_from_payment_intent(
+                    invoice, intent, force_requires_action=True
+                )
+            if intent_status == "canceled":
+                invoice.stripe_payment_intent_id = None
+                invoice.save(update_fields=["stripe_payment_intent_id", "updated_at"])
+                intent = None
+                recreate_intent = True
+            if intent is not None and intent_status not in (
+                "requires_payment_method",
+                "requires_confirmation",
+            ):
+                return mark_collection_reconciliation(invoice, "unknown_payment_state")
+
+            if intent is not None:
                 attempt_number = invoice.collection_attempt_count + 1
                 idempotency_key = (
                     f"eventyay-business-invoice-{invoice.pk}-retry-{attempt_number}"
@@ -397,7 +463,12 @@ def collect_business_invoice(invoice_or_id) -> BusinessInvoice:
                     idempotency_key=idempotency_key,
                 )
             else:
-                idempotency_key = f"eventyay-business-invoice-{invoice.pk}-v1"
+                idempotency_key = (
+                    f"eventyay-business-invoice-{invoice.pk}-recreate-"
+                    f"{invoice.collection_attempt_count + 1}"
+                    if recreate_intent
+                    else f"eventyay-business-invoice-{invoice.pk}-v1"
+                )
                 begin_collection_attempt(invoice, idempotency_key)
                 intent = stripe.PaymentIntent.create(
                     amount=invoice_amount_in_minor_units(invoice),
@@ -415,6 +486,13 @@ def collect_business_invoice(invoice_or_id) -> BusinessInvoice:
                     },
                     idempotency_key=idempotency_key,
                 )
+        except (stripe.error.APIConnectionError, TimeoutError) as exc:
+            logger.warning(
+                "Stripe collection needs reconciliation for Business invoice %s: %s",
+                invoice.invoice_number,
+                exc,
+            )
+            return mark_collection_reconciliation(invoice, "stripe_connection_error")
         except stripe.error.CardError as exc:
             intent = payment_intent_from_error(exc) or intent
             force_requires_action = (
@@ -521,7 +599,17 @@ def collect_ready_business_invoices(invoice_ids=None) -> dict:
         "failed": 0,
     }
     for invoice_id in invoice_ids_to_collect:
-        invoice = collect_business_invoice(invoice_id)
+        try:
+            invoice = collect_business_invoice(invoice_id)
+        except (DatabaseError, InvoiceCollectionError, stripe.error.StripeError) as exc:
+            logger.warning(
+                "Business invoice %s collection failed; continuing with remaining invoices: %s",
+                invoice_id,
+                exc,
+            )
+            result["processed"] += 1
+            result["failed"] += 1
+            continue
         result["processed"] += 1
         if invoice.payment_state == InvoicePaymentState.SUCCEEDED:
             result["succeeded"] += 1
