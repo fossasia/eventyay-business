@@ -1,6 +1,7 @@
 import pytest
 from datetime import timedelta
 from decimal import Decimal
+from django.core.exceptions import ValidationError
 from django.test import RequestFactory, override_settings
 from django.urls import reverse
 from django.utils.timezone import now
@@ -165,7 +166,11 @@ def test_get_or_create_stripe_customer(setup_data):
         "eventyay_business.stripe_service.get_stripe_secret_key_safe",
         return_value="sk_test_123",
     ):
-        assert get_or_create_stripe_customer(organizer, user=user) is None
+        with pytest.raises(
+            ValidationError,
+            match="Complete the organizer billing settings in Core before checkout",
+        ):
+            get_or_create_stripe_customer(organizer, user=user)
 
     OrganizerBillingModel.objects.create(
         organizer=organizer,

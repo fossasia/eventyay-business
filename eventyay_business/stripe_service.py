@@ -75,7 +75,9 @@ def get_or_create_stripe_customer(organizer, user=None) -> Optional[str]:
 
     billing = OrganizerBillingModel.objects.filter(organizer=organizer).first()
     if not billing or not billing.stripe_customer_id:
-        return None
+        raise ValidationError(
+            "Complete the organizer billing settings in Core before checkout."
+        )
 
     organizer.subscriptions.exclude(
         stripe_customer_id=billing.stripe_customer_id
