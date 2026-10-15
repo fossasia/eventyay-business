@@ -30,10 +30,15 @@ class ConsolidatedBillingPreflight:
 
 def consolidated_billing_preflight(organizer) -> ConsolidatedBillingPreflight:
     billing = OrganizerBillingModel.objects.filter(organizer=organizer).first()
-    authorization_exists = BillingCollectionAuthorization.objects.filter(
-        organizer=organizer,
-        revoked_at__isnull=True,
-    ).exists()
+    authorization_exists = bool(
+        billing
+        and billing.stripe_customer_id
+        and BillingCollectionAuthorization.objects.filter(
+            organizer=organizer,
+            stripe_customer_id=billing.stripe_customer_id,
+            revoked_at__isnull=True,
+        ).exists()
+    )
     subscription_ids = set(
         Subscription.objects.filter(
             organizer=organizer,

@@ -24,7 +24,7 @@ def test_preflight_requires_billing_setup_authorization_and_no_stripe_subscripti
         stripe_customer_id="cus_migration",
         stripe_payment_method_id="pm_migration",
     )
-    BillingCollectionAuthorization.objects.create(
+    authorization = BillingCollectionAuthorization.objects.create(
         organizer=organizer,
         stripe_customer_id=billing.stripe_customer_id,
         authorized_at=now(),
@@ -33,9 +33,23 @@ def test_preflight_requires_billing_setup_authorization_and_no_stripe_subscripti
     result = consolidated_billing_preflight(organizer)
     assert result.ready is True
 
+    authorization.stripe_customer_id = "cus_other"
+    authorization.save()
+    assert consolidated_billing_preflight(organizer).ready is False
+
+    authorization.stripe_customer_id = billing.stripe_customer_id
+    authorization.save()
+
     subscription = Subscription.objects.get(organizer=organizer)
     subscription.status = SubscriptionStatus.ACTIVE
     subscription.stripe_subscription_id = "sub_migration"
+    subscription.save()
+
+    result = consolidated_billing_preflight(organizer)
+    assert result.ready is False
+    assert result.active_stripe_subscription_ids == ("sub_migration",)
+
+    subscription.status = SubscriptionStatus.PAST_DUE
     subscription.save()
 
     result = consolidated_billing_preflight(organizer)
