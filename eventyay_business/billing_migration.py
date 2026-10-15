@@ -1,12 +1,10 @@
 from dataclasses import dataclass
-
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils.timezone import now
 from eventyay.base.models import Organizer
 from eventyay.base.models.organizer import OrganizerBillingModel
 
-from .platform_fee_ledger import BILLING_CUTOVER_SETTING
 from .models import (
     AddonStatus,
     BillingCollectionAuthorization,
@@ -15,6 +13,7 @@ from .models import (
     Subscription,
     SubscriptionStatus,
 )
+from .platform_fee_ledger import BILLING_CUTOVER_SETTING
 
 
 @dataclass(frozen=True)
