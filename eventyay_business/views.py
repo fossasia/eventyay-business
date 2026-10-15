@@ -1999,9 +1999,11 @@ class OrganizerBillingAuthorizationView(
     permission = "can_change_organizer_settings"
 
     def post(self, request, *args, **kwargs):
-        billing = OrganizerBillingModel.objects.filter(
-            organizer=request.organizer
-        ).first()
+        with transaction.atomic():
+            organizer = Organizer.objects.select_for_update().get(
+                pk=request.organizer.pk
+            )
+            billing = OrganizerBillingModel.objects.filter(organizer=organizer).first()
         if not billing or not billing.stripe_customer_id:
             messages.error(
                 request,
@@ -2019,15 +2021,19 @@ class OrganizerBillingAuthorizationView(
                 request, _("Confirm the automatic collection authorization.")
             )
         else:
-            BillingCollectionAuthorization.objects.update_or_create(
-                organizer=request.organizer,
-                defaults={
-                    "stripe_customer_id": billing.stripe_customer_id,
-                    "authorized_at": now(),
-                    "authorized_by": request.user,
-                    "revoked_at": None,
-                },
-            )
+            with transaction.atomic():
+                organizer = Organizer.objects.select_for_update().get(
+                    pk=request.organizer.pk
+                )
+                BillingCollectionAuthorization.objects.update_or_create(
+                    organizer=organizer,
+                    defaults={
+                        "stripe_customer_id": billing.stripe_customer_id,
+                        "authorized_at": now(),
+                        "authorized_by": request.user,
+                        "revoked_at": None,
+                    },
+                )
             messages.success(request, _("Automatic invoice collection is authorized."))
         return redirect(
             "plugins:eventyay_business:organizer.current_charges",
@@ -2041,9 +2047,13 @@ class OrganizerBillingAuthorizationRevokeView(
     permission = "can_change_organizer_settings"
 
     def post(self, request, *args, **kwargs):
-        BillingCollectionAuthorization.objects.filter(
-            organizer=request.organizer, revoked_at__isnull=True
-        ).update(revoked_at=now())
+        with transaction.atomic():
+            organizer = Organizer.objects.select_for_update().get(
+                pk=request.organizer.pk
+            )
+            BillingCollectionAuthorization.objects.filter(
+                organizer=organizer, revoked_at__isnull=True
+            ).update(revoked_at=now())
         messages.success(
             request, _("Automatic invoice collection authorization was revoked.")
         )

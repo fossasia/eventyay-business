@@ -89,6 +89,8 @@ def consolidated_billing_preflight(organizer) -> ConsolidatedBillingPreflight:
 def enable_consolidated_billing(organizer):
     """Record cutover only after rechecking readiness under a row lock."""
     organizer = Organizer.objects.select_for_update().get(pk=organizer.pk)
+    if organizer.settings.get(BILLING_CUTOVER_SETTING, as_type=str):
+        return organizer
     preflight = consolidated_billing_preflight(organizer)
     if not preflight.ready:
         raise ValidationError("Organizer is not ready for consolidated billing.")
