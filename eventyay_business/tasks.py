@@ -291,9 +291,21 @@ def generate_monthly_business_invoices(start_date=None, end_date=None):
     """
     Executes the monthly business invoice generation engine across all organizers.
     """
-    from .invoicing_service import generate_all_business_invoices
+    from eventyay.base.models import Organizer
 
-    invoices = generate_all_business_invoices(start_date=start_date, end_date=end_date)
+    from .invoicing_service import generate_all_business_invoices
+    from .platform_fee_ledger import organizer_consolidated_billing_enabled
+
+    organizers = [
+        organizer
+        for organizer in Organizer.objects.all()
+        if organizer_consolidated_billing_enabled(organizer)
+    ]
+    invoices = generate_all_business_invoices(
+        start_date=start_date,
+        end_date=end_date,
+        organizers=organizers,
+    )
     collection_result = collect_ready_business_invoices()
     logger.info(
         "generate_monthly_business_invoices completed: %d invoices generated",

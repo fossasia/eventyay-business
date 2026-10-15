@@ -1213,7 +1213,9 @@ def generate_business_invoice_for_organizer(
 
 
 def generate_all_business_invoices(
-    start_date: datetime = None, end_date: datetime = None
+    start_date: datetime = None,
+    end_date: datetime = None,
+    organizers=None,
 ) -> list[BusinessInvoice]:
     """
     Generates invoices for all organizers with active activity in the given billing period.
@@ -1225,7 +1227,7 @@ def generate_all_business_invoices(
         start_date, end_date = get_previous_calendar_month_range()
 
     invoices = []
-    for organizer in Organizer.objects.all():
+    for organizer in organizers if organizers is not None else Organizer.objects.all():
         try:
             inv = generate_business_invoice_for_organizer(
                 organizer=organizer,

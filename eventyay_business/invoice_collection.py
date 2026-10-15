@@ -21,6 +21,7 @@ from .models import (
     Subscription,
     SubscriptionStatus,
 )
+from .platform_fee_ledger import organizer_consolidated_billing_enabled
 from .services import invalidate_entitlement_cache
 
 logger = logging.getLogger(__name__)
@@ -397,6 +398,12 @@ def collect_business_invoice(invoice_or_id) -> BusinessInvoice:
             BusinessInvoiceStatus.UNCOLLECTIBLE,
         ):
             return invoice
+        if not organizer_consolidated_billing_enabled(invoice.organizer):
+            logger.info(
+                "Business invoice %s is awaiting organizer billing cutover",
+                invoice.invoice_number,
+            )
+            return invoice
         if invoice.total <= Decimal("0.00"):
             invoice.status = BusinessInvoiceStatus.PAID
             invoice.payment_state = InvoicePaymentState.SUCCEEDED
@@ -589,7 +596,11 @@ def collect_ready_business_invoices(invoice_ids=None) -> dict:
         )
         if invoice_ids is not None:
             invoices = invoices.filter(pk__in=invoice_ids)
-        invoice_ids_to_collect = list(invoices.values_list("pk", flat=True))
+        invoice_ids_to_collect = [
+            invoice.pk
+            for invoice in invoices.select_related("organizer")
+            if organizer_consolidated_billing_enabled(invoice.organizer)
+        ]
 
     result = {
         "processed": 0,

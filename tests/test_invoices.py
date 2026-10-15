@@ -40,6 +40,7 @@ from eventyay_business.models import (
     TierVersion,
     UsageRecord,
 )
+from eventyay_business.platform_fee_ledger import BILLING_CUTOVER_SETTING
 from eventyay_business.tasks import generate_monthly_business_invoices
 
 
@@ -497,6 +498,7 @@ def test_generate_all_business_invoices_and_task(test_setup):
     assert any(inv.organizer == org for inv in invoices)
 
     # Test celery task call
+    org.settings.set(BILLING_CUTOVER_SETTING, now().isoformat())
     with patch(
         "eventyay_business.invoicing_service.generate_all_business_invoices"
     ) as mock_gen, patch(
@@ -511,7 +513,11 @@ def test_generate_all_business_invoices_and_task(test_setup):
             "failed": 0,
         }
         res = generate_monthly_business_invoices()
-        assert mock_gen.called
+        mock_gen.assert_called_once_with(
+            start_date=None,
+            end_date=None,
+            organizers=[org],
+        )
         mock_collect.assert_called_once_with()
         assert res["generated_invoices_count"] == 0
 

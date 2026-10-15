@@ -23,11 +23,16 @@ from eventyay_business.models import (
     Subscription,
     SubscriptionStatus,
 )
+from eventyay_business.platform_fee_ledger import BILLING_CUTOVER_SETTING
 
 
 @pytest.fixture
 def collection_setup(db):
     organizer = Organizer.objects.create(name="Collection Org", slug="collection-org")
+    organizer.settings.set(
+        BILLING_CUTOVER_SETTING,
+        (now() - timedelta(minutes=1)).isoformat(),
+    )
     subscription = Subscription.objects.get(organizer=organizer)
     subscription.status = SubscriptionStatus.ACTIVE
     subscription.starts_at = now() - timedelta(days=60)
@@ -143,6 +148,21 @@ def test_zero_total_invoice_does_not_create_payment_intent(collection_setup):
     assert result.payment_state == InvoicePaymentState.SUCCEEDED
     assert result.stripe_payment_intent_id is None
     assert result.collection_attempt_count == 0
+
+
+@pytest.mark.django_db
+def test_collection_waits_for_organizer_cutover(collection_setup):
+    _, _, _, invoice = collection_setup
+    invoice.organizer.settings.set(BILLING_CUTOVER_SETTING, "")
+
+    with patch(
+        "eventyay_business.invoice_collection.stripe.PaymentIntent.create"
+    ) as create:
+        result = collect_business_invoice(invoice)
+
+    create.assert_not_called()
+    assert result.status == BusinessInvoiceStatus.OPEN
+    assert result.payment_state == InvoicePaymentState.NOT_STARTED
 
 
 @pytest.mark.django_db

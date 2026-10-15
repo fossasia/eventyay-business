@@ -75,6 +75,11 @@ except ImportError:
     platform_fee_policy = None
 
 try:
+    from eventyay.base.signals import legacy_billing_collection_disabled
+except ImportError:
+    legacy_billing_collection_disabled = None
+
+try:
     from eventyay.base.signals import (
         entitlement_check,
         entitlement_usage_recorded,
@@ -123,6 +128,18 @@ if platform_fee_policy and PlatformFeePolicy:
             is_override=is_override,
             source="eventyay-business",
         )
+
+
+if legacy_billing_collection_disabled:
+
+    @receiver(
+        legacy_billing_collection_disabled,
+        dispatch_uid="business_disable_legacy_billing_collection",
+    )
+    def disable_legacy_billing_collection(sender, organizer, **kwargs):
+        from .platform_fee_ledger import organizer_consolidated_billing_enabled
+
+        return organizer_consolidated_billing_enabled(organizer)
 
 
 if nav_global:

@@ -5,7 +5,7 @@ from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.db.models import Sum
 from django.utils.dateparse import parse_datetime
-from django.utils.timezone import is_naive, make_aware
+from django.utils.timezone import is_naive, make_aware, now
 from django_scopes import scope
 from eventyay.base.models import Order, OrderPayment, OrderRefund
 
@@ -60,6 +60,13 @@ def organizer_billing_cutover_at(organizer) -> datetime.datetime | None:
     if is_naive(cutover_at):
         cutover_at = make_aware(cutover_at)
     return cutover_at
+
+
+def organizer_consolidated_billing_enabled(organizer, reference=None) -> bool:
+    cutover_at = organizer_billing_cutover_at(organizer)
+    if cutover_at is None:
+        return False
+    return cutover_at <= (reference or now())
 
 
 def checkout_application_fee(payment, currency_places: int) -> Decimal:
