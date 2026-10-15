@@ -992,6 +992,15 @@ def process_subscription_checkout_completed(session_data: dict):
                             old_stripe_sub_id,
                             exc,
                         )
+                        snapshot = dict(sub.configuration_snapshot or {})
+                        failed_cancellations = set(
+                            snapshot.get("uncanceled_stripe_subscription_ids", [])
+                        )
+                        failed_cancellations.add(old_stripe_sub_id)
+                        snapshot["uncanceled_stripe_subscription_ids"] = sorted(
+                            failed_cancellations
+                        )
+                        sub.configuration_snapshot = snapshot
 
                 sub.tier_version = tier_version
                 sub.status = SubscriptionStatus.ACTIVE
