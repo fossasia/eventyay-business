@@ -50,7 +50,10 @@ def organizer_billing_cutover_at(organizer) -> datetime.datetime | None:
     if not value:
         return None
 
-    cutover_at = parse_datetime(value)
+    try:
+        cutover_at = parse_datetime(value)
+    except ValueError:
+        cutover_at = None
     if cutover_at is None:
         logger.error(
             "Invalid billing cutover timestamp configured for organizer %s",

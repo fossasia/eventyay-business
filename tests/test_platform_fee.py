@@ -30,6 +30,7 @@ from eventyay_business.models import (
 )
 from eventyay_business.platform_fee_ledger import (
     BILLING_CUTOVER_SETTING,
+    organizer_billing_cutover_at,
     organizer_consolidated_billing_enabled,
 )
 from eventyay_business.signals import (
@@ -278,6 +279,19 @@ def test_cutover_enables_consolidated_billing(organizer_with_fee_tier):
     )
 
     assert organizer_consolidated_billing_enabled(organizer_with_fee_tier) is True
+
+
+@pytest.mark.django_db
+def test_malformed_cutover_timestamp_is_treated_as_not_configured(
+    organizer_with_fee_tier,
+):
+    organizer_with_fee_tier.settings.set(
+        BILLING_CUTOVER_SETTING,
+        "2026-99-99T25:61:00",
+    )
+
+    assert organizer_billing_cutover_at(organizer_with_fee_tier) is None
+    assert organizer_consolidated_billing_enabled(organizer_with_fee_tier) is False
 
 
 @pytest.mark.django_db
