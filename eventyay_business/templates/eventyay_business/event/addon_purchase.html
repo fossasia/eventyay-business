@@ -62,6 +62,17 @@
         </div>
     </div>
 
+    {% if addon.price %}
+        <div class="alert alert-info">
+            <strong>{% trans "Automatic invoice payments" %}</strong>
+            {% blocktrans trimmed %}
+                Completing this paid purchase authorizes Eventyay to save the payment
+                method used and automatically charge future organizer invoices. You
+                can turn off automatic payments later without canceling this add-on.
+            {% endblocktrans %}
+        </div>
+    {% endif %}
+
     <form method="post" class="form-horizontal">
         {% csrf_token %}
         {% bootstrap_form form layout='horizontal' %}

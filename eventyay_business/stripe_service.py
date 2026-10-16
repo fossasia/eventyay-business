@@ -28,7 +28,11 @@ from .models import (
 )
 from .platform_fee_ledger import organizer_consolidated_billing_enabled
 from .services import invalidate_entitlement_cache, log_addon_lifecycle_action
-from .signals import addon_purchased, subscription_purchased
+from .signals import (
+    addon_purchased,
+    record_automatic_collection_authorization,
+    subscription_purchased,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -307,9 +311,76 @@ def create_addon_checkout_session(
 
     if mode == "subscription":
         session_kwargs["subscription_data"] = {"metadata": metadata}
+    else:
+        session_kwargs["payment_intent_data"] = {
+            "metadata": metadata,
+            "setup_future_usage": "off_session",
+        }
 
     session = stripe.checkout.Session.create(**session_kwargs)
     return session.url
+
+
+def _stripe_object_value(obj, key):
+    if isinstance(obj, dict):
+        return obj.get(key)
+    return getattr(obj, key, None)
+
+
+def _stripe_object_id(obj) -> str:
+    if isinstance(obj, str):
+        return obj
+    return _stripe_object_value(obj, "id") or ""
+
+
+def sync_checkout_payment_method(organizer, session_data: dict) -> Optional[str]:
+    """Persist the reusable payment method collected by a completed checkout."""
+    customer_id = _stripe_object_id(session_data.get("customer"))
+    billing = OrganizerBillingModel.objects.filter(
+        organizer=organizer,
+        stripe_customer_id=customer_id,
+    ).first()
+    if not billing:
+        return None
+
+    payment_intent = session_data.get("payment_intent")
+    subscription = session_data.get("subscription")
+    payment_method_id = _stripe_object_id(
+        _stripe_object_value(payment_intent, "payment_method")
+    ) or _stripe_object_id(_stripe_object_value(subscription, "default_payment_method"))
+
+    if not payment_method_id:
+        secret_key = get_stripe_secret_key_safe()
+        if not secret_key or stripe is None:
+            return None
+        stripe.api_key = secret_key
+        try:
+            if payment_intent:
+                payment_intent = stripe.PaymentIntent.retrieve(
+                    _stripe_object_id(payment_intent)
+                )
+                payment_method_id = _stripe_object_id(
+                    _stripe_object_value(payment_intent, "payment_method")
+                )
+            elif subscription:
+                subscription = stripe.Subscription.retrieve(
+                    _stripe_object_id(subscription)
+                )
+                payment_method_id = _stripe_object_id(
+                    _stripe_object_value(subscription, "default_payment_method")
+                )
+        except stripe.StripeError as exc:
+            logger.warning(
+                "Could not sync the saved payment method for organizer %s: %s",
+                organizer.pk,
+                exc,
+            )
+            return None
+
+    if payment_method_id and billing.stripe_payment_method_id != payment_method_id:
+        billing.stripe_payment_method_id = payment_method_id
+        billing.save(update_fields=["stripe_payment_method_id"])
+    return payment_method_id or None
 
 
 def cancel_legacy_subscription_after_cutover(stripe_subscription_id: str) -> None:
@@ -773,6 +844,13 @@ def process_addon_checkout_completed(session_data: dict):
                 )
                 return None
 
+            sync_checkout_payment_method(organizer, session_data)
+            record_automatic_collection_authorization(
+                organizer=organizer,
+                user=user,
+                stripe_customer_id=session_data.get("customer", ""),
+            )
+
             if assignment_id:
                 # Update existing pending assignment
                 model_cls = EventAddon if event else OrganizerAddon
@@ -991,6 +1069,13 @@ def process_subscription_checkout_completed(session_data: dict):
                         organizer.pk,
                     )
                 return None
+
+            sync_checkout_payment_method(organizer, session_data)
+            record_automatic_collection_authorization(
+                organizer=organizer,
+                user=user,
+                stripe_customer_id=stripe_customer_id or "",
+            )
 
             # Check existing subscription
             sub = (

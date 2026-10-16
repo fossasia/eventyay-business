@@ -1,0 +1,73 @@
+{% extends 'pretixcontrol/organizers/base.html' %}
+{% load i18n %}
+
+{% block title %}{% trans 'Choose what to stop' %}{% endblock %}
+
+{% block inner %}
+  <div class="page-header">
+    <h1>{% trans 'Choose what to stop' %}</h1>
+  </div>
+
+  <div class="alert alert-warning">
+    <i class="fa fa-exclamation-triangle" aria-hidden="true"></i>
+    <strong>{% trans 'Turning off automatic payments changes payment collection only.' %}</strong>
+    {% blocktrans trimmed %}
+      Your plan and add-ons will remain active. Eventyay will continue issuing
+      invoices, and all existing and future invoice balances remain due, but the
+      saved payment method will not be charged automatically.
+    {% endblocktrans %}
+  </div>
+
+  {% if subscription or organizer_addons or event_addons %}
+    <div class="panel panel-default">
+      <div class="panel-heading">
+        <strong>{% trans 'Your active subscriptions' %}</strong>
+      </div>
+      <div class="panel-body">
+        <ul>
+          {% if subscription %}
+            <li>
+              {% blocktrans with plan=subscription.tier_version.tier.name %}
+                Plan: {{ plan }}
+              {% endblocktrans %}
+              —
+              <a href="{% url 'plugins:eventyay_business:organizer.plan' organizer=organizer.slug %}">
+                {% trans 'Review or cancel plan' %}
+              </a>
+            </li>
+          {% endif %}
+          {% for assignment in organizer_addons %}
+            <li>
+              {% blocktrans with addon=assignment.addon.name %}Organization add-on: {{ addon }}{% endblocktrans %}
+              —
+              <a href="{% url 'plugins:eventyay_business:organizer.addon.cancel' organizer=organizer.slug pk=assignment.pk %}">
+                {% trans 'Cancel this add-on' %}
+              </a>
+            </li>
+          {% endfor %}
+          {% for assignment in event_addons %}
+            <li>
+              {% blocktrans with addon=assignment.addon.name event=assignment.event.name %}
+                Event add-on: {{ addon }} for {{ event }}
+              {% endblocktrans %}
+              —
+              <a href="{% url 'plugins:eventyay_business:event.addon.cancel' organizer=organizer.slug event=assignment.event.slug pk=assignment.pk %}">
+                {% trans 'Cancel this add-on' %}
+              </a>
+            </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  {% endif %}
+
+  <form method="post">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-danger">
+      {% trans 'Turn off automatic payments only' %}
+    </button>
+    <a href="{% url 'plugins:eventyay_business:organizer.current_charges' organizer=organizer.slug %}" class="btn btn-default">
+      {% trans 'Keep automatic payments on' %}
+    </a>
+  </form>
+{% endblock %}

@@ -19,6 +19,17 @@
         </div>
     {% endif %}
 
+    <div class="alert alert-info">
+        <strong>{% trans "Automatic invoice payments" %}</strong>
+        {% blocktrans trimmed %}
+            When you select a paid plan, you authorize Eventyay to save the payment
+            method used and automatically charge future organizer invoices. Invoice
+            totals can vary based on your plan, add-ons, ticket fees, usage, refunds,
+            adjustments and applicable taxes. You can turn off automatic payments
+            later without canceling the plan.
+        {% endblocktrans %}
+    </div>
+
     <div class="row">
         {% for item in tier_list %}
             <div class="col-md-4 col-sm-6">

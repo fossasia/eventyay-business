@@ -1,6 +1,6 @@
 import datetime
 import logging
-from django.db import DatabaseError
+from django.db import DatabaseError, transaction
 from django.db.models import Q, Sum
 from django.db.models.signals import post_save
 from django.dispatch import Signal, receiver
@@ -8,6 +8,9 @@ from django.urls import reverse
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 from eventyay.base.models import OrderRefund, Organizer
+from eventyay.base.models.organizer import OrganizerBillingModel
+
+from .models import BillingCollectionAuthorization
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +20,8 @@ addon_purchased = Signal()
 subscription_purchased = Signal()
 subscription_downgraded = Signal()
 subscription_expired = Signal()
+
+AUTOMATIC_COLLECTION_TERMS_VERSION = "2"
 
 
 def _resolve_payment_date(*, order, payment=None, payment_date=None):
@@ -80,6 +85,11 @@ except ImportError:
     legacy_billing_collection_disabled = None
 
 try:
+    from eventyay.base.signals import organizer_billing_payment_method_saved
+except ImportError:
+    organizer_billing_payment_method_saved = None
+
+try:
     from eventyay.base.signals import (
         entitlement_check,
         entitlement_usage_recorded,
@@ -140,6 +150,49 @@ if legacy_billing_collection_disabled:
         from .platform_fee_ledger import organizer_consolidated_billing_enabled
 
         return organizer_consolidated_billing_enabled(organizer)
+
+
+def record_automatic_collection_authorization(
+    organizer, user, stripe_customer_id: str
+) -> BillingCollectionAuthorization | None:
+    billing = OrganizerBillingModel.objects.filter(organizer=organizer).first()
+    if (
+        not billing
+        or not stripe_customer_id
+        or billing.stripe_customer_id != stripe_customer_id
+    ):
+        return None
+
+    authorized_by = user if user and user.is_authenticated else None
+    with transaction.atomic():
+        locked_organizer = Organizer.objects.select_for_update().get(pk=organizer.pk)
+        authorization, _ = BillingCollectionAuthorization.objects.update_or_create(
+            organizer=locked_organizer,
+            defaults={
+                "stripe_customer_id": stripe_customer_id,
+                "authorized_at": now(),
+                "authorized_by": authorized_by,
+                "revoked_at": None,
+                "terms_version": AUTOMATIC_COLLECTION_TERMS_VERSION,
+            },
+        )
+    return authorization
+
+
+if organizer_billing_payment_method_saved:
+
+    @receiver(
+        organizer_billing_payment_method_saved,
+        dispatch_uid="business_enable_automatic_collection_on_payment_method_save",
+    )
+    def enable_automatic_collection_on_payment_method_save(
+        sender, organizer, user, stripe_customer_id, **kwargs
+    ):
+        return record_automatic_collection_authorization(
+            organizer=organizer,
+            user=user,
+            stripe_customer_id=stripe_customer_id,
+        )
 
 
 if nav_global:

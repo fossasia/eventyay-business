@@ -15,6 +15,7 @@ from eventyay_business.models import (
     AddonDefinition,
     AddonPricingMode,
     AddonStatus,
+    BillingCollectionAuthorization,
     BillingInterval,
     BusinessInvoice,
     BusinessInvoiceStatus,
@@ -253,6 +254,9 @@ def test_create_addon_checkout_session(setup_data):
                 assert kwargs["line_items"][0]["price_data"]["unit_amount"] == 1500
                 assert kwargs["metadata"]["scope"] == "event"
                 assert kwargs["metadata"]["event_slug"] == event.slug
+                assert kwargs["payment_intent_data"]["setup_future_usage"] == (
+                    "off_session"
+                )
 
 
 @pytest.mark.django_db
@@ -430,6 +434,20 @@ def test_webhook_process_addon_checkout_completed(setup_data):
 @pytest.mark.django_db
 def test_webhook_process_subscription_checkout_completed(setup_data):
     organizer, _, user, _, tier_version, tier_price, _, _, _ = setup_data
+    OrganizerBillingModel.objects.create(
+        organizer=organizer,
+        primary_contact_name="Stripe Billing",
+        primary_contact_email="billing@example.com",
+        company_or_organization_name="Stripe Org",
+        address_line_1="Example Street 1",
+        address_line_2="",
+        city="Berlin",
+        zip_code="10115",
+        country="DE",
+        preferred_language="en",
+        tax_id="",
+        stripe_customer_id="cus_sub_completed",
+    )
 
     signal_mock = MagicMock()
     subscription_purchased.connect(signal_mock)
@@ -446,16 +464,35 @@ def test_webhook_process_subscription_checkout_completed(setup_data):
             },
         }
 
-        sub = process_webhook_event("checkout.session.completed", session_data)
+        with patch(
+            "eventyay_business.stripe_service.get_stripe_secret_key_safe",
+            return_value="sk_test_automatic",
+        ), patch(
+            "stripe.Subscription.retrieve",
+            return_value=MagicMock(
+                default_payment_method=MagicMock(id="pm_sub_completed"),
+                latest_invoice=None,
+            ),
+        ):
+            sub = process_webhook_event("checkout.session.completed", session_data)
         assert isinstance(sub, Subscription)
         assert sub.status == SubscriptionStatus.ACTIVE
         assert sub.tier_version == tier_version
         assert sub.stripe_subscription_id == "sub_live_completed"
         assert sub.stripe_customer_id == "cus_sub_completed"
         assert signal_mock.call_count == 1
+        authorization = BillingCollectionAuthorization.objects.get(organizer=organizer)
+        assert authorization.authorized_by == user
+        assert authorization.terms_version == "2"
+        billing = OrganizerBillingModel.objects.get(organizer=organizer)
+        assert billing.stripe_payment_method_id == "pm_sub_completed"
 
         # Idempotent
-        sub_dup = process_webhook_event("checkout.session.completed", session_data)
+        with patch(
+            "eventyay_business.stripe_service.get_stripe_secret_key_safe",
+            return_value=None,
+        ):
+            sub_dup = process_webhook_event("checkout.session.completed", session_data)
         assert sub_dup.pk == sub.pk
         assert signal_mock.call_count == 1
     finally:
@@ -586,6 +623,9 @@ def test_addon_purchase_views_stripe_redirect(admin_client, admin_user, setup_da
         "plugins:eventyay_business:organizer.addon.purchase",
         kwargs={"organizer": organizer.slug, "pk": recurring_addon.pk},
     )
+    resp = admin_client.get(org_purchase_url)
+    assert resp.status_code == 200
+    assert b"automatically charge future organizer invoices" in resp.content
 
     # 1. Free add-on activates immediately without Stripe redirect
     free_url = reverse(
@@ -823,6 +863,7 @@ def test_organizer_plan_upgrade_view_flow(setup_data, admin_user, admin_client):
     resp = admin_client.get(upgrade_url)
     assert resp.status_code == 200
     assert tier.name.encode() in resp.content
+    assert b"automatically charge future organizer invoices" in resp.content
 
     # Create a free tier plan
     free_tier = Tier.objects.create(

@@ -41,6 +41,7 @@ from eventyay_business.models import (
     UsageRecord,
 )
 from eventyay_business.platform_fee_ledger import BILLING_CUTOVER_SETTING
+from eventyay_business.signals import record_automatic_collection_authorization
 from eventyay_business.tasks import generate_monthly_business_invoices
 
 
@@ -109,6 +110,39 @@ def test_setup(db):
     )
 
     return org, tier, version, event
+
+
+@pytest.mark.django_db
+def test_saved_payment_method_authorizes_automatic_collection(
+    test_setup, organizer_user
+):
+    org, _, _, _ = test_setup
+    OrganizerBillingModel.objects.create(
+        organizer=org,
+        primary_contact_name="Acme Billing",
+        primary_contact_email="billing@example.com",
+        company_or_organization_name="Acme Corp",
+        address_line_1="Example Street 1",
+        address_line_2="",
+        city="Berlin",
+        zip_code="10115",
+        country="DE",
+        preferred_language="en",
+        tax_id="",
+        stripe_customer_id="cus_automatic",
+        stripe_payment_method_id="pm_automatic",
+    )
+
+    authorization = record_automatic_collection_authorization(
+        organizer=org,
+        user=organizer_user,
+        stripe_customer_id="cus_automatic",
+    )
+
+    assert authorization is not None
+    assert authorization.authorized_by == organizer_user
+    assert authorization.revoked_at is None
+    assert authorization.terms_version == "2"
 
 
 @pytest.mark.django_db
@@ -575,6 +609,10 @@ def test_organizer_invoice_views(client, organizer_user, test_setup):
         stripe_customer_id="cus_acme",
         stripe_payment_method_id="pm_acme",
     )
+    resp = client.get(current_charges_url)
+    assert b"Save the payment method again" in resp.content
+    assert b"Authorize automatic collection" not in resp.content
+
     authorize_url = f"/control/organizer/{org.slug}/business/billing/authorize/"
     resp = client.post(authorize_url, {"authorize": "yes"})
     assert resp.status_code == 302
@@ -584,13 +622,23 @@ def test_organizer_invoice_views(client, organizer_user, test_setup):
     assert authorization.revoked_at is None
 
     resp = client.get(current_charges_url)
-    assert b"automatic invoice collection is authorized" in resp.content
+    assert b"Automatic payments are on" in resp.content
+    assert b"does not cancel your plan or add-ons" in resp.content
 
     revoke_url = f"/control/organizer/{org.slug}/business/billing/revoke/"
+    resp = client.get(revoke_url)
+    assert resp.status_code == 200
+    assert b"changes payment collection only" in resp.content
+    assert b"Plan: Pro Tier" in resp.content
+    assert b"Review or cancel plan" in resp.content
+
     resp = client.post(revoke_url)
     assert resp.status_code == 302
     authorization.refresh_from_db()
     assert authorization.revoked_at is not None
+    assert Subscription.objects.filter(
+        organizer=org, status=SubscriptionStatus.ACTIVE
+    ).exists()
 
     # Test detail view
     resp = client.get(url_detail)
