@@ -127,6 +127,7 @@ def test_admin_activation_shows_preflight_and_preserves_cutover(
     response = admin_client.get(list_url)
     assert response.status_code == 200
     assert b"Activation Org" in response.content
+    assert b"Before activation" in response.content
     assert b"Ready" in response.content
     assert b"Authorized" in response.content
     assert enable_url.encode() in response.content

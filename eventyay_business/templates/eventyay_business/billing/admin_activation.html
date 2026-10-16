@@ -4,8 +4,30 @@
 {% block content %}
   <h1>{% trans 'Consolidated billing activation' %}</h1>
   <p class="alert alert-info">
-    {% trans 'Activation is available only when no legacy Stripe subscription can charge this organizer.' %}
+    {% blocktranslate trimmed %}
+      Activation records the organizer’s cutover time. Ticket payments completed after
+      that time accrue fees in the Business ledger, and the monthly task generates and
+      collects Eventyay invoices for that organizer.
+    {% endblocktranslate %}
   </p>
+  <div class="panel panel-default">
+    <div class="panel-heading"><strong>{% trans 'Before activation' %}</strong></div>
+    <div class="panel-body">
+      <ol>
+        <li>{% trans 'Create the organizer’s canonical Stripe billing customer.' %}</li>
+        <li>{% trans 'Save a payment method for that customer.' %}</li>
+        <li>{% trans 'Have the organizer authorize automatic off-session collection.' %}</li>
+        <li>{% trans 'Cancel every legacy Stripe plan and add-on subscription so it cannot charge independently.' %}</li>
+      </ol>
+      <p class="text-muted">
+        {% blocktranslate trimmed %}
+          Activation is intentionally one-way. If the payment method or authorization is
+          later removed, invoice generation continues but automatic collection pauses until
+          the billing setup is repaired.
+        {% endblocktranslate %}
+      </p>
+    </div>
+  </div>
   <div class="table-responsive">
     <table class="table table-striped">
       <thead>
@@ -27,9 +49,15 @@
               {% if preflight.activated_at %}
                 {% blocktrans with activated_at=preflight.activated_at|date:'SHORT_DATETIME_FORMAT' %}Active since {{ activated_at }}{% endblocktrans %}
               {% elif preflight.ready %}
-                {% trans 'Ready' %}
+                <span class="label label-success">{% trans 'Ready' %}</span>
               {% else %}
-                {% trans 'Blocked' %}
+                <span class="label label-warning">{% trans 'Blocked' %}</span>
+                <ul class="list-unstyled text-muted">
+                  {% if not preflight.billing_customer_ready %}<li>{% trans 'Customer missing' %}</li>{% endif %}
+                  {% if not preflight.payment_method_ready %}<li>{% trans 'Payment method missing' %}</li>{% endif %}
+                  {% if not preflight.collection_authorized %}<li>{% trans 'Authorization missing' %}</li>{% endif %}
+                  {% if preflight.active_stripe_subscription_ids %}<li>{% trans 'Legacy subscriptions still active' %}</li>{% endif %}
+                </ul>
               {% endif %}
             </td>
             <td>{% if preflight.billing_customer_ready %}{% trans 'Ready' %}{% else %}{% trans 'Missing' %}{% endif %}</td>

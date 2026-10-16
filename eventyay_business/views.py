@@ -18,6 +18,7 @@ from django.views.generic import (
     DetailView,
     FormView,
     ListView,
+    RedirectView,
     TemplateView,
     UpdateView,
     View,
@@ -2185,23 +2186,15 @@ class AdminInvoiceDownloadView(AdministratorPermissionRequiredMixin, View):
         return response
 
 
-class InvoicePresentationSettingsView(AdministratorPermissionRequiredMixin, FormView):
-    template_name = "eventyay_business/admin/invoice_settings.html"
-    form_class = InvoicePresentationSettingsForm
+class InvoicePresentationSettingsView(
+    AdministratorPermissionRequiredMixin, RedirectView
+):
+    permanent = False
 
-    def form_valid(self, form):
-        form.save()
-        messages.success(self.request, _("Invoice settings have been saved."))
-        return super().form_valid(form)
-
-    def form_invalid(self, form):
-        messages.error(
-            self.request, _("Your changes have not been saved, see below for errors.")
+    def get_redirect_url(self, *args, **kwargs):
+        return (
+            f"{reverse('plugins:eventyay_business:settings')}#tab-invoice_presentation"
         )
-        return super().form_invalid(form)
-
-    def get_success_url(self):
-        return reverse("plugins:eventyay_business:invoice_settings")
 
 
 class InvoicePresentationPreviewView(AdministratorPermissionRequiredMixin, View):
@@ -2292,7 +2285,7 @@ class AdminCurrentChargesMixin:
             self.request.GET.get("period")
         )
         organizer = None
-        organizer_slug = self.request.GET.get("organizer", "")
+        organizer_slug = self.request.GET.get("organizer", "").strip()
         if organizer_slug:
             organizer = Organizer.objects.filter(slug=organizer_slug).first()
         state = self.request.GET.get("state", "open")
@@ -2304,15 +2297,17 @@ class AdminCurrentChargesMixin:
             "period_start": period_start,
             "period_end": period_end,
             "state": state,
-            "currency": self.request.GET.get("currency", "").upper(),
-            "event_query": self.request.GET.get("event", ""),
+            "currency": self.request.GET.get("currency", "").strip().upper(),
+            "event_query": self.request.GET.get("event", "").strip(),
         }
 
     def get_rows(self, filters=None):
         filters = filters or self.get_filters()
-        if filters.pop("invalid_organizer"):
+        query_filters = filters.copy()
+        if query_filters.pop("invalid_organizer"):
             return []
-        return platform_fee_rows(**filters)
+        query_filters["include_carry_forward"] = query_filters["state"] == "open"
+        return platform_fee_rows(**query_filters)
 
 
 class AdminCurrentChargesView(
@@ -2327,24 +2322,34 @@ class AdminCurrentChargesView(
         totals = defaultdict(lambda: Decimal("0.00"))
         for row in rows:
             totals[row["currency"]] += row["net"]
+        billing_customer_organizers = (
+            OrganizerBillingModel.objects.exclude(stripe_customer_id__isnull=True)
+            .exclude(stripe_customer_id="")
+            .values_list("organizer_id", flat=True)
+        )
+        billing_attention_count = (
+            Subscription.objects.filter(
+                status__in=[
+                    SubscriptionStatus.ACTIVE,
+                    SubscriptionStatus.PAST_DUE,
+                ]
+            )
+            .exclude(organizer_id__in=billing_customer_organizers)
+            .values("organizer_id")
+            .distinct()
+            .count()
+        )
         ctx.update(
             {
                 "rows": rows,
+                "row_count": len(rows),
                 "totals": [
                     {"currency": currency, "amount": amount}
                     for currency, amount in sorted(totals.items())
                 ],
                 "organizers": Organizer.objects.order_by("name", "slug"),
-                "billing_attention": Subscription.objects.filter(
-                    status__in=[
-                        SubscriptionStatus.ACTIVE,
-                        SubscriptionStatus.PAST_DUE,
-                    ]
-                )
-                .filter(Q(stripe_customer_id__isnull=True) | Q(stripe_customer_id=""))
-                .select_related("organizer")
-                .order_by("organizer__name"),
-                "currencies": PlatformFeeLedgerEntry.objects.order_by()
+                "billing_attention_count": billing_attention_count,
+                "currencies": PlatformFeeLedgerEntry.objects.order_by("currency")
                 .values_list("currency", flat=True)
                 .distinct(),
                 "current_organizer": self.request.GET.get("organizer", ""),
@@ -2490,16 +2495,39 @@ class GlobalBusinessSettingsView(AdministratorPermissionRequiredMixin, FormView)
     template_name = "eventyay_business/admin/business_settings.html"
     form_class = GlobalBusinessSettingsForm
 
-    def form_valid(self, form):
-        form.save()
-        messages.success(self.request, _("Your changes have been saved."))
-        return super().form_valid(form)
+    def get_invoice_form(self):
+        if self.request.method == "POST":
+            return InvoicePresentationSettingsForm(
+                data=self.request.POST, files=self.request.FILES
+            )
+        return InvoicePresentationSettingsForm()
 
-    def form_invalid(self, form):
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        if "invoice_form" not in context:
+            context["invoice_form"] = self.get_invoice_form()
+        return context
+
+    def post(self, request, *args, **kwargs):
+        form = self.get_form()
+        invoice_form = self.get_invoice_form()
+        if form.is_valid() and invoice_form.is_valid():
+            return self.forms_valid(form, invoice_form)
+        return self.forms_invalid(form, invoice_form)
+
+    def forms_valid(self, form, invoice_form):
+        form.save()
+        invoice_form.save()
+        messages.success(self.request, _("Your changes have been saved."))
+        return redirect(self.get_success_url())
+
+    def forms_invalid(self, form, invoice_form):
         messages.error(
             self.request, _("Your changes have not been saved, see below for errors.")
         )
-        return super().form_invalid(form)
+        return self.render_to_response(
+            self.get_context_data(form=form, invoice_form=invoice_form)
+        )
 
     def get_success_url(self):
         return reverse("plugins:eventyay_business:settings")

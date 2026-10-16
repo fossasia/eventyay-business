@@ -55,7 +55,19 @@ def invoice_admin_client(client, db):
 
 @pytest.mark.django_db
 def test_invoice_settings_page_saves_and_previews_pdf(invoice_admin_client):
-    settings_url = reverse("plugins:eventyay_business:invoice_settings")
+    settings_url = reverse("plugins:eventyay_business:settings")
+    legacy_settings_url = reverse("plugins:eventyay_business:invoice_settings")
+
+    page = invoice_admin_client.get(settings_url)
+    assert page.status_code == 200
+    assert b"Invoice presentation" in page.content
+    assert b"eventyay_business/admin.css" in page.content
+    assert b"48 \xc3\x97 22 mm" in page.content
+
+    legacy_page = invoice_admin_client.get(legacy_settings_url)
+    assert legacy_page.status_code == 302
+    assert legacy_page.url == f"{settings_url}#tab-invoice_presentation"
+
     response = invoice_admin_client.post(settings_url, presentation_form_data())
     assert response.status_code == 302
     assert response.url == settings_url

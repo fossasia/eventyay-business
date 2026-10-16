@@ -1014,6 +1014,10 @@ class InvoicePresentationSettingsForm(SettingsForm):
         ext_whitelist=(".png", ".jpg", ".jpeg"),
         max_size=2 * 1024 * 1024,
         required=False,
+        help_text=_(
+            "Use a wide or square logo with a transparent or white background. "
+            "The invoice keeps its aspect ratio within a 48 × 22 mm area."
+        ),
     )
     business_invoice_section_order = forms.CharField(
         label=_("Section order"),

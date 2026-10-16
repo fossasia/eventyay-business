@@ -3,6 +3,7 @@ from datetime import timedelta
 from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.db.models import Sum
+from django.urls import reverse
 from django.utils.timezone import now
 from django_scopes import scope
 from eventyay.base.models import (
@@ -14,6 +15,8 @@ from eventyay.base.models import (
     Organizer,
     Product,
 )
+from eventyay.base.models.auth import StaffSession
+from eventyay.base.models.organizer import OrganizerBillingModel
 
 from eventyay_business.billing_overview import build_organizer_billing_overview
 from eventyay_business.invoicing_service import generate_business_invoice_for_organizer
@@ -401,6 +404,64 @@ def test_current_charge_estimate_uses_ledger_refund_adjustments(
         total for total in overview["totals"] if total["currency"] == "USD"
     )
     assert usd_total["ticket_fees"] == Decimal("3.00")
+
+
+@pytest.mark.django_db
+def test_admin_open_charges_include_carry_forward_and_canonical_customer(
+    organizer_with_fee_tier, admin_client, admin_user
+):
+    event, order, _payments = create_paid_order(
+        organizer_with_fee_tier,
+        code="CARRYFORWARD",
+        position_price=Decimal("100.00"),
+        tax_value=Decimal("0.00"),
+        payment_amounts=(Decimal("100.00"),),
+    )
+    record_platform_fee_on_order_paid(sender=event, order=order)
+    old_charge_time = now() - timedelta(days=40)
+    PlatformFeeLedgerEntry.objects.update(occurred_at=old_charge_time)
+    OrganizerBillingModel.objects.create(
+        organizer=organizer_with_fee_tier,
+        stripe_customer_id="cus_canonical",
+    )
+
+    session = admin_client.session
+    session.save()
+    StaffSession.objects.create(
+        user=admin_user,
+        session_key=session.session_key,
+        comment="test",
+    )
+    admin_user.is_staff = True
+    admin_user.save()
+
+    list_url = reverse("plugins:eventyay_business:current_charges.list")
+    response = admin_client.get(
+        list_url,
+        {
+            "period": f"{now():%Y-%m}",
+            "state": "open",
+            "event": " carryforward ",
+        },
+    )
+    assert response.status_code == 200
+    assert b"CARRYFORWARD" in response.content
+    assert b"Billing setup incomplete" not in response.content
+    assert response.context["row_count"] == 1
+
+    export_response = admin_client.get(
+        reverse("plugins:eventyay_business:current_charges.export"),
+        {"period": f"{now():%Y-%m}", "state": "open"},
+    )
+    assert export_response.status_code == 200
+    assert b"CARRYFORWARD" in export_response.content
+
+    response = admin_client.get(
+        list_url,
+        {"period": f"{now():%Y-%m}", "state": "all"},
+    )
+    assert response.status_code == 200
+    assert b"CARRYFORWARD" not in response.content
 
 
 @pytest.mark.django_db

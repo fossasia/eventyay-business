@@ -1,15 +1,22 @@
 {% extends "pretixcontrol/global_settings_base.html" %}
 {% load i18n %}
 {% load bootstrap3 %}
+{% load static %}
+
+{% block custom_header %}
+    {{ block.super }}
+    <link rel="stylesheet" href="{% static 'eventyay_business/admin.css' %}">
+{% endblock %}
 
 {% block title %}{% trans "Business Settings" %}{% endblock %}
 
 {% block content %}
     <h1>{% trans "Business Settings" %}</h1>
     {% block inner %}
-    <form action="" method="post" class="form-horizontal">
+    <form action="" method="post" enctype="multipart/form-data" class="form-horizontal">
         {% csrf_token %}
         {% bootstrap_form_errors form %}
+        {% bootstrap_form_errors invoice_form %}
         <div class="tabbed-form">
             <fieldset id="tab-organizer_billing">
                 <legend>{% translate "Organizer Billing" %}</legend>
@@ -57,6 +64,53 @@
                         {% if form.billing_validation.errors %}
                             <div class="help-block">{{ form.billing_validation.errors }}</div>
                         {% endif %}
+                    </div>
+                </div>
+            </fieldset>
+            <fieldset id="tab-invoice_presentation">
+                <legend>{% translate "Invoice presentation" %}</legend>
+                <p class="help-block">
+                    {% blocktranslate trimmed %}
+                        These values are copied into each invoice when it is finalized.
+                        Later changes affect new invoices and the preview, but never alter finalized invoices.
+                    {% endblocktranslate %}
+                </p>
+
+                <h3>{% translate "Issuer" %}</h3>
+                {% bootstrap_field invoice_form.business_invoice_issuer_legal_name layout='control' %}
+                {% bootstrap_field invoice_form.business_invoice_issuer_address layout='control' %}
+                {% bootstrap_field invoice_form.business_invoice_issuer_tax_registration layout='control' %}
+                {% bootstrap_field invoice_form.business_invoice_support_email layout='control' %}
+                <div class="invoice-logo-field">
+                    {% bootstrap_field invoice_form.business_invoice_logo layout='control' %}
+                </div>
+
+                <h3>{% translate "Wording" %}</h3>
+                {% bootstrap_field invoice_form.business_invoice_payment_instructions layout='control' %}
+                {% bootstrap_field invoice_form.business_invoice_due_date_text layout='control' %}
+                {% bootstrap_field invoice_form.business_invoice_footer layout='control' %}
+                {% bootstrap_field invoice_form.business_invoice_terms layout='control' %}
+
+                <h3>{% translate "Sections" %}</h3>
+                {% bootstrap_field invoice_form.business_invoice_section_order layout='control' %}
+                {% bootstrap_field invoice_form.business_invoice_section_label_plans layout='control' %}
+                {% bootstrap_field invoice_form.business_invoice_section_label_addons layout='control' %}
+                {% bootstrap_field invoice_form.business_invoice_section_label_ticket_fees layout='control' %}
+                {% bootstrap_field invoice_form.business_invoice_section_label_adjustments layout='control' %}
+                {% bootstrap_field invoice_form.business_invoice_section_label_taxes layout='control' %}
+                {% bootstrap_field invoice_form.business_invoice_show_zero_value_sections layout='control' %}
+
+                <div class="form-group">
+                    <div class="col-md-9 col-md-offset-3">
+                        <a
+                            class="btn btn-default"
+                            href="{% url 'plugins:eventyay_business:invoice_settings.preview' %}"
+                            target="_blank"
+                            rel="noopener"
+                        >
+                            <i class="fa fa-eye" aria-hidden="true"></i>
+                            {% translate "Preview saved settings" %}
+                        </a>
                     </div>
                 </div>
             </fieldset>

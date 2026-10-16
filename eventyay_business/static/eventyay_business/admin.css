@@ -1,0 +1,13 @@
+.invoice-logo-field .thumbnailed-file-preview-image,
+.invoice-logo-field .initial-file-container > a > img {
+  width: auto;
+  height: auto;
+  max-width: 240px;
+  max-height: 72px;
+  object-fit: contain;
+  object-position: left center;
+}
+
+.invoice-logo-field .initial-file-container {
+  max-width: 100%;
+}

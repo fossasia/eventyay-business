@@ -1,86 +1,137 @@
-{% extends "pretixcontrol/admin/base.html" %}
+{% extends 'pretixcontrol/admin/base.html' %}
 {% load i18n %}
 
-{% block title %}{% trans "Current charges" %}{% endblock %}
+{% block title %}{% translate 'Current charges' %}{% endblock %}
 
 {% block content %}
-    <div class="page-header">
-        <div class="pull-right">
-            <a href="{% url 'plugins:eventyay_business:current_charges.export' %}?{{ export_query }}" class="btn btn-default">
-                <i class="fa fa-download" aria-hidden="true"></i> {% trans "Export CSV" %}
-            </a>
-        </div>
-        <h1>{% trans "Current charges" %}</h1>
+  <div class="page-header">
+    <div class="pull-right">
+      <a href="{% url 'plugins:eventyay_business:current_charges.export' %}?{{ export_query }}" class="btn btn-default">
+        <i class="fa fa-download" aria-hidden="true"></i>
+        {% translate 'Export filtered CSV' %}
+      </a>
     </div>
+    <h1>{% translate 'Current charges' %}</h1>
+  </div>
 
-    <div class="alert alert-info">
-        {% trans "Open amounts are estimates from the same ticket fee ledger used for invoice generation. Viewing this page does not finalize an invoice or collect payment." %}
+  <div class="alert alert-info">
+    <i class="fa fa-info-circle" aria-hidden="true"></i>
+    {% blocktranslate trimmed %}
+      This is the ticket-fee ledger used by invoice generation. Open results include
+      all unbilled charges through the selected month; invoiced and all results are
+      limited to activity inside the selected month.
+    {% endblocktranslate %}
+  </div>
+
+  {% if billing_attention_count %}
+    <div class="alert alert-warning">
+      <i class="fa fa-exclamation-triangle" aria-hidden="true"></i>
+      <strong>{% translate 'Billing setup incomplete:' %}</strong>
+      {% blocktranslate trimmed count count=billing_attention_count %}
+        One active organizer subscription has no Stripe billing customer.
+      {% plural %}
+        {{ count }} active organizer subscriptions have no Stripe billing customer.
+      {% endblocktranslate %}
+      <a href="{% url 'plugins:eventyay_business:billing_activation' %}" class="alert-link">
+        {% translate 'Review activation readiness' %}
+      </a>
     </div>
+  {% endif %}
 
-    {% if billing_attention %}
-        <div class="alert alert-warning">
-            <strong>{% trans "Billing setup required:" %}</strong>
-            {% blocktrans trimmed count count=billing_attention|length %}
-                One active organizer subscription has no Stripe billing customer.
-            {% plural %}
-                {{ count }} active organizer subscriptions have no Stripe billing customer.
-            {% endblocktrans %}
-        </div>
-    {% endif %}
-
-    <form method="get" class="form-horizontal">
+  <div class="panel panel-default">
+    <div class="panel-heading"><strong>{% translate 'Filters' %}</strong></div>
+    <div class="panel-body">
+      <form method="get">
         <div class="row">
-            <div class="col-sm-4 col-md-2 form-group">
-                <label for="filter-organizer">{% trans "Organizer" %}</label>
-                <select id="filter-organizer" name="organizer" class="form-control">
-                    <option value="">{% trans "All organizers" %}</option>
-                    {% for organizer in organizers %}
-                        <option value="{{ organizer.slug }}" {% if current_organizer == organizer.slug %}selected{% endif %}>{{ organizer.name }}</option>
-                    {% endfor %}
-                </select>
+          <div class="col-sm-6 col-lg-3">
+            <div class="form-group">
+              <label for="filter-organizer">{% translate 'Organizer' %}</label>
+              <select id="filter-organizer" name="organizer" class="form-control">
+                <option value="">{% translate 'All organizers' %}</option>
+                {% for organizer in organizers %}
+                  <option value="{{ organizer.slug }}" {% if current_organizer == organizer.slug %}selected{% endif %}>{{ organizer.name }}</option>
+                {% endfor %}
+              </select>
             </div>
-            <div class="col-sm-4 col-md-2 form-group">
-                <label for="filter-period">{% trans "Period" %}</label>
-                <input id="filter-period" type="month" name="period" value="{{ current_period }}" class="form-control">
+          </div>
+          <div class="col-sm-6 col-lg-2">
+            <div class="form-group">
+              <label for="filter-period">{% translate 'Billing month' %}</label>
+              <input id="filter-period" type="month" name="period" value="{{ current_period }}" class="form-control">
             </div>
-            <div class="col-sm-4 col-md-2 form-group">
-                <label for="filter-currency">{% trans "Currency" %}</label>
-                <select id="filter-currency" name="currency" class="form-control">
-                    <option value="">{% trans "All currencies" %}</option>
-                    {% for currency in currencies %}
-                        <option value="{{ currency }}" {% if current_currency == currency %}selected{% endif %}>{{ currency }}</option>
-                    {% endfor %}
-                </select>
+          </div>
+          <div class="col-sm-6 col-lg-2">
+            <div class="form-group">
+              <label for="filter-currency">{% translate 'Currency' %}</label>
+              <select id="filter-currency" name="currency" class="form-control">
+                <option value="">{% translate 'All currencies' %}</option>
+                {% for currency in currencies %}
+                  <option value="{{ currency }}" {% if current_currency == currency %}selected{% endif %}>{{ currency }}</option>
+                {% endfor %}
+              </select>
             </div>
-            <div class="col-sm-4 col-md-2 form-group">
-                <label for="filter-state">{% trans "Ledger state" %}</label>
-                <select id="filter-state" name="state" class="form-control">
-                    <option value="open" {% if current_state == "open" %}selected{% endif %}>{% trans "Open" %}</option>
-                    <option value="invoiced" {% if current_state == "invoiced" %}selected{% endif %}>{% trans "Invoiced" %}</option>
-                    <option value="all" {% if current_state == "all" %}selected{% endif %}>{% trans "All" %}</option>
-                </select>
+          </div>
+          <div class="col-sm-6 col-lg-2">
+            <div class="form-group">
+              <label for="filter-state">{% translate 'Ledger state' %}</label>
+              <select id="filter-state" name="state" class="form-control">
+                <option value="open" {% if current_state == 'open' %}selected{% endif %}>{% translate 'Open through month' %}</option>
+                <option value="invoiced" {% if current_state == 'invoiced' %}selected{% endif %}>{% translate 'Invoiced in month' %}</option>
+                <option value="all" {% if current_state == 'all' %}selected{% endif %}>{% translate 'All activity in month' %}</option>
+              </select>
             </div>
-            <div class="col-sm-4 col-md-2 form-group">
-                <label for="filter-event">{% trans "Event" %}</label>
-                <input id="filter-event" type="search" name="event" value="{{ current_event }}" class="form-control" placeholder="{% trans 'Name or slug' %}">
+          </div>
+          <div class="col-sm-12 col-lg-3">
+            <div class="form-group">
+              <label for="filter-event">{% translate 'Event' %}</label>
+              <input id="filter-event" type="search" name="event" value="{{ current_event }}" class="form-control" placeholder="{% translate 'Event name or slug' %}">
             </div>
-            <div class="col-sm-4 col-md-2 form-group">
-                <label>&nbsp;</label>
-                <button type="submit" class="btn btn-primary form-control">
-                    <i class="fa fa-filter" aria-hidden="true"></i> {% trans "Filter" %}
-                </button>
-            </div>
+          </div>
         </div>
-    </form>
+        <div class="text-right">
+          <a href="{% url 'plugins:eventyay_business:current_charges.list' %}" class="btn btn-default">{% translate 'Reset' %}</a>
+          <button type="submit" class="btn btn-primary">
+            <i class="fa fa-filter" aria-hidden="true"></i>
+            {% translate 'Apply filters' %}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
 
-    {% if totals %}
-        <p>
-            <strong>{% trans "Net total:" %}</strong>
-            {% for total in totals %}
-                {{ total.amount|floatformat:2 }} {{ total.currency }}{% if not forloop.last %}, {% endif %}
-            {% endfor %}
+  <div class="row">
+    <div class="col-sm-4">
+      <div class="panel panel-default">
+        <div class="panel-body text-center">
+          <div class="h2">{{ row_count }}</div>
+          <div class="text-muted">{% translate 'Matching ledger entries' %}</div>
+        </div>
+      </div>
+    </div>
+    {% for total in totals %}
+      <div class="col-sm-4">
+        <div class="panel panel-default">
+          <div class="panel-body text-center">
+            <div class="h2">{{ total.amount|floatformat:2 }} {{ total.currency }}</div>
+            <div class="text-muted">{% translate 'Net ticket fees' %}</div>
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+
+  <h2>{% translate 'Ticket fee ledger' %}</h2>
+  {% if rows %}
+    {% include 'eventyay_business/billing/fee_table.html' with table_rows=rows show_organizer=True show_admin_details=True %}
+  {% else %}
+    <div class="empty-collection">
+      <span class="fa fa-search fa-3x" aria-hidden="true"></span>
+      <p>{% translate 'No ticket-fee ledger entries match these filters.' %}</p>
+      {% if current_state == 'open' %}
+        <p class="text-muted">
+          {% translate 'Only post-cutover ticket payments create open ledger entries. Plans, add-ons and usage are shown on each organizer’s current-charges page.' %}
         </p>
-    {% endif %}
-
-    {% include "eventyay_business/billing/fee_table.html" with show_organizer=True show_admin_details=True %}
+      {% endif %}
+    </div>
+  {% endif %}
 {% endblock %}
