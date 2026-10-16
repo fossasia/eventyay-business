@@ -8,7 +8,7 @@ from django.utils.timezone import now
 from eventyay.base.models import Event, Organizer, User
 from eventyay.base.models.auth import StaffSession
 from eventyay.base.models.organizer import OrganizerBillingModel
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 from eventyay_business.models import (
     AddonAssignmentScope,
@@ -28,6 +28,7 @@ from eventyay_business.models import (
     TierStatus,
     TierVersion,
 )
+from eventyay_business.platform_fee_ledger import BILLING_CUTOVER_SETTING
 from eventyay_business.signals import addon_purchased, subscription_purchased
 from eventyay_business.stripe_service import (
     create_addon_checkout_session,
@@ -286,6 +287,77 @@ def test_create_subscription_checkout_session(setup_data):
                 assert kwargs["metadata"]["type"] == "subscription"
                 assert kwargs["metadata"]["scope"] == "organizer"
                 assert kwargs["metadata"]["tier_price_id"] == str(tier_price.pk)
+
+
+@pytest.mark.django_db
+def test_legacy_checkout_sessions_are_blocked_after_cutover(setup_data):
+    organizer, _, user, _, _, tier_price, recurring_addon, _, _ = setup_data
+    organizer.settings.set(BILLING_CUTOVER_SETTING, now().isoformat())
+
+    with patch("stripe.checkout.Session.create") as create_session:
+        with pytest.raises(ValidationError):
+            create_subscription_checkout_session(
+                organizer=organizer,
+                tier_price=tier_price,
+                user=user,
+            )
+        with pytest.raises(ValidationError):
+            create_addon_checkout_session(
+                organizer=organizer,
+                addon=recurring_addon,
+                user=user,
+            )
+
+    create_session.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_post_cutover_subscription_webhooks_cancel_legacy_subscriptions(setup_data):
+    organizer, _, user, _, _, tier_price, recurring_addon, _, _ = setup_data
+    organizer.settings.set(BILLING_CUTOVER_SETTING, now().isoformat())
+    pending_addon = OrganizerAddon.objects.create(
+        organizer=organizer,
+        addon=recurring_addon,
+        status=AddonStatus.PENDING,
+        quantity=1,
+    )
+    plan_session = {
+        "subscription": "sub_late_plan",
+        "metadata": {
+            "type": "subscription",
+            "organizer_slug": organizer.slug,
+            "tier_price_id": str(tier_price.pk),
+            "tier_version_id": str(tier_price.tier_version_id),
+            "user_id": str(user.pk),
+        },
+    }
+    addon_session = {
+        "subscription": "sub_late_addon",
+        "metadata": {
+            "type": "addon_purchase",
+            "scope": "organizer",
+            "organizer_slug": organizer.slug,
+            "addon_id": str(recurring_addon.pk),
+            "quantity": "1",
+            "assignment_id": str(pending_addon.pk),
+            "user_id": str(user.pk),
+        },
+    }
+
+    with patch(
+        "eventyay_business.stripe_service.get_stripe_secret_key_safe",
+        return_value="sk_test_cutover",
+    ), patch("stripe.Subscription.cancel") as cancel_subscription:
+        assert process_webhook_event("checkout.session.completed", plan_session) is None
+        assert (
+            process_webhook_event("checkout.session.completed", addon_session) is None
+        )
+
+    assert cancel_subscription.call_args_list == [
+        call("sub_late_plan"),
+        call("sub_late_addon"),
+    ]
+    assert not OrganizerAddon.objects.filter(pk=pending_addon.pk).exists()
 
 
 @pytest.mark.django_db
@@ -802,6 +874,19 @@ def test_organizer_plan_upgrade_view_flow(setup_data, admin_user, admin_client):
             assert resp.status_code == 302
             assert resp.url == "https://checkout.stripe.com/c/pay/cs_tier_upgrade_123"
             mock_checkout.assert_called_once()
+
+    organizer.settings.set(BILLING_CUTOVER_SETTING, now().isoformat())
+    with patch(
+        "eventyay_business.views.is_stripe_configured", return_value=True
+    ), patch(
+        "eventyay_business.views.create_subscription_checkout_session"
+    ) as mock_checkout:
+        resp = admin_client.post(upgrade_url, {"tier_price_id": tier_price.id})
+
+    assert resp.status_code == 302
+    mock_checkout.assert_not_called()
+    active_sub.refresh_from_db()
+    assert active_sub.tier_version == tier_version
 
 
 @pytest.mark.django_db

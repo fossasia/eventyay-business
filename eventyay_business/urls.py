@@ -87,6 +87,16 @@ urlpatterns = [
         views.AdminCurrentChargesExportView.as_view(),
         name="current_charges.export",
     ),
+    path(
+        "admin/global/business/activation/",
+        views.AdminBillingActivationView.as_view(),
+        name="billing_activation",
+    ),
+    path(
+        "admin/global/business/activation/<str:organizer>/",
+        views.AdminBillingActivationEnableView.as_view(),
+        name="billing_activation.enable",
+    ),
     # Fee Settings
     path(
         "admin/global/business/fees/",

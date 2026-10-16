@@ -1,7 +1,10 @@
 import pytest
 from django.core.exceptions import ValidationError
+from django.test import override_settings
+from django.urls import reverse
 from django.utils.timezone import now
 from eventyay.base.models import Organizer
+from eventyay.base.models.auth import StaffSession
 from eventyay.base.models.organizer import OrganizerBillingModel
 
 from eventyay_business.billing_migration import (
@@ -81,4 +84,64 @@ def test_enable_consolidated_billing_requires_ready_preflight(db):
     )
 
     enable_consolidated_billing(organizer)
-    assert organizer.settings.get(BILLING_CUTOVER_SETTING, as_type=str)
+    first_cutover = organizer.settings.get(BILLING_CUTOVER_SETTING, as_type=str)
+    assert first_cutover
+
+    enable_consolidated_billing(organizer)
+    assert organizer.settings.get(BILLING_CUTOVER_SETTING, as_type=str) == first_cutover
+    assert consolidated_billing_preflight(organizer).activated_at is not None
+
+
+@pytest.mark.django_db
+@override_settings(SITE_URL="https://testserver")
+def test_admin_activation_shows_preflight_and_preserves_cutover(
+    admin_client, admin_user
+):
+    session = admin_client.session
+    session.save()
+    StaffSession.objects.create(
+        user=admin_user,
+        session_key=session.session_key,
+        comment="test",
+    )
+    admin_user.is_staff = True
+    admin_user.save()
+
+    organizer = Organizer.objects.create(name="Activation Org", slug="activation-org")
+    billing = OrganizerBillingModel.objects.create(
+        organizer=organizer,
+        stripe_customer_id="cus_activation",
+        stripe_payment_method_id="pm_activation",
+    )
+    BillingCollectionAuthorization.objects.create(
+        organizer=organizer,
+        stripe_customer_id=billing.stripe_customer_id,
+        authorized_at=now(),
+    )
+    list_url = reverse("plugins:eventyay_business:billing_activation")
+    enable_url = reverse(
+        "plugins:eventyay_business:billing_activation.enable",
+        kwargs={"organizer": organizer.slug},
+    )
+
+    response = admin_client.get(list_url)
+    assert response.status_code == 200
+    assert b"Activation Org" in response.content
+    assert b"Ready" in response.content
+    assert b"Authorized" in response.content
+    assert enable_url.encode() in response.content
+
+    response = admin_client.post(enable_url)
+    assert response.status_code == 302
+    organizer.refresh_from_db()
+    first_cutover = organizer.settings.get(BILLING_CUTOVER_SETTING, as_type=str)
+    assert first_cutover
+
+    response = admin_client.post(enable_url)
+    assert response.status_code == 302
+    organizer.refresh_from_db()
+    assert organizer.settings.get(BILLING_CUTOVER_SETTING, as_type=str) == first_cutover
+
+    response = admin_client.get(list_url)
+    assert b"Active since" in response.content
+    assert enable_url.encode() not in response.content

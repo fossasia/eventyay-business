@@ -1,0 +1,62 @@
+{% extends 'pretixcontrol/admin/base.html' %}
+{% load i18n %}
+{% block title %}{% trans 'Billing activation' %}{% endblock %}
+{% block content %}
+  <h1>{% trans 'Consolidated billing activation' %}</h1>
+  <p class="alert alert-info">
+    {% trans 'Activation is available only when no legacy Stripe subscription can charge this organizer.' %}
+  </p>
+  <div class="table-responsive">
+    <table class="table table-striped">
+      <thead>
+        <tr>
+          <th scope="col">{% trans 'Organizer' %}</th>
+          <th scope="col">{% trans 'Status' %}</th>
+          <th scope="col">{% trans 'Billing customer' %}</th>
+          <th scope="col">{% trans 'Payment method' %}</th>
+          <th scope="col">{% trans 'Authorization' %}</th>
+          <th scope="col">{% trans 'Legacy subscriptions' %}</th>
+          <th scope="col"><span class="sr-only">{% trans 'Actions' %}</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for organizer, preflight in organizer_preflights %}
+          <tr>
+            <td>{{ organizer.name }}</td>
+            <td>
+              {% if preflight.activated_at %}
+                {% blocktrans with activated_at=preflight.activated_at|date:'SHORT_DATETIME_FORMAT' %}Active since {{ activated_at }}{% endblocktrans %}
+              {% elif preflight.ready %}
+                {% trans 'Ready' %}
+              {% else %}
+                {% trans 'Blocked' %}
+              {% endif %}
+            </td>
+            <td>{% if preflight.billing_customer_ready %}{% trans 'Ready' %}{% else %}{% trans 'Missing' %}{% endif %}</td>
+            <td>{% if preflight.payment_method_ready %}{% trans 'Ready' %}{% else %}{% trans 'Missing' %}{% endif %}</td>
+            <td>{% if preflight.collection_authorized %}{% trans 'Authorized' %}{% else %}{% trans 'Missing' %}{% endif %}</td>
+            <td>
+              {% if preflight.active_stripe_subscription_ids %}
+                {{ preflight.active_stripe_subscription_ids|join:', ' }}
+              {% else %}
+                &mdash;
+              {% endif %}
+            </td>
+            <td>
+              {% if preflight.ready and not preflight.activated_at %}
+                <form method="post" action="{% url 'plugins:eventyay_business:billing_activation.enable' organizer=organizer.slug %}">
+                  {% csrf_token %}
+                  <button class="btn btn-primary" type="submit">{% trans 'Activate' %}</button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="7">{% trans 'No organizers found.' %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

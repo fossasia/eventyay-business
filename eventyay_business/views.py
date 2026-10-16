@@ -3,6 +3,7 @@ import logging
 from collections import defaultdict
 from decimal import Decimal
 from django.contrib import messages
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Q, Sum
 from django.http import HttpResponse
@@ -31,6 +32,10 @@ from eventyay.control.views.organizer_views.organizer_detail_view_mixin import (
     OrganizerDetailViewMixin,
 )
 
+from .billing_migration import (
+    consolidated_billing_preflight,
+    enable_consolidated_billing,
+)
 from .billing_overview import (
     build_organizer_billing_overview,
     parse_month,
@@ -72,6 +77,7 @@ from .models import (
     TierVersion,
     UsageRecord,
 )
+from .platform_fee_ledger import organizer_consolidated_billing_enabled
 from .services import (
     invalidate_entitlement_cache,
     log_addon_lifecycle_action,
@@ -920,7 +926,11 @@ class OrganizerPlanUpgradeView(
                 organizer=organizer.slug,
             )
 
-        if amount > 0 and is_stripe_configured():
+        if (
+            amount > 0
+            and not organizer_consolidated_billing_enabled(organizer)
+            and is_stripe_configured()
+        ):
             success_url = request.build_absolute_uri(
                 reverse(
                     "plugins:eventyay_business:checkout.success",
@@ -1343,7 +1353,10 @@ class OrganizerAddonPurchaseView(
                         )
 
             is_paid_stripe = (
-                self.addon.price and self.addon.price > 0 and is_stripe_configured()
+                self.addon.price
+                and self.addon.price > 0
+                and not organizer_consolidated_billing_enabled(self.request.organizer)
+                and is_stripe_configured()
             )
             if is_paid_stripe:
                 assignment = form.save(commit=False, status=AddonStatus.PENDING)
@@ -1590,7 +1603,10 @@ class EventDashboardAddonPurchaseView(EventPermissionRequiredMixin, FormView):
                     )
 
             is_paid_stripe = (
-                self.addon.price and self.addon.price > 0 and is_stripe_configured()
+                self.addon.price
+                and self.addon.price > 0
+                and not organizer_consolidated_billing_enabled(self.request.organizer)
+                and is_stripe_configured()
             )
             if is_paid_stripe:
                 assignment = form.save(commit=False, status=AddonStatus.PENDING)
@@ -2289,6 +2305,30 @@ class AdminCurrentChargesExportView(
                 ]
             )
         return response
+
+
+class AdminBillingActivationView(AdministratorPermissionRequiredMixin, TemplateView):
+    template_name = "eventyay_business/billing/admin_activation.html"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["organizer_preflights"] = [
+            (organizer, consolidated_billing_preflight(organizer))
+            for organizer in Organizer.objects.order_by("name", "slug")
+        ]
+        return ctx
+
+
+class AdminBillingActivationEnableView(AdministratorPermissionRequiredMixin, View):
+    def post(self, request, *args, **kwargs):
+        organizer = get_object_or_404(Organizer, slug=kwargs["organizer"])
+        try:
+            enable_consolidated_billing(organizer)
+        except ValidationError:
+            messages.error(request, _("This organizer is not ready for activation."))
+        else:
+            messages.success(request, _("Consolidated billing has been activated."))
+        return redirect("plugins:eventyay_business:billing_activation")
 
 
 class FeeSettingsView(AdministratorPermissionRequiredMixin, TemplateView):

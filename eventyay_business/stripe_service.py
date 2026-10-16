@@ -26,6 +26,7 @@ from .models import (
     TierPrice,
     TierVersion,
 )
+from .platform_fee_ledger import organizer_consolidated_billing_enabled
 from .services import invalidate_entitlement_cache, log_addon_lifecycle_action
 from .signals import addon_purchased, subscription_purchased
 
@@ -244,6 +245,11 @@ def create_addon_checkout_session(
     """
     Create a Stripe Checkout Session for an add-on purchase and return the session URL.
     """
+    if organizer_consolidated_billing_enabled(organizer):
+        raise ValidationError(
+            "Legacy Stripe add-on checkout is disabled after billing cutover."
+        )
+
     secret_key = get_stripe_secret_key_safe()
     if not secret_key or stripe is None:
         raise ValidationError("Stripe is not configured.")
@@ -306,6 +312,17 @@ def create_addon_checkout_session(
     return session.url
 
 
+def cancel_legacy_subscription_after_cutover(stripe_subscription_id: str) -> None:
+    """Cancel a legacy subscription that completed after organizer cutover."""
+    secret_key = get_stripe_secret_key_safe()
+    if not secret_key or stripe is None:
+        raise ValidationError(
+            "Stripe must be configured to cancel a post-cutover subscription."
+        )
+    stripe.api_key = secret_key
+    stripe.Subscription.cancel(stripe_subscription_id)
+
+
 def create_subscription_checkout_session(
     organizer,
     tier_price: TierPrice,
@@ -316,6 +333,11 @@ def create_subscription_checkout_session(
     """
     Create a Stripe Checkout Session for a Tier subscription and return the session URL.
     """
+    if organizer_consolidated_billing_enabled(organizer):
+        raise ValidationError(
+            "Legacy Stripe subscription checkout is disabled after billing cutover."
+        )
+
     secret_key = get_stripe_secret_key_safe()
     if not secret_key or stripe is None:
         raise ValidationError("Stripe is not configured.")
@@ -736,6 +758,21 @@ def process_addon_checkout_completed(session_data: dict):
         )
 
         with transaction.atomic():
+            organizer = Organizer.objects.select_for_update().get(pk=organizer.pk)
+            if stripe_sub_id and organizer_consolidated_billing_enabled(organizer):
+                cancel_legacy_subscription_after_cutover(stripe_sub_id)
+                if assignment_id:
+                    model_cls = EventAddon if event else OrganizerAddon
+                    model_cls.objects.filter(
+                        pk=assignment_id, status=AddonStatus.PENDING
+                    ).delete()
+                logger.warning(
+                    "Canceled post-cutover legacy add-on subscription %s for organizer %s",
+                    stripe_sub_id,
+                    organizer.pk,
+                )
+                return None
+
             if assignment_id:
                 # Update existing pending assignment
                 model_cls = EventAddon if event else OrganizerAddon
@@ -944,6 +981,17 @@ def process_subscription_checkout_completed(session_data: dict):
         )
 
         with transaction.atomic():
+            organizer = Organizer.objects.select_for_update().get(pk=organizer.pk)
+            if organizer_consolidated_billing_enabled(organizer):
+                if stripe_sub_id:
+                    cancel_legacy_subscription_after_cutover(stripe_sub_id)
+                    logger.warning(
+                        "Canceled post-cutover legacy plan subscription %s for organizer %s",
+                        stripe_sub_id,
+                        organizer.pk,
+                    )
+                return None
+
             # Check existing subscription
             sub = (
                 Subscription.objects.select_for_update()

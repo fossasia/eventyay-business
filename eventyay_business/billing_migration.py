@@ -1,3 +1,4 @@
+import datetime
 from dataclasses import dataclass
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -13,7 +14,7 @@ from .models import (
     Subscription,
     SubscriptionStatus,
 )
-from .platform_fee_ledger import BILLING_CUTOVER_SETTING
+from .platform_fee_ledger import BILLING_CUTOVER_SETTING, organizer_billing_cutover_at
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,7 @@ class ConsolidatedBillingPreflight:
     payment_method_ready: bool
     collection_authorized: bool
     active_stripe_subscription_ids: tuple[str, ...]
+    activated_at: datetime.datetime | None
 
     @property
     def ready(self) -> bool:
@@ -82,6 +84,7 @@ def consolidated_billing_preflight(organizer) -> ConsolidatedBillingPreflight:
         payment_method_ready=bool(billing and billing.stripe_payment_method_id),
         collection_authorized=authorization_exists,
         active_stripe_subscription_ids=tuple(sorted(subscription_ids)),
+        activated_at=organizer_billing_cutover_at(organizer),
     )
 
 
