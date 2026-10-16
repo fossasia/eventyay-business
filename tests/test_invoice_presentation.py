@@ -62,6 +62,7 @@ def test_invoice_settings_page_saves_and_previews_pdf(invoice_admin_client):
     assert page.status_code == 200
     assert b"Invoice presentation" in page.content
     assert b"eventyay_business/admin.css" in page.content
+    assert b"invoice-logo-field" in page.content
     assert b"48 \xc3\x97 22 mm" in page.content
 
     legacy_page = invoice_admin_client.get(legacy_settings_url)

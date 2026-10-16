@@ -445,6 +445,8 @@ def test_admin_open_charges_include_carry_forward_and_canonical_customer(
         },
     )
     assert response.status_code == 200
+    assert b"eventyay_business/admin.css" in response.content
+    assert b"current-charges-filter-actions" in response.content
     assert b"CARRYFORWARD" in response.content
     assert b"Billing setup incomplete" not in response.content
     assert response.context["row_count"] == 1
