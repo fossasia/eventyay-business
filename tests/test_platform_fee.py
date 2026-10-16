@@ -441,6 +441,7 @@ def test_admin_open_charges_include_carry_forward_and_canonical_customer(
         {
             "period": f"{now():%Y-%m}",
             "state": "open",
+            "organizer": f" {organizer_with_fee_tier.slug} ",
             "event": " carryforward ",
         },
     )
@@ -450,6 +451,7 @@ def test_admin_open_charges_include_carry_forward_and_canonical_customer(
     assert b"CARRYFORWARD" in response.content
     assert b"Billing setup incomplete" not in response.content
     assert response.context["row_count"] == 1
+    assert response.context["current_organizer"] == organizer_with_fee_tier.slug
 
     export_response = admin_client.get(
         reverse("plugins:eventyay_business:current_charges.export"),

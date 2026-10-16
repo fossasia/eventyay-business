@@ -2352,7 +2352,7 @@ class AdminCurrentChargesView(
                 "currencies": PlatformFeeLedgerEntry.objects.order_by("currency")
                 .values_list("currency", flat=True)
                 .distinct(),
-                "current_organizer": self.request.GET.get("organizer", ""),
+                "current_organizer": self.request.GET.get("organizer", "").strip(),
                 "current_period": filters["period_start"].strftime("%Y-%m"),
                 "current_state": filters["state"],
                 "current_currency": filters["currency"],
