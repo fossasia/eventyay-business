@@ -1,6 +1,7 @@
 import csv
 import logging
 from collections import defaultdict
+from datetime import date, timedelta
 from decimal import Decimal
 from django.contrib import messages
 from django.core.exceptions import ValidationError
@@ -31,6 +32,7 @@ from eventyay.control.permissions import (
 from eventyay.control.views.organizer_views.organizer_detail_view_mixin import (
     OrganizerDetailViewMixin,
 )
+from types import SimpleNamespace
 
 from .billing_migration import (
     consolidated_billing_preflight,
@@ -48,6 +50,7 @@ from .forms import (
     EventAddonForm,
     EventAddonPurchaseForm,
     GlobalBusinessSettingsForm,
+    InvoicePresentationSettingsForm,
     OrganizerAddonForm,
     OrganizerAddonPurchaseForm,
     SubscriptionAdminForm,
@@ -57,6 +60,7 @@ from .forms import (
     TierVersionForm,
 )
 from .invoice_document import render_invoice_pdf
+from .invoice_presentation import current_invoice_presentation_snapshot
 from .models import (
     AddonAssignmentScope,
     AddonDefinition,
@@ -67,6 +71,7 @@ from .models import (
     BusinessInvoiceStatus,
     CountryFeeSetting,
     EventAddon,
+    InvoiceLineType,
     OrganizerAddon,
     PlatformFeeLedgerEntry,
     Subscription,
@@ -2177,6 +2182,107 @@ class AdminInvoiceDownloadView(AdministratorPermissionRequiredMixin, View):
         response["Content-Disposition"] = (
             f'attachment; filename="{invoice.invoice_number}.pdf"'
         )
+        return response
+
+
+class InvoicePresentationSettingsView(AdministratorPermissionRequiredMixin, FormView):
+    template_name = "eventyay_business/admin/invoice_settings.html"
+    form_class = InvoicePresentationSettingsForm
+
+    def form_valid(self, form):
+        form.save()
+        messages.success(self.request, _("Invoice settings have been saved."))
+        return super().form_valid(form)
+
+    def form_invalid(self, form):
+        messages.error(
+            self.request, _("Your changes have not been saved, see below for errors.")
+        )
+        return super().form_invalid(form)
+
+    def get_success_url(self):
+        return reverse("plugins:eventyay_business:invoice_settings")
+
+
+class InvoicePresentationPreviewView(AdministratorPermissionRequiredMixin, View):
+    def get(self, request, *args, **kwargs):
+        today = date.today()
+        period_end = today.replace(day=1) - timedelta(days=1)
+        period_start = period_end.replace(day=1)
+        invoice = BusinessInvoice(
+            invoice_number="PREVIEW",
+            billing_period_start=period_start,
+            billing_period_end=period_end,
+            issue_date=today,
+            due_date=today + timedelta(days=14),
+            currency="EUR",
+            subtotal=Decimal("196.00"),
+            tax=Decimal("37.24"),
+            total=Decimal("233.24"),
+            finalized_at=now(),
+            billing_address_snapshot={
+                "organization_name": "Sample Organizer",
+                "contact_name": "Billing Contact",
+                "address_line_1": "123 Event Street",
+                "postal_code": "10115",
+                "city": "Berlin",
+                "country": "Germany",
+                "tax_id": "DE123456789",
+            },
+            presentation_snapshot=current_invoice_presentation_snapshot(),
+        )
+        lines = [
+            SimpleNamespace(
+                line_type=line_type,
+                description=description,
+                service_period_start=period_start,
+                service_period_end=period_end,
+                quantity=quantity,
+                unit_price=unit_price,
+                amount=amount,
+            )
+            for line_type, description, quantity, unit_price, amount in (
+                (
+                    InvoiceLineType.SUBSCRIPTION,
+                    "Professional monthly plan",
+                    1,
+                    Decimal("39.00"),
+                    Decimal("39.00"),
+                ),
+                (
+                    InvoiceLineType.ADDON,
+                    "Livestream add-on",
+                    1,
+                    Decimal("12.00"),
+                    Decimal("12.00"),
+                ),
+                (
+                    InvoiceLineType.PLATFORM_FEE,
+                    "Ticketing platform fees",
+                    1,
+                    Decimal("150.00"),
+                    Decimal("150.00"),
+                ),
+                (
+                    InvoiceLineType.MANUAL_ADJUSTMENT,
+                    "Service credit",
+                    1,
+                    Decimal("-5.00"),
+                    Decimal("-5.00"),
+                ),
+                (
+                    InvoiceLineType.TAX,
+                    "VAT (19%)",
+                    1,
+                    Decimal("37.24"),
+                    Decimal("37.24"),
+                ),
+            )
+        ]
+        response = HttpResponse(
+            render_invoice_pdf(invoice, lines=lines), content_type="application/pdf"
+        )
+        response["Content-Disposition"] = 'inline; filename="invoice-preview.pdf"'
         return response
 
 

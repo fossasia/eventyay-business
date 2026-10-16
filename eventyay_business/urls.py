@@ -68,6 +68,16 @@ urlpatterns = [
         name="invoices.list",
     ),
     path(
+        "admin/global/business/invoice-settings/",
+        views.InvoicePresentationSettingsView.as_view(),
+        name="invoice_settings",
+    ),
+    path(
+        "admin/global/business/invoice-settings/preview/",
+        views.InvoicePresentationPreviewView.as_view(),
+        name="invoice_settings.preview",
+    ),
+    path(
         "admin/global/business/invoices/<int:pk>/",
         views.AdminInvoiceDetailView.as_view(),
         name="invoices.detail",

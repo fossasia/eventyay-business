@@ -896,6 +896,7 @@ class BusinessInvoice(models.Model):
         "due_date",
         "finalized_at",
         "billing_address_snapshot",
+        "presentation_snapshot",
         "corrects_invoice_id",
     )
     organizer = models.ForeignKey(
@@ -938,6 +939,9 @@ class BusinessInvoice(models.Model):
     paid_at = models.DateTimeField(null=True, blank=True, verbose_name=_("Paid at"))
     billing_address_snapshot = models.JSONField(
         default=dict, blank=True, verbose_name=_("Billing address snapshot")
+    )
+    presentation_snapshot = models.JSONField(
+        default=dict, blank=True, verbose_name=_("Invoice presentation snapshot")
     )
     collection_attempt_count = models.PositiveIntegerField(
         default=0, verbose_name=_("Collection attempt count")

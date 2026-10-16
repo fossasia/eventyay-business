@@ -4,9 +4,11 @@ from django.forms import inlineformset_factory
 from django.utils.translation import gettext_lazy as _
 from eventyay.base.forms import SecretKeySettingsField, SettingsForm
 from eventyay.base.settings import GlobalSettingsObject
+from eventyay.control.forms import ExtFileField
 from eventyay.control.forms.global_settings import StripeKeyValidator
 
 from .capabilities import get_grouped_capability_choices
+from .invoice_presentation import DEFAULT_SECTION_LABELS, DEFAULT_SECTION_ORDER
 from .models import (
     AddonDefinition,
     CountryFeeSetting,
@@ -972,3 +974,99 @@ class GlobalBusinessSettingsForm(SettingsForm):
                 ],
             ),
         ]
+
+
+class InvoicePresentationSettingsForm(SettingsForm):
+    business_invoice_issuer_legal_name = forms.CharField(
+        label=_("Issuer legal name"), required=True
+    )
+    business_invoice_issuer_address = forms.CharField(
+        label=_("Issuer address"),
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 4}),
+    )
+    business_invoice_issuer_tax_registration = forms.CharField(
+        label=_("Issuer tax registration"), required=False
+    )
+    business_invoice_support_email = forms.EmailField(
+        label=_("Support email"), required=False
+    )
+    business_invoice_payment_instructions = forms.CharField(
+        label=_("Payment instructions"),
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 3}),
+    )
+    business_invoice_due_date_text = forms.CharField(
+        label=_("Due-date text"), required=False
+    )
+    business_invoice_footer = forms.CharField(
+        label=_("Invoice footer"),
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 3}),
+    )
+    business_invoice_terms = forms.CharField(
+        label=_("Invoice terms"),
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 4}),
+    )
+    business_invoice_logo = ExtFileField(
+        label=_("Invoice logo"),
+        ext_whitelist=(".png", ".jpg", ".jpeg"),
+        max_size=2 * 1024 * 1024,
+        required=False,
+    )
+    business_invoice_section_order = forms.CharField(
+        label=_("Section order"),
+        required=True,
+        help_text=_(
+            "Enter each section key exactly once, separated by commas: "
+            "plans, addons, ticket_fees, adjustments, taxes."
+        ),
+    )
+    business_invoice_section_label_plans = forms.CharField(
+        label=_("Plans section label"), required=True
+    )
+    business_invoice_section_label_addons = forms.CharField(
+        label=_("Add-ons section label"), required=True
+    )
+    business_invoice_section_label_ticket_fees = forms.CharField(
+        label=_("Ticket fees section label"), required=True
+    )
+    business_invoice_section_label_adjustments = forms.CharField(
+        label=_("Adjustments section label"), required=True
+    )
+    business_invoice_section_label_taxes = forms.CharField(
+        label=_("Taxes section label"), required=True
+    )
+    business_invoice_show_zero_value_sections = forms.BooleanField(
+        label=_("Show zero-value sections"), required=False
+    )
+
+    def __init__(self, *args, **kwargs):
+        self.obj = GlobalSettingsObject()
+        super().__init__(*args, obj=self.obj, **kwargs)
+        defaults = {
+            "business_invoice_issuer_legal_name": "Eventyay",
+            "business_invoice_due_date_text": (
+                "Payment is collected automatically on the due date."
+            ),
+            "business_invoice_section_order": ",".join(DEFAULT_SECTION_ORDER),
+            **{
+                f"business_invoice_section_label_{key}": label
+                for key, label in DEFAULT_SECTION_LABELS.items()
+            },
+        }
+        for key, value in defaults.items():
+            if not self.initial.get(key):
+                self.initial[key] = value
+
+    def clean_business_invoice_section_order(self) -> str:
+        value = self.cleaned_data["business_invoice_section_order"]
+        keys = tuple(part.strip() for part in value.split(",") if part.strip())
+        if len(keys) != len(DEFAULT_SECTION_ORDER) or set(keys) != set(
+            DEFAULT_SECTION_ORDER
+        ):
+            raise forms.ValidationError(
+                _("Use every supported section key exactly once.")
+            )
+        return ",".join(keys)

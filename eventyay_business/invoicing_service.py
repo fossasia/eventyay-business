@@ -10,6 +10,7 @@ from eventyay.base.models import Organizer
 from eventyay.base.models.organizer import OrganizerBillingModel
 from eventyay.base.settings import GlobalSettingsObject
 
+from .invoice_presentation import current_invoice_presentation_snapshot
 from .models import (
     AddonPricingMode,
     AddonStatus,
@@ -256,6 +257,7 @@ def finalize_business_invoice(
         invoice.finalized_at = finalized_at
         invoice.finalized_by = finalized_by
         invoice.billing_address_snapshot = billing_address_snapshot(invoice.organizer)
+        invoice.presentation_snapshot = current_invoice_presentation_snapshot()
         if invoice.status == BusinessInvoiceStatus.PAID or invoice.total <= Decimal(
             "0.00"
         ):
