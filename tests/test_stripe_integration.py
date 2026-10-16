@@ -237,6 +237,10 @@ def test_create_addon_checkout_session(setup_data):
                 assert kwargs["metadata"]["type"] == "addon_purchase"
                 assert kwargs["metadata"]["scope"] == "organizer"
                 assert kwargs["metadata"]["organizer_slug"] == organizer.slug
+                assert kwargs["subscription_data"]["payment_settings"] == {
+                    "save_default_payment_method": "on_subscription"
+                }
+                assert "payment_method_types" not in kwargs
 
                 # One-time event addon
                 url_event = create_addon_checkout_session(
@@ -257,6 +261,7 @@ def test_create_addon_checkout_session(setup_data):
                 assert kwargs["payment_intent_data"]["setup_future_usage"] == (
                     "off_session"
                 )
+                assert "payment_method_types" not in kwargs
 
 
 @pytest.mark.django_db
@@ -291,6 +296,10 @@ def test_create_subscription_checkout_session(setup_data):
                 assert kwargs["metadata"]["type"] == "subscription"
                 assert kwargs["metadata"]["scope"] == "organizer"
                 assert kwargs["metadata"]["tier_price_id"] == str(tier_price.pk)
+                assert kwargs["subscription_data"]["payment_settings"] == {
+                    "save_default_payment_method": "on_subscription"
+                }
+                assert "payment_method_types" not in kwargs
 
 
 @pytest.mark.django_db
@@ -317,8 +326,21 @@ def test_legacy_checkout_sessions_are_blocked_after_cutover(setup_data):
 
 @pytest.mark.django_db
 def test_post_cutover_subscription_webhooks_cancel_legacy_subscriptions(setup_data):
-    organizer, _, user, _, _, tier_price, recurring_addon, _, _ = setup_data
+    organizer, event, user, _, _, tier_price, recurring_addon, one_time_addon, _ = (
+        setup_data
+    )
     organizer.settings.set(BILLING_CUTOVER_SETTING, now().isoformat())
+    billing = OrganizerBillingModel.objects.create(
+        organizer=organizer,
+        stripe_customer_id="cus_cutover",
+        stripe_payment_method_id="pm_newer",
+    )
+    authorization = BillingCollectionAuthorization.objects.create(
+        organizer=organizer,
+        stripe_customer_id="cus_cutover",
+        authorized_at=now(),
+        revoked_at=now(),
+    )
     pending_addon = OrganizerAddon.objects.create(
         organizer=organizer,
         addon=recurring_addon,
@@ -347,6 +369,26 @@ def test_post_cutover_subscription_webhooks_cancel_legacy_subscriptions(setup_da
             "user_id": str(user.pk),
         },
     }
+    pending_one_time_addon = EventAddon.objects.create(
+        event=event,
+        addon=one_time_addon,
+        status=AddonStatus.PENDING,
+        quantity=1,
+    )
+    payment_session = {
+        "customer": "cus_cutover",
+        "payment_intent": "pi_late_one_time",
+        "metadata": {
+            "type": "addon_purchase",
+            "scope": "event",
+            "organizer_slug": organizer.slug,
+            "event_slug": event.slug,
+            "addon_id": str(one_time_addon.pk),
+            "quantity": "1",
+            "assignment_id": str(pending_one_time_addon.pk),
+            "user_id": str(user.pk),
+        },
+    }
 
     with patch(
         "eventyay_business.stripe_service.get_stripe_secret_key_safe",
@@ -356,12 +398,21 @@ def test_post_cutover_subscription_webhooks_cancel_legacy_subscriptions(setup_da
         assert (
             process_webhook_event("checkout.session.completed", addon_session) is None
         )
+        processed_one_time_addon = process_webhook_event(
+            "checkout.session.completed", payment_session
+        )
 
     assert cancel_subscription.call_args_list == [
         call("sub_late_plan"),
         call("sub_late_addon"),
     ]
     assert not OrganizerAddon.objects.filter(pk=pending_addon.pk).exists()
+    assert processed_one_time_addon.pk == pending_one_time_addon.pk
+    assert processed_one_time_addon.status == AddonStatus.ACTIVE
+    billing.refresh_from_db()
+    authorization.refresh_from_db()
+    assert billing.stripe_payment_method_id == "pm_newer"
+    assert authorization.revoked_at is not None
 
 
 @pytest.mark.django_db
@@ -370,11 +421,21 @@ def test_webhook_process_addon_checkout_completed(setup_data):
         setup_data
     )
 
+    billing = OrganizerBillingModel.objects.create(
+        organizer=organizer,
+        stripe_customer_id="cus_addon_completed",
+    )
+    stripe_client = MagicMock()
+    stripe_client.payment_intents.retrieve.return_value = MagicMock(
+        payment_method=MagicMock(id="pm_addon_completed")
+    )
+
     signal_mock = MagicMock()
     addon_purchased.connect(signal_mock)
     try:
         # 1. Organizer Addon purchase
         session_data_org = {
+            "customer": "cus_addon_completed",
             "subscription": "sub_stripe_111",
             "payment_intent": "pi_stripe_111",
             "metadata": {
@@ -385,7 +446,11 @@ def test_webhook_process_addon_checkout_completed(setup_data):
                 "user_id": str(user.pk),
             },
         }
-        res = process_webhook_event("checkout.session.completed", session_data_org)
+        with patch(
+            "eventyay_business.stripe_service.get_stripe_secret_key_safe",
+            return_value="sk_test_automatic",
+        ), patch("stripe.StripeClient", return_value=stripe_client):
+            res = process_webhook_event("checkout.session.completed", session_data_org)
         assert isinstance(res, OrganizerAddon)
         assert res.status == AddonStatus.ACTIVE
         assert res.quantity == 3
@@ -393,6 +458,11 @@ def test_webhook_process_addon_checkout_completed(setup_data):
         assert res.stripe_subscription_id == "sub_stripe_111"
         assert res.ends_at is not None
         assert signal_mock.call_count == 1
+        authorization = BillingCollectionAuthorization.objects.get(organizer=organizer)
+        authorization.revoked_at = now()
+        authorization.save(update_fields=["revoked_at"])
+        billing.stripe_payment_method_id = "pm_newer"
+        billing.save(update_fields=["stripe_payment_method_id"])
 
         # Idempotent replay does not create duplicate
         res_repeat = process_webhook_event(
@@ -401,6 +471,10 @@ def test_webhook_process_addon_checkout_completed(setup_data):
         assert res_repeat.pk == res.pk
         assert OrganizerAddon.objects.filter(organizer=organizer).count() == 1
         assert signal_mock.call_count == 1  # No second signal
+        authorization.refresh_from_db()
+        billing.refresh_from_db()
+        assert authorization.revoked_at is not None
+        assert billing.stripe_payment_method_id == "pm_newer"
 
         # 2. Event Addon purchase with existing pending assignment
         pending_ea = EventAddon.objects.create(
@@ -455,6 +529,7 @@ def test_webhook_process_subscription_checkout_completed(setup_data):
         session_data = {
             "customer": "cus_sub_completed",
             "subscription": "sub_live_completed",
+            "invoice": "in_sub_completed",
             "metadata": {
                 "type": "subscription",
                 "organizer_slug": organizer.slug,
@@ -464,16 +539,19 @@ def test_webhook_process_subscription_checkout_completed(setup_data):
             },
         }
 
+        stripe_client = MagicMock()
+        stripe_client.subscriptions.retrieve.return_value = MagicMock(
+            default_payment_method=None,
+            latest_invoice={
+                "payment_intent": {
+                    "payment_method": {"id": "pm_sub_completed"},
+                }
+            },
+        )
         with patch(
             "eventyay_business.stripe_service.get_stripe_secret_key_safe",
             return_value="sk_test_automatic",
-        ), patch(
-            "stripe.Subscription.retrieve",
-            return_value=MagicMock(
-                default_payment_method=MagicMock(id="pm_sub_completed"),
-                latest_invoice=None,
-            ),
-        ):
+        ), patch("stripe.StripeClient", return_value=stripe_client):
             sub = process_webhook_event("checkout.session.completed", session_data)
         assert isinstance(sub, Subscription)
         assert sub.status == SubscriptionStatus.ACTIVE
@@ -486,6 +564,10 @@ def test_webhook_process_subscription_checkout_completed(setup_data):
         assert authorization.terms_version == "2"
         billing = OrganizerBillingModel.objects.get(organizer=organizer)
         assert billing.stripe_payment_method_id == "pm_sub_completed"
+        authorization.revoked_at = now()
+        authorization.save(update_fields=["revoked_at"])
+        billing.stripe_payment_method_id = "pm_newer"
+        billing.save(update_fields=["stripe_payment_method_id"])
 
         # Idempotent
         with patch(
@@ -495,6 +577,10 @@ def test_webhook_process_subscription_checkout_completed(setup_data):
             sub_dup = process_webhook_event("checkout.session.completed", session_data)
         assert sub_dup.pk == sub.pk
         assert signal_mock.call_count == 1
+        authorization.refresh_from_db()
+        billing.refresh_from_db()
+        assert authorization.revoked_at is not None
+        assert billing.stripe_payment_method_id == "pm_newer"
     finally:
         subscription_purchased.disconnect(signal_mock)
 

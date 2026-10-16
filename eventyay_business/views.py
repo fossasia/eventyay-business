@@ -92,7 +92,9 @@ from .services import (
     migrate_tier_subscribers,
 )
 from .signals import (
+    AUTOMATIC_COLLECTION_TERMS_VERSION,
     addon_canceled,
+    organizer_billing_payment_method_saved,
     subscription_downgraded,
     subscription_purchased,
 )
@@ -2013,6 +2015,9 @@ class OrganizerCurrentChargesView(
         ctx = super().get_context_data(**kwargs)
         ctx["organizer"] = self.request.organizer
         ctx.update(build_organizer_billing_overview(self.request.organizer))
+        ctx["automatic_payment_save_supported"] = bool(
+            organizer_billing_payment_method_saved
+        )
         return ctx
 
 
@@ -2055,6 +2060,7 @@ class OrganizerBillingAuthorizationView(
                         "authorized_at": now(),
                         "authorized_by": request.user,
                         "revoked_at": None,
+                        "terms_version": AUTOMATIC_COLLECTION_TERMS_VERSION,
                     },
                 )
             messages.success(request, _("Automatic invoice collection is authorized."))

@@ -46,6 +46,20 @@
                     {% trans "Open billing settings" %}
                 </a>
             </p>
+            {% if not automatic_payment_save_supported and billing_customer_ready and billing_payment_method_ready and not billing_collection_authorized %}
+                <form method="post" action="{% url 'plugins:eventyay_business:organizer.billing.authorize' organizer=organizer.slug %}">
+                    {% csrf_token %}
+                    <div class="checkbox">
+                        <label>
+                            <input type="checkbox" name="authorize" value="yes" required>
+                            {% trans "I authorize Eventyay to charge this saved payment method for finalized organizer invoices, including off-session charges." %}
+                        </label>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-sm">
+                        {% trans "Enable automatic payments" %}
+                    </button>
+                </form>
+            {% endif %}
         </div>
     {% endif %}
 

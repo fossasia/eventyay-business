@@ -613,6 +613,11 @@ def test_organizer_invoice_views(client, organizer_user, test_setup):
     assert b"Save the payment method again" in resp.content
     assert b"Authorize automatic collection" not in resp.content
 
+    with patch("eventyay_business.views.organizer_billing_payment_method_saved", None):
+        resp = client.get(current_charges_url)
+    assert b"Enable automatic payments" in resp.content
+    assert b'name="authorize"' in resp.content
+
     authorize_url = f"/control/organizer/{org.slug}/business/billing/authorize/"
     resp = client.post(authorize_url, {"authorize": "yes"})
     assert resp.status_code == 302
