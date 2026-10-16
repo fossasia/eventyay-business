@@ -910,12 +910,15 @@ def process_addon_checkout_completed(session_data: dict):
                 return processed_assignment
 
             if not consolidated_billing:
-                sync_checkout_payment_method(organizer, session_data)
-                record_automatic_collection_authorization(
-                    organizer=organizer,
-                    user=user,
-                    stripe_customer_id=session_data.get("customer", ""),
+                payment_method_id = sync_checkout_payment_method(
+                    organizer, session_data
                 )
+                if payment_method_id:
+                    record_automatic_collection_authorization(
+                        organizer=organizer,
+                        user=user,
+                        stripe_customer_id=session_data.get("customer", ""),
+                    )
 
             if assignment_id:
                 # Update existing pending assignment
@@ -1186,12 +1189,13 @@ def process_subscription_checkout_completed(session_data: dict):
                     )
                     return sub
 
-            sync_checkout_payment_method(organizer, session_data)
-            record_automatic_collection_authorization(
-                organizer=organizer,
-                user=user,
-                stripe_customer_id=stripe_customer_id or "",
-            )
+            payment_method_id = sync_checkout_payment_method(organizer, session_data)
+            if payment_method_id:
+                record_automatic_collection_authorization(
+                    organizer=organizer,
+                    user=user,
+                    stripe_customer_id=stripe_customer_id or "",
+                )
 
             if sub:
                 old_stripe_sub_id = sub.stripe_subscription_id

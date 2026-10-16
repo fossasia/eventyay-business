@@ -495,7 +495,16 @@ def test_webhook_process_addon_checkout_completed(setup_data):
                 "user_id": str(user.pk),
             },
         }
-        res_ea = process_webhook_event("checkout.session.completed", session_data_event)
+        with patch(
+            "eventyay_business.stripe_service.sync_checkout_payment_method",
+            return_value=None,
+        ), patch(
+            "eventyay_business.stripe_service.record_automatic_collection_authorization"
+        ) as record_authorization:
+            res_ea = process_webhook_event(
+                "checkout.session.completed", session_data_event
+            )
+        record_authorization.assert_not_called()
         assert res_ea.pk == pending_ea.pk
         assert res_ea.status == AddonStatus.ACTIVE
         assert res_ea.stripe_payment_intent_id == "pi_stripe_222"
@@ -577,6 +586,29 @@ def test_webhook_process_subscription_checkout_completed(setup_data):
             sub_dup = process_webhook_event("checkout.session.completed", session_data)
         assert sub_dup.pk == sub.pk
         assert signal_mock.call_count == 1
+        authorization.refresh_from_db()
+        billing.refresh_from_db()
+        assert authorization.revoked_at is not None
+        assert billing.stripe_payment_method_id == "pm_newer"
+
+        session_without_payment_method = {
+            **session_data,
+            "subscription": "sub_without_payment_method",
+            "invoice": "in_without_payment_method",
+        }
+        with patch(
+            "eventyay_business.stripe_service.sync_checkout_payment_method",
+            return_value=None,
+        ), patch(
+            "eventyay_business.stripe_service.record_automatic_collection_authorization"
+        ) as record_authorization, patch(
+            "eventyay_business.stripe_service.get_stripe_secret_key_safe",
+            return_value=None,
+        ):
+            process_webhook_event(
+                "checkout.session.completed", session_without_payment_method
+            )
+        record_authorization.assert_not_called()
         authorization.refresh_from_db()
         billing.refresh_from_db()
         assert authorization.revoked_at is not None
