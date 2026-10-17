@@ -1,4 +1,5 @@
 import logging
+
 from django.db import transaction
 from django.db.models import Q
 from django.dispatch import receiver
@@ -8,6 +9,7 @@ from .invoice_collection import (
     collect_ready_business_invoices,
     retry_outstanding_business_invoices_after_payment_method_update,
 )
+from .notifications import deliver_billing_notification
 
 logger = logging.getLogger(__name__)
 
@@ -328,6 +330,16 @@ def collect_ready_business_invoices_task(invoice_ids=None):
 @app.task(name="eventyay_business.retry_outstanding_business_invoices")
 def retry_outstanding_business_invoices_task(organizer_id: int):
     return retry_outstanding_business_invoices_after_payment_method_update(organizer_id)
+
+
+@app.task(name="eventyay_business.deliver_billing_notification")
+def deliver_billing_notification_task(delivery_id: int):
+    delivery = deliver_billing_notification(delivery_id)
+    return {
+        "delivery_id": delivery.pk,
+        "status": delivery.status,
+        "attempt_count": delivery.attempt_count,
+    }
 
 
 @app.task(name="eventyay_business.generate_monthly_business_invoices")

@@ -1,5 +1,6 @@
 import datetime
 import logging
+
 from django.db import DatabaseError, transaction
 from django.db.models import Q, Sum
 from django.db.models.signals import post_save
@@ -290,6 +291,15 @@ if nav_global:
                 "active": (
                     url.namespace == "plugins:eventyay_business"
                     and url.url_name.startswith("invoices.")
+                ),
+                "parent": reverse("eventyay_admin:admin.global.business"),
+            },
+            {
+                "label": _("Notification delivery"),
+                "url": reverse("plugins:eventyay_business:notifications.list"),
+                "active": (
+                    url.namespace == "plugins:eventyay_business"
+                    and url.url_name.startswith("notifications.")
                 ),
                 "parent": reverse("eventyay_admin:admin.global.business"),
             },

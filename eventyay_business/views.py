@@ -3,12 +3,16 @@ import logging
 from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
+from types import SimpleNamespace
+from uuid import uuid4
+
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Q, Sum
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
@@ -24,6 +28,7 @@ from django.views.generic import (
     View,
 )
 from django_scopes import scope
+from eventyay.base.i18n import language
 from eventyay.base.models import Event, Organizer, User
 from eventyay.base.models.organizer import OrganizerBillingModel
 from eventyay.control.permissions import (
@@ -34,7 +39,6 @@ from eventyay.control.permissions import (
 from eventyay.control.views.organizer_views.organizer_detail_view_mixin import (
     OrganizerDetailViewMixin,
 )
-from types import SimpleNamespace
 
 from .billing_migration import (
     consolidated_billing_preflight,
@@ -48,6 +52,7 @@ from .billing_overview import (
 from .capabilities import CapabilityValueType, get_all_capabilities, get_capability
 from .forms import (
     AddonDefinitionForm,
+    BillingNotificationTestForm,
     CountryFeeSettingForm,
     EventAddonForm,
     EventAddonPurchaseForm,
@@ -69,6 +74,10 @@ from .models import (
     AddonStatus,
     BillingCollectionAuthorization,
     BillingInterval,
+    BillingNotificationDelivery,
+    BillingNotificationEventType,
+    BillingNotificationRecipientSource,
+    BillingNotificationStatus,
     BusinessInvoice,
     BusinessInvoiceStatus,
     CountryFeeSetting,
@@ -83,6 +92,14 @@ from .models import (
     TierStatus,
     TierVersion,
     UsageRecord,
+)
+from .notifications import (
+    NOTIFICATION_SPECS,
+    BillingNotificationRecipient,
+    preview_notification_context,
+    queue_billing_notification,
+    render_notification_subject,
+    retry_billing_notification,
 )
 from .platform_fee_ledger import organizer_consolidated_billing_enabled
 from .services import (
@@ -2175,6 +2192,112 @@ class OrganizerInvoiceDownloadView(
             f'attachment; filename="{invoice.invoice_number}.pdf"'
         )
         return response
+
+
+class AdminBillingNotificationListView(
+    AdministratorPermissionRequiredMixin, ListView
+):
+    model = BillingNotificationDelivery
+    template_name = "eventyay_business/notifications/admin_list.html"
+    context_object_name = "deliveries"
+    paginate_by = 50
+
+    def get_queryset(self):
+        queryset = BillingNotificationDelivery.objects.select_related(
+            "organizer"
+        ).order_by("-created_at", "-id")
+        status = self.request.GET.get("status", "").strip()
+        event_type = self.request.GET.get("event_type", "").strip()
+        organizer = self.request.GET.get("organizer", "").strip()
+        if status:
+            queryset = queryset.filter(status=status)
+        if event_type:
+            queryset = queryset.filter(event_type=event_type)
+        if organizer:
+            queryset = queryset.filter(organizer__slug=organizer)
+        return queryset
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        current_organizer = self.request.GET.get("organizer", "").strip()
+        context.update(
+            {
+                "status_choices": BillingNotificationStatus.choices,
+                "event_type_choices": BillingNotificationEventType.choices,
+                "organizers": Organizer.objects.order_by("name", "slug"),
+                "current_status": self.request.GET.get("status", ""),
+                "current_event_type": self.request.GET.get("event_type", ""),
+                "current_organizer": current_organizer,
+            }
+        )
+        return context
+
+
+class AdminBillingNotificationRetryView(
+    AdministratorPermissionRequiredMixin, View
+):
+    def post(self, request, *args, **kwargs):
+        delivery = get_object_or_404(BillingNotificationDelivery, pk=kwargs["pk"])
+        if delivery.status == BillingNotificationStatus.SENT:
+            messages.info(request, _("This notification was already sent."))
+        elif delivery.status == BillingNotificationStatus.SENDING:
+            messages.info(request, _("This notification is already being delivered."))
+        else:
+            retry_billing_notification(delivery)
+            messages.success(request, _("The notification retry was queued."))
+        return redirect("plugins:eventyay_business:notifications.list")
+
+
+class AdminBillingNotificationPreviewView(
+    AdministratorPermissionRequiredMixin, FormView
+):
+    template_name = "eventyay_business/notifications/preview.html"
+    form_class = BillingNotificationTestForm
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        locale = self.request.GET.get("locale") or "en"
+        preview_context = preview_notification_context(
+            BillingNotificationEventType.ADMIN_TEST
+        )
+        previews = []
+        for event_type, spec in NOTIFICATION_SPECS.items():
+            with language(locale):
+                body = render_to_string(spec.template_name, preview_context)
+            previews.append(
+                {
+                    "event_type": event_type,
+                    "label": BillingNotificationEventType(event_type).label,
+                    "subject": render_notification_subject(
+                        spec, preview_context, locale
+                    ),
+                    "body": body,
+                }
+            )
+        context["previews"] = previews
+        return context
+
+    def form_valid(self, form):
+        organizer = form.cleaned_data["organizer"]
+        event_type = BillingNotificationEventType(form.cleaned_data["event_type"])
+        recipient = BillingNotificationRecipient(
+            email=form.cleaned_data["recipient"].strip().lower(),
+            locale=form.cleaned_data["locale"],
+            source=BillingNotificationRecipientSource.OVERRIDE,
+        )
+        queue_billing_notification(
+            logical_event_key=f"admin-test:{uuid4()}",
+            event_type=event_type,
+            organizer=organizer,
+            recipient=recipient,
+            context=preview_notification_context(event_type),
+            related_object_type="admin_preview",
+        )
+        messages.success(
+            self.request,
+            _("The test notification was queued without changing billing state."),
+        )
+        return redirect("plugins:eventyay_business:notifications.preview")
 
 
 class AdminInvoiceListView(AdministratorPermissionRequiredMixin, ListView):

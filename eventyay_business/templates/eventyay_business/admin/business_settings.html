@@ -68,6 +68,26 @@
                     </div>
                 </div>
             </fieldset>
+            <fieldset id="tab-email_notifications">
+                <legend>{% translate "Email Notifications" %}</legend>
+                <p class="help-block">
+                    {% blocktranslate trimmed %}
+                        Configure the sender and support identity used for organizer billing messages.
+                        Delivery history and test sends are available from the notification log.
+                    {% endblocktranslate %}
+                </p>
+                {% bootstrap_field form.business_email_sender layout='control' %}
+                {% bootstrap_field form.business_email_reply_to layout='control' %}
+                {% bootstrap_field form.business_email_support_contact layout='control' %}
+                <div class="form-group">
+                    <div class="col-md-9 col-md-offset-3">
+                        <a class="btn btn-default" href="{% url 'plugins:eventyay_business:notifications.preview' %}">
+                            <i class="fa fa-envelope" aria-hidden="true"></i>
+                            {% translate "Preview and test notifications" %}
+                        </a>
+                    </div>
+                </div>
+            </fieldset>
             <fieldset id="tab-invoice_presentation">
                 <legend>{% translate "Invoice presentation" %}</legend>
                 <p class="help-block">

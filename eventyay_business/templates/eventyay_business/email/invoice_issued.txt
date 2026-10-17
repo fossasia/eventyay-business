@@ -1,0 +1,8 @@
+{% load i18n %}{% blocktrans with organizer=organizer_name invoice=invoice_number amount=amount currency=currency issue_date=issue_date %}Hello {{ organizer }},
+
+Invoice {{ invoice }} for {{ amount }} {{ currency }} was issued on {{ issue_date }}.{% endblocktrans %}
+
+{% trans "Review and download the invoice in Eventyay:" %}
+{{ action_url }}
+
+{% if support_email %}{% blocktrans %}Questions? Contact {{ support_email }}.{% endblocktrans %}{% endif %}

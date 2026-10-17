@@ -1,7 +1,7 @@
-from typing import Optional
-
 from datetime import datetime, timedelta
 from decimal import Decimal
+from typing import Optional
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
@@ -861,6 +861,27 @@ class InvoicePaymentState(models.TextChoices):
     SUCCEEDED = "succeeded", _("Succeeded")
 
 
+class BillingNotificationEventType(models.TextChoices):
+    INVOICE_ISSUED = "invoice_issued", _("Invoice issued")
+    COLLECTION_PROBLEM = "collection_problem", _("Collection problem")
+    COLLECTION_SUCCEEDED = "collection_succeeded", _("Collection succeeded")
+    ADMIN_TEST = "admin_test", _("Administrator test")
+
+
+class BillingNotificationStatus(models.TextChoices):
+    PENDING = "pending", _("Pending")
+    SENDING = "sending", _("Sending")
+    SENT = "sent", _("Sent")
+    FAILED = "failed", _("Failed")
+
+
+class BillingNotificationRecipientSource(models.TextChoices):
+    INVOICE_SNAPSHOT = "invoice_snapshot", _("Invoice billing snapshot")
+    BILLING_CONTACT = "billing_contact", _("Organizer billing contact")
+    ORGANIZER_ADMIN = "organizer_admin", _("Organizer administrator")
+    OVERRIDE = "override", _("Explicit test recipient")
+
+
 class InvoiceLineType(models.TextChoices):
     SUBSCRIPTION = "subscription", _("Subscription plan")
     ADDON = "addon", _("Add-on package")
@@ -1027,6 +1048,81 @@ class BusinessInvoice(models.Model):
                         )
                     )
         return super().save(*args, **kwargs)
+
+
+class BillingNotificationDelivery(models.Model):
+    logical_event_key = models.CharField(
+        max_length=255, verbose_name=_("Logical event key")
+    )
+    event_type = models.CharField(
+        max_length=64,
+        choices=BillingNotificationEventType.choices,
+        verbose_name=_("Event type"),
+    )
+    organizer = models.ForeignKey(
+        "base.Organizer",
+        on_delete=models.CASCADE,
+        related_name="business_notification_deliveries",
+        verbose_name=_("Organizer"),
+    )
+    related_object_type = models.CharField(
+        max_length=64, blank=True, verbose_name=_("Related object type")
+    )
+    related_object_id = models.CharField(
+        max_length=64, blank=True, verbose_name=_("Related object ID")
+    )
+    recipient = models.EmailField(verbose_name=_("Recipient"))
+    recipient_source = models.CharField(
+        max_length=32,
+        choices=BillingNotificationRecipientSource.choices,
+        verbose_name=_("Recipient source"),
+    )
+    locale = models.CharField(max_length=16, default="en", verbose_name=_("Locale"))
+    template_name = models.CharField(max_length=255, verbose_name=_("Template name"))
+    subject = models.CharField(max_length=255, blank=True, verbose_name=_("Subject"))
+    context = models.JSONField(default=dict, blank=True, verbose_name=_("Context"))
+    status = models.CharField(
+        max_length=20,
+        choices=BillingNotificationStatus.choices,
+        default=BillingNotificationStatus.PENDING,
+        verbose_name=_("Status"),
+    )
+    attempt_count = models.PositiveIntegerField(
+        default=0, verbose_name=_("Attempt count")
+    )
+    last_attempt_at = models.DateTimeField(
+        null=True, blank=True, verbose_name=_("Last attempt at")
+    )
+    sent_at = models.DateTimeField(null=True, blank=True, verbose_name=_("Sent at"))
+    last_error = models.JSONField(
+        default=dict, blank=True, verbose_name=_("Last error")
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("Created at"))
+    updated_at = models.DateTimeField(auto_now=True, verbose_name=_("Updated at"))
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        verbose_name = _("Billing notification delivery")
+        verbose_name_plural = _("Billing notification deliveries")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["logical_event_key", "recipient"],
+                name="unique_billing_notification_event_recipient",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=["status", "created_at"],
+                name="billing_notify_status_created",
+            ),
+            models.Index(
+                fields=["organizer", "event_type", "created_at"],
+                name="billing_notify_org_event",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.get_event_type_display()} to {self.recipient}"
 
 
 class BusinessInvoiceLine(models.Model):

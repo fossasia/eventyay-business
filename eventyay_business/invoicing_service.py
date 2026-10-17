@@ -1,8 +1,7 @@
 import logging
 from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
-from django.conf import settings
-from django.core.mail import send_mail
+
 from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils.timezone import is_aware, make_aware, now
@@ -15,6 +14,7 @@ from .models import (
     AddonPricingMode,
     AddonStatus,
     BillingInterval,
+    BillingNotificationEventType,
     BusinessInvoice,
     BusinessInvoiceLine,
     BusinessInvoiceStatus,
@@ -27,6 +27,7 @@ from .models import (
     SubscriptionStatus,
     UsageRecord,
 )
+from .notifications import queue_invoice_notification
 
 logger = logging.getLogger(__name__)
 
@@ -216,19 +217,9 @@ def billing_address_snapshot(organizer) -> dict:
 
 
 def notify_invoice_issued(invoice: BusinessInvoice) -> None:
-    recipient = invoice.billing_address_snapshot.get("contact_email")
-    if not recipient:
-        return
-    send_mail(
-        f"Eventyay invoice {invoice.invoice_number}",
-        (
-            f"Invoice {invoice.invoice_number} for {invoice.total} "
-            f"{invoice.currency} was issued on {invoice.issue_date}. "
-            "Sign in to Eventyay to review and download it."
-        ),
-        settings.DEFAULT_FROM_EMAIL,
-        [recipient],
-        fail_silently=True,
+    queue_invoice_notification(
+        invoice,
+        BillingNotificationEventType.INVOICE_ISSUED,
     )
 
 

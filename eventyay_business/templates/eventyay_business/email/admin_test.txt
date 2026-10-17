@@ -1,0 +1,5 @@
+{% load i18n %}{% trans "This is a test of Eventyay Business billing notifications." %}
+
+{% trans "No invoice, subscription, add-on or payment state was changed." %}
+
+{% if support_email %}{% blocktrans %}Configured support contact: {{ support_email }}{% endblocktrans %}{% endif %}

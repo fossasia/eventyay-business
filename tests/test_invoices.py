@@ -1,6 +1,8 @@
-import pytest
 from datetime import datetime, time, timedelta
 from decimal import Decimal
+from unittest.mock import patch
+
+import pytest
 from django.core import mail
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -10,7 +12,6 @@ from eventyay.base.models import Event, Organizer, User
 from eventyay.base.models.auth import StaffSession
 from eventyay.base.models.organizer import OrganizerBillingModel
 from eventyay.base.settings import GlobalSettingsObject
-from unittest.mock import patch
 
 from eventyay_business.invoicing_service import (
     InvoiceCalculationError,
@@ -26,6 +27,8 @@ from eventyay_business.models import (
     AddonStatus,
     BillingCollectionAuthorization,
     BillingInterval,
+    BillingNotificationDelivery,
+    BillingNotificationEventType,
     BusinessInvoice,
     BusinessInvoiceLine,
     BusinessInvoiceStatus,
@@ -40,6 +43,7 @@ from eventyay_business.models import (
     TierVersion,
     UsageRecord,
 )
+from eventyay_business.notifications import deliver_billing_notification
 from eventyay_business.platform_fee_ledger import BILLING_CUTOVER_SETTING
 from eventyay_business.signals import record_automatic_collection_authorization
 from eventyay_business.tasks import generate_monthly_business_invoices
@@ -347,6 +351,11 @@ def test_finalization_snapshots_billing_address_and_notifies(
         )
     assert invoice.billing_address_snapshot["organization_name"] == "Acme Legal GmbH"
     assert invoice.billing_address_snapshot["tax_id"] == "DE123"
+    delivery = BillingNotificationDelivery.objects.get(
+        event_type=BillingNotificationEventType.INVOICE_ISSUED,
+        related_object_id=str(invoice.pk),
+    )
+    deliver_billing_notification(delivery.pk)
     assert len(mail.outbox) == 1
     assert invoice.invoice_number in mail.outbox[0].subject
     assert mail.outbox[0].to == ["accounts@example.com"]

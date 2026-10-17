@@ -1,6 +1,7 @@
+from unittest.mock import Mock
+
 from django.test import RequestFactory
 from django.urls import ResolverMatch
-from unittest.mock import Mock
 
 from eventyay_business.signals import (
     business_event_addons_nav,
@@ -93,14 +94,15 @@ def test_business_tiers_nav_staff_on_admin_page():
     )
 
     items = business_tiers_nav(sender=None, request=request)
-    assert len(items) == 7
+    assert len(items) == 8
     assert str(items[0]["label"]) == "Business Settings"
     assert str(items[1]["label"]) == "Tiers"
     assert str(items[2]["label"]) == "Subscriptions"
     assert str(items[3]["label"]) == "Add-ons"
     assert str(items[4]["label"]) == "Current charges"
     assert str(items[5]["label"]) == "Invoices"
-    assert str(items[6]["label"]) == "Billing activation"
+    assert str(items[6]["label"]) == "Notification delivery"
+    assert str(items[7]["label"]) == "Billing activation"
     assert items[0]["active"] is False
     assert items[1]["active"] is False
     assert items[2]["active"] is False
@@ -108,6 +110,7 @@ def test_business_tiers_nav_staff_on_admin_page():
     assert items[4]["active"] is False
     assert items[5]["active"] is False
     assert items[6]["active"] is False
+    assert items[7]["active"] is False
 
 
 def test_business_tiers_nav_staff_on_tiers_list():
@@ -125,7 +128,7 @@ def test_business_tiers_nav_staff_on_tiers_list():
     )
 
     items = business_tiers_nav(sender=None, request=request)
-    assert len(items) == 7
+    assert len(items) == 8
     assert items[0]["active"] is False
     assert items[1]["active"] is True
     assert items[2]["active"] is False
@@ -133,6 +136,7 @@ def test_business_tiers_nav_staff_on_tiers_list():
     assert items[4]["active"] is False
     assert items[5]["active"] is False
     assert items[6]["active"] is False
+    assert items[7]["active"] is False
 
 
 def test_business_tiers_nav_staff_on_addons_list():
@@ -150,7 +154,7 @@ def test_business_tiers_nav_staff_on_addons_list():
     )
 
     items = business_tiers_nav(sender=None, request=request)
-    assert len(items) == 7
+    assert len(items) == 8
     assert items[0]["active"] is False
     assert items[1]["active"] is False
     assert items[2]["active"] is False
@@ -158,6 +162,7 @@ def test_business_tiers_nav_staff_on_addons_list():
     assert items[4]["active"] is False
     assert items[5]["active"] is False
     assert items[6]["active"] is False
+    assert items[7]["active"] is False
 
 
 def test_business_tiers_nav_staff_on_invoices_list():
@@ -175,7 +180,7 @@ def test_business_tiers_nav_staff_on_invoices_list():
     )
 
     items = business_tiers_nav(sender=None, request=request)
-    assert len(items) == 7
+    assert len(items) == 8
     assert items[0]["active"] is False
     assert items[1]["active"] is False
     assert items[2]["active"] is False
@@ -183,6 +188,7 @@ def test_business_tiers_nav_staff_on_invoices_list():
     assert items[4]["active"] is False
     assert items[5]["active"] is True
     assert items[6]["active"] is False
+    assert items[7]["active"] is False
 
 
 def test_business_tiers_nav_staff_on_current_charges():
@@ -199,10 +205,30 @@ def test_business_tiers_nav_staff_on_current_charges():
     )
 
     items = business_tiers_nav(sender=None, request=request)
-    assert len(items) == 7
+    assert len(items) == 8
     assert items[4]["active"] is True
     assert items[5]["active"] is False
     assert items[6]["active"] is False
+    assert items[7]["active"] is False
+
+
+def test_business_tiers_nav_staff_on_notification_delivery():
+    factory = RequestFactory()
+    request = factory.get("/admin/global/business/notifications/")
+    request.user = Mock(is_authenticated=True, is_staff=True, is_superuser=False)
+    request.resolver_match = ResolverMatch(
+        func=lambda r: None,
+        args=(),
+        kwargs={},
+        url_name="notifications.list",
+        app_names=["plugins:eventyay_business"],
+        namespaces=["plugins:eventyay_business"],
+    )
+
+    items = business_tiers_nav(sender=None, request=request)
+    assert len(items) == 8
+    assert items[6]["active"] is True
+    assert items[7]["active"] is False
 
 
 def test_business_tiers_nav_staff_on_billing_activation():
@@ -219,8 +245,9 @@ def test_business_tiers_nav_staff_on_billing_activation():
     )
 
     items = business_tiers_nav(sender=None, request=request)
-    assert len(items) == 7
-    assert items[6]["active"] is True
+    assert len(items) == 8
+    assert items[6]["active"] is False
+    assert items[7]["active"] is True
 
 
 def test_business_event_addons_nav_anonymous():

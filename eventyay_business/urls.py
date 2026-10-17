@@ -68,6 +68,21 @@ urlpatterns = [
         name="invoices.list",
     ),
     path(
+        "admin/global/business/notifications/",
+        views.AdminBillingNotificationListView.as_view(),
+        name="notifications.list",
+    ),
+    path(
+        "admin/global/business/notifications/preview/",
+        views.AdminBillingNotificationPreviewView.as_view(),
+        name="notifications.preview",
+    ),
+    path(
+        "admin/global/business/notifications/<int:pk>/retry/",
+        views.AdminBillingNotificationRetryView.as_view(),
+        name="notifications.retry",
+    ),
+    path(
         "admin/global/business/invoice-settings/",
         views.InvoicePresentationSettingsView.as_view(),
         name="invoice_settings",

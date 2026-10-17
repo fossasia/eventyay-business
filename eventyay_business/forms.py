@@ -1,8 +1,11 @@
 from collections import OrderedDict
+
 from django import forms
+from django.conf import settings
 from django.forms import inlineformset_factory
 from django.utils.translation import gettext_lazy as _
 from eventyay.base.forms import SecretKeySettingsField, SettingsForm
+from eventyay.base.models import Organizer
 from eventyay.base.settings import GlobalSettingsObject
 from eventyay.control.forms import ExtFileField
 from eventyay.control.forms.global_settings import StripeKeyValidator
@@ -11,6 +14,7 @@ from .capabilities import get_grouped_capability_choices
 from .invoice_presentation import DEFAULT_SECTION_LABELS, DEFAULT_SECTION_ORDER
 from .models import (
     AddonDefinition,
+    BillingNotificationEventType,
     CountryFeeSetting,
     EventAddon,
     OrganizerAddon,
@@ -29,6 +33,8 @@ try:
 except ImportError:
     from django.forms import (
         SplitDateTimeField,
+    )
+    from django.forms import (
         SplitDateTimeWidget as SplitDateTimePickerWidget,
     )
 
@@ -949,6 +955,37 @@ class GlobalBusinessSettingsForm(SettingsForm):
                             ),
                         ),
                     ),
+                    (
+                        "business_email_sender",
+                        forms.EmailField(
+                            label=_("Billing notification sender"),
+                            required=False,
+                            help_text=_(
+                                "Optional sender address for Business billing notifications. "
+                                "Leave empty to use the system default."
+                            ),
+                        ),
+                    ),
+                    (
+                        "business_email_reply_to",
+                        forms.EmailField(
+                            label=_("Billing notification reply-to"),
+                            required=False,
+                            help_text=_(
+                                "Optional address that receives organizer replies."
+                            ),
+                        ),
+                    ),
+                    (
+                        "business_email_support_contact",
+                        forms.EmailField(
+                            label=_("Billing support contact"),
+                            required=False,
+                            help_text=_(
+                                "Support address displayed in billing notification templates."
+                            ),
+                        ),
+                    ),
                 ]
             )
         )
@@ -991,6 +1028,15 @@ class GlobalBusinessSettingsForm(SettingsForm):
                     "billing_validation",
                 ],
             ),
+            (
+                "email_notifications",
+                _("Email Notifications"),
+                [
+                    "business_email_sender",
+                    "business_email_reply_to",
+                    "business_email_support_contact",
+                ],
+            ),
         ]
 
     def clean_business_collection_retry_days(self):
@@ -1000,6 +1046,40 @@ class GlobalBusinessSettingsForm(SettingsForm):
         except ValueError as exc:
             raise forms.ValidationError(str(exc)) from exc
         return ", ".join(str(day) for day in days)
+
+
+class BillingNotificationTestForm(forms.Form):
+    organizer = forms.ModelChoiceField(
+        queryset=Organizer.objects.order_by("name", "slug"),
+        label=_("Organizer"),
+    )
+    event_type = forms.ChoiceField(
+        choices=(
+            (
+                BillingNotificationEventType.INVOICE_ISSUED,
+                BillingNotificationEventType.INVOICE_ISSUED.label,
+            ),
+            (
+                BillingNotificationEventType.COLLECTION_PROBLEM,
+                BillingNotificationEventType.COLLECTION_PROBLEM.label,
+            ),
+            (
+                BillingNotificationEventType.COLLECTION_SUCCEEDED,
+                BillingNotificationEventType.COLLECTION_SUCCEEDED.label,
+            ),
+            (
+                BillingNotificationEventType.ADMIN_TEST,
+                BillingNotificationEventType.ADMIN_TEST.label,
+            ),
+        ),
+        label=_("Notification type"),
+    )
+    recipient = forms.EmailField(label=_("Test recipient"))
+    locale = forms.ChoiceField(
+        choices=settings.LANGUAGES,
+        initial=settings.LANGUAGE_CODE,
+        label=_("Language"),
+    )
 
 
 class InvoicePresentationSettingsForm(SettingsForm):
