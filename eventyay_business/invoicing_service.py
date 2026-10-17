@@ -216,9 +216,14 @@ def billing_address_snapshot(organizer) -> dict:
 
 
 def notify_invoice_issued(invoice: BusinessInvoice) -> None:
+    event_type = (
+        BillingNotificationEventType.CREDIT_ISSUED
+        if invoice.corrects_invoice_id or invoice.total < Decimal("0.00")
+        else BillingNotificationEventType.INVOICE_ISSUED
+    )
     queue_invoice_notification(
         invoice,
-        BillingNotificationEventType.INVOICE_ISSUED,
+        event_type,
     )
 
 
@@ -258,7 +263,7 @@ def finalize_business_invoice(
             invoice.status = BusinessInvoiceStatus.OPEN
             invoice.payment_state = InvoicePaymentState.NOT_STARTED
         invoice.save()
-        transaction.on_commit(lambda: notify_invoice_issued(invoice))
+        transaction.on_commit(lambda: notify_invoice_issued(invoice), robust=True)
         return invoice
 
 

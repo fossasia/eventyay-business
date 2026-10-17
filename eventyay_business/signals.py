@@ -10,7 +10,10 @@ from django.utils.translation import gettext_lazy as _
 from eventyay.base.models import OrderRefund, Organizer
 from eventyay.base.models.organizer import OrganizerBillingModel
 
-from .models import BillingCollectionAuthorization
+from .models import (
+    BillingCollectionAuthorization,
+    BillingNotificationEventType,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +23,12 @@ addon_purchased = Signal()
 subscription_purchased = Signal()
 subscription_downgraded = Signal()
 subscription_expired = Signal()
+subscription_change_scheduled = Signal()
+subscription_change_canceled = Signal()
+subscription_past_due = Signal()
+subscription_recovered = Signal()
+subscription_canceled = Signal()
+addon_cancellation_scheduled = Signal()
 
 AUTOMATIC_COLLECTION_TERMS_VERSION = "2"
 
@@ -200,11 +209,228 @@ if organizer_billing_payment_method_saved:
     def enable_automatic_collection_on_payment_method_save(
         sender, organizer, user, stripe_customer_id, **kwargs
     ):
-        return record_automatic_collection_authorization(
+        authorization = record_automatic_collection_authorization(
             organizer=organizer,
             user=user,
             stripe_customer_id=stripe_customer_id,
         )
+        if authorization:
+            from .notifications import queue_organizer_notification
+
+            billing = OrganizerBillingModel.objects.filter(organizer=organizer).first()
+            payment_method_id = (
+                billing.stripe_payment_method_id if billing else "unknown"
+            )
+            transaction.on_commit(
+                lambda: queue_organizer_notification(
+                    organizer=organizer,
+                    event_type=BillingNotificationEventType.PAYMENT_METHOD_UPDATED,
+                    logical_event_key=(
+                        f"organizer:{organizer.pk}:payment-method-updated:"
+                        f"{payment_method_id}"
+                    ),
+                ),
+                robust=True,
+            )
+        return authorization
+
+
+def _queue_subscription_lifecycle(
+    instance, event_type, key_suffix="", **context_values
+):
+    from .notifications import queue_subscription_notification
+
+    transaction.on_commit(
+        lambda: queue_subscription_notification(
+            instance,
+            event_type,
+            key_suffix=key_suffix,
+            **context_values,
+        ),
+        robust=True,
+    )
+
+
+def _queue_addon_lifecycle(instance, event_type, key_suffix=""):
+    from .notifications import queue_addon_notification
+
+    transaction.on_commit(
+        lambda: queue_addon_notification(
+            instance,
+            event_type,
+            key_suffix=key_suffix,
+        ),
+        robust=True,
+    )
+
+
+@receiver(subscription_purchased, dispatch_uid="business_notify_subscription_purchased")
+def notify_subscription_purchased(sender, instance, **kwargs):
+    _queue_subscription_lifecycle(
+        instance,
+        BillingNotificationEventType.PLAN_ACTIVATED,
+        key_suffix=f"{instance.tier_version_id}:{instance.starts_at.isoformat()}",
+    )
+
+
+@receiver(subscription_downgraded, dispatch_uid="business_notify_subscription_changed")
+def notify_subscription_changed(sender, instance, cancellation=False, **kwargs):
+    event_type = (
+        BillingNotificationEventType.PLAN_CANCELED
+        if cancellation
+        else BillingNotificationEventType.PLAN_CHANGED
+    )
+    _queue_subscription_lifecycle(
+        instance,
+        event_type,
+        key_suffix=f"{instance.tier_version_id}:{instance.updated_at.isoformat()}",
+    )
+
+
+@receiver(subscription_expired, dispatch_uid="business_notify_subscription_expired")
+def notify_subscription_expired(sender, instance, grace_deadline=None, **kwargs):
+    _queue_subscription_lifecycle(
+        instance,
+        BillingNotificationEventType.ACCESS_EXPIRED,
+        key_suffix=(
+            grace_deadline.isoformat()
+            if grace_deadline
+            else instance.updated_at.isoformat()
+        ),
+        deadline=grace_deadline,
+    )
+
+
+@receiver(subscription_past_due, dispatch_uid="business_notify_subscription_past_due")
+def notify_subscription_past_due(sender, instance, **kwargs):
+    _queue_subscription_lifecycle(
+        instance,
+        BillingNotificationEventType.GRACE_PERIOD_STARTED,
+        key_suffix=(
+            instance.past_due_since.isoformat()
+            if instance.past_due_since
+            else instance.updated_at.isoformat()
+        ),
+    )
+
+
+@receiver(subscription_recovered, dispatch_uid="business_notify_subscription_recovered")
+def notify_subscription_recovered(sender, instance, recovery_marker="", **kwargs):
+    _queue_subscription_lifecycle(
+        instance,
+        BillingNotificationEventType.ACCESS_RESTORED,
+        key_suffix=recovery_marker or instance.updated_at.isoformat(),
+    )
+
+
+@receiver(subscription_canceled, dispatch_uid="business_notify_subscription_canceled")
+def notify_subscription_canceled(sender, instance, **kwargs):
+    _queue_subscription_lifecycle(
+        instance,
+        BillingNotificationEventType.PLAN_CANCELED,
+        key_suffix=(
+            instance.cancel_at.isoformat()
+            if instance.cancel_at
+            else instance.updated_at.isoformat()
+        ),
+    )
+
+
+@receiver(
+    subscription_change_scheduled,
+    dispatch_uid="business_notify_subscription_change_scheduled",
+)
+def notify_subscription_change_scheduled(
+    sender, instance, cancellation=False, **kwargs
+):
+    event_type = (
+        BillingNotificationEventType.PLAN_CANCELLATION_SCHEDULED
+        if cancellation
+        else BillingNotificationEventType.PLAN_CHANGE_SCHEDULED
+    )
+    context_values = {}
+    if cancellation:
+        context_values["deadline"] = instance.pending_change_at
+    _queue_subscription_lifecycle(
+        instance,
+        event_type,
+        key_suffix=(
+            instance.pending_change_at.isoformat()
+            if instance.pending_change_at
+            else instance.updated_at.isoformat()
+        ),
+        **context_values,
+    )
+
+
+@receiver(
+    subscription_change_canceled,
+    dispatch_uid="business_notify_subscription_change_canceled",
+)
+def notify_subscription_change_canceled(
+    sender, instance, cancellation=False, canceled_marker="", **kwargs
+):
+    event_type = (
+        BillingNotificationEventType.PLAN_CANCELLATION_CANCELED
+        if cancellation
+        else BillingNotificationEventType.PLAN_CHANGE_CANCELED
+    )
+    _queue_subscription_lifecycle(
+        instance,
+        event_type,
+        key_suffix=canceled_marker or instance.updated_at.isoformat(),
+    )
+
+
+@receiver(addon_purchased, dispatch_uid="business_notify_addon_purchased")
+def notify_addon_purchased(sender, instance, **kwargs):
+    _queue_addon_lifecycle(
+        instance,
+        BillingNotificationEventType.ADDON_ACTIVATED,
+        key_suffix=instance.starts_at.isoformat(),
+    )
+
+
+@receiver(
+    addon_cancellation_scheduled,
+    dispatch_uid="business_notify_addon_cancellation_scheduled",
+)
+def notify_addon_cancellation_scheduled(sender, instance, **kwargs):
+    _queue_addon_lifecycle(
+        instance,
+        BillingNotificationEventType.ADDON_CANCELLATION_SCHEDULED,
+        key_suffix=(
+            instance.cancel_at.isoformat()
+            if instance.cancel_at
+            else instance.updated_at.isoformat()
+        ),
+    )
+
+
+@receiver(addon_canceled, dispatch_uid="business_notify_addon_canceled")
+def notify_addon_canceled(sender, instance, **kwargs):
+    _queue_addon_lifecycle(
+        instance,
+        BillingNotificationEventType.ADDON_CANCELED,
+        key_suffix=(
+            instance.cancel_at.isoformat()
+            if instance.cancel_at
+            else instance.updated_at.isoformat()
+        ),
+    )
+
+
+@receiver(addon_expired, dispatch_uid="business_notify_addon_expired")
+def notify_addon_expired(sender, instance, **kwargs):
+    _queue_addon_lifecycle(
+        instance,
+        BillingNotificationEventType.ADDON_EXPIRED,
+        key_suffix=(
+            instance.ends_at.isoformat()
+            if instance.ends_at
+            else instance.updated_at.isoformat()
+        ),
+    )
 
 
 if nav_global:

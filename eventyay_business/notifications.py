@@ -5,7 +5,10 @@ from dataclasses import dataclass
 from decimal import Decimal
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Q
 from django.template import TemplateDoesNotExist
+from django.urls import reverse
+from django.utils.formats import date_format
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 from eventyay.base.i18n import language
@@ -21,6 +24,9 @@ from .models import (
     BillingNotificationRecipientSource,
     BillingNotificationStatus,
     BusinessInvoice,
+    EventAddon,
+    OrganizerAddon,
+    Subscription,
 )
 
 logger = logging.getLogger(__name__)
@@ -51,6 +57,106 @@ NOTIFICATION_SPECS = {
     BillingNotificationEventType.COLLECTION_SUCCEEDED: BillingNotificationSpec(
         subject=_("Eventyay invoice {invoice_number} paid"),
         template_name="eventyay_business/email/collection_succeeded.txt",
+    ),
+    BillingNotificationEventType.PAYMENT_METHOD_MISSING: BillingNotificationSpec(
+        subject=_("Payment method needed for Eventyay invoice {invoice_number}"),
+        template_name="eventyay_business/email/lifecycle.txt",
+    ),
+    BillingNotificationEventType.AUTHORIZATION_MISSING: BillingNotificationSpec(
+        subject=_("Automatic payment is off for invoice {invoice_number}"),
+        template_name="eventyay_business/email/lifecycle.txt",
+    ),
+    BillingNotificationEventType.PAYMENT_DECLINED: BillingNotificationSpec(
+        subject=_("Payment declined for Eventyay invoice {invoice_number}"),
+        template_name="eventyay_business/email/lifecycle.txt",
+    ),
+    BillingNotificationEventType.AUTHENTICATION_REQUIRED: BillingNotificationSpec(
+        subject=_("Confirm payment for Eventyay invoice {invoice_number}"),
+        template_name="eventyay_business/email/lifecycle.txt",
+    ),
+    BillingNotificationEventType.RETRY_SCHEDULED: BillingNotificationSpec(
+        subject=_("Payment retry scheduled for invoice {invoice_number}"),
+        template_name="eventyay_business/email/lifecycle.txt",
+    ),
+    BillingNotificationEventType.GRACE_PERIOD_STARTED: BillingNotificationSpec(
+        subject=_("Eventyay billing grace period started"),
+        template_name="eventyay_business/email/lifecycle.txt",
+    ),
+    BillingNotificationEventType.GRACE_PERIOD_REMINDER: BillingNotificationSpec(
+        subject=_("{days_remaining} days remain in your Eventyay billing grace period"),
+        template_name="eventyay_business/email/lifecycle.txt",
+    ),
+    BillingNotificationEventType.ACCESS_EXPIRED: BillingNotificationSpec(
+        subject=_("Eventyay paid access expired for nonpayment"),
+        template_name="eventyay_business/email/lifecycle.txt",
+    ),
+    BillingNotificationEventType.PAYMENT_METHOD_UPDATED: BillingNotificationSpec(
+        subject=_("Eventyay payment method updated"),
+        template_name="eventyay_business/email/lifecycle.txt",
+    ),
+    BillingNotificationEventType.ACCESS_RESTORED: BillingNotificationSpec(
+        subject=_("Eventyay paid access restored"),
+        template_name="eventyay_business/email/lifecycle.txt",
+    ),
+    BillingNotificationEventType.SUPPORT_REQUIRED: BillingNotificationSpec(
+        subject=_("Support is needed for invoice {invoice_number}"),
+        template_name="eventyay_business/email/lifecycle.txt",
+    ),
+    BillingNotificationEventType.PLATFORM_ALERT: BillingNotificationSpec(
+        subject=_("Eventyay platform billing alert for {organizer_name}"),
+        template_name="eventyay_business/email/platform_alert.txt",
+    ),
+    BillingNotificationEventType.PLAN_ACTIVATED: BillingNotificationSpec(
+        subject=_("Your Eventyay {object_name} plan is active"),
+        template_name="eventyay_business/email/lifecycle.txt",
+    ),
+    BillingNotificationEventType.PLAN_CHANGE_SCHEDULED: BillingNotificationSpec(
+        subject=_("Your Eventyay plan change is scheduled"),
+        template_name="eventyay_business/email/lifecycle.txt",
+    ),
+    BillingNotificationEventType.PLAN_CHANGE_CANCELED: BillingNotificationSpec(
+        subject=_("Your scheduled Eventyay plan change was canceled"),
+        template_name="eventyay_business/email/lifecycle.txt",
+    ),
+    BillingNotificationEventType.PLAN_CHANGED: BillingNotificationSpec(
+        subject=_("Your Eventyay plan changed to {object_name}"),
+        template_name="eventyay_business/email/lifecycle.txt",
+    ),
+    BillingNotificationEventType.PLAN_CANCELLATION_SCHEDULED: BillingNotificationSpec(
+        subject=_("Your Eventyay plan cancellation is scheduled"),
+        template_name="eventyay_business/email/lifecycle.txt",
+    ),
+    BillingNotificationEventType.PLAN_CANCELLATION_CANCELED: BillingNotificationSpec(
+        subject=_("Your Eventyay plan cancellation was canceled"),
+        template_name="eventyay_business/email/lifecycle.txt",
+    ),
+    BillingNotificationEventType.PLAN_CANCELED: BillingNotificationSpec(
+        subject=_("Your Eventyay paid plan ended"),
+        template_name="eventyay_business/email/lifecycle.txt",
+    ),
+    BillingNotificationEventType.ADDON_ACTIVATED: BillingNotificationSpec(
+        subject=_("Eventyay add-on {object_name} is active"),
+        template_name="eventyay_business/email/lifecycle.txt",
+    ),
+    BillingNotificationEventType.ADDON_CANCELLATION_SCHEDULED: BillingNotificationSpec(
+        subject=_("Eventyay add-on {object_name} cancellation is scheduled"),
+        template_name="eventyay_business/email/lifecycle.txt",
+    ),
+    BillingNotificationEventType.ADDON_CANCELED: BillingNotificationSpec(
+        subject=_("Eventyay add-on {object_name} ended"),
+        template_name="eventyay_business/email/lifecycle.txt",
+    ),
+    BillingNotificationEventType.ADDON_EXPIRED: BillingNotificationSpec(
+        subject=_("Eventyay add-on {object_name} expired"),
+        template_name="eventyay_business/email/lifecycle.txt",
+    ),
+    BillingNotificationEventType.RENEWAL_APPROACHING: BillingNotificationSpec(
+        subject=_("Eventyay {object_name} renews soon"),
+        template_name="eventyay_business/email/lifecycle.txt",
+    ),
+    BillingNotificationEventType.CREDIT_ISSUED: BillingNotificationSpec(
+        subject=_("Credit or adjustment issued for invoice {invoice_number}"),
+        template_name="eventyay_business/email/lifecycle.txt",
     ),
     BillingNotificationEventType.ADMIN_TEST: BillingNotificationSpec(
         subject=_("Eventyay Business notification test"),
@@ -87,6 +193,23 @@ def organizer_admin_recipient(organizer) -> BillingNotificationRecipient | None:
         email=user.email.strip().lower(),
         locale=user.locale or settings.LANGUAGE_CODE,
         source=BillingNotificationRecipientSource.ORGANIZER_ADMIN,
+    )
+
+
+def platform_admin_recipient() -> BillingNotificationRecipient | None:
+    user = (
+        User.objects.filter(is_active=True)
+        .filter(Q(is_staff=True) | Q(is_superuser=True))
+        .exclude(email="")
+        .order_by("pk")
+        .first()
+    )
+    if not user:
+        return None
+    return BillingNotificationRecipient(
+        email=user.email.strip().lower(),
+        locale=user.locale or settings.LANGUAGE_CODE,
+        source=BillingNotificationRecipientSource.PLATFORM_ADMIN,
     )
 
 
@@ -195,8 +318,223 @@ def queue_billing_notification(
     return delivery
 
 
+def format_notification_datetime(value, locale: str) -> str:
+    if not value:
+        return ""
+    with language(locale):
+        return date_format(value, "DATETIME_FORMAT")
+
+
+def organizer_notification_context(
+    organizer,
+    event_type: BillingNotificationEventType | str,
+    recipient: BillingNotificationRecipient,
+    **values,
+) -> dict:
+    context = {
+        "event_type": BillingNotificationEventType(event_type),
+        "organizer_name": organizer.name,
+        "object_name": "",
+        "event_name": "",
+        "invoice_number": "",
+        "amount": "",
+        "currency": "",
+        "effective_date": "",
+        "deadline": "",
+        "next_retry_at": "",
+        "days_remaining": "",
+        "current_state": "",
+        "action_url": build_absolute_uri(
+            organizer,
+            "plugins:eventyay_business:organizer.plan",
+        ),
+        "support_email": GlobalSettingsObject().settings.get(
+            "business_email_support_contact", as_type=str, default=""
+        ),
+    }
+    for key, value in values.items():
+        if key.endswith("_at") or key in {"effective_date", "deadline"}:
+            value = format_notification_datetime(value, recipient.locale)
+        elif isinstance(value, Decimal):
+            value = str(value)
+        context[key] = value if value is not None else ""
+    return context
+
+
+def queue_organizer_notification(
+    *,
+    organizer,
+    event_type: BillingNotificationEventType | str,
+    logical_event_key: str,
+    related_object_type: str = "organizer",
+    related_object_id: str = "",
+    recipient: BillingNotificationRecipient | None = None,
+    **context_values,
+) -> BillingNotificationDelivery | None:
+    recipient = recipient or organizer_billing_recipient(organizer)
+    if not recipient:
+        logger.warning(
+            "Organizer %s has no recipient for billing event %s",
+            organizer.slug,
+            event_type,
+        )
+        return None
+    context = organizer_notification_context(
+        organizer,
+        event_type,
+        recipient,
+        **context_values,
+    )
+    return queue_billing_notification(
+        logical_event_key=logical_event_key,
+        event_type=event_type,
+        organizer=organizer,
+        recipient=recipient,
+        context=context,
+        related_object_type=related_object_type,
+        related_object_id=related_object_id,
+    )
+
+
+def subscription_price_context(subscription: Subscription) -> tuple[str, str]:
+    if not subscription.tier_version_id:
+        return "", subscription.currency or ""
+    prices = subscription.tier_version.prices.filter(active=True)
+    if subscription.billing_interval:
+        prices = prices.filter(billing_interval=subscription.billing_interval)
+    if subscription.currency:
+        prices = prices.filter(currency=subscription.currency)
+    price = prices.order_by("pk").first()
+    return (
+        (str(price.amount), price.currency)
+        if price
+        else ("", subscription.currency or "")
+    )
+
+
+def queue_subscription_notification(
+    subscription: Subscription,
+    event_type: BillingNotificationEventType | str,
+    *,
+    key_suffix: str = "",
+    **context_values,
+) -> BillingNotificationDelivery | None:
+    recipient = organizer_billing_recipient(subscription.organizer)
+    if not recipient:
+        return None
+    amount, currency = subscription_price_context(subscription)
+    with language(recipient.locale):
+        current_state = str(subscription.get_status_display())
+    marker = key_suffix or subscription.updated_at.isoformat()
+    object_name = context_values.pop(
+        "object_name",
+        (
+            subscription.pending_tier_version.tier.name
+            if subscription.pending_tier_version_id
+            else (
+                subscription.tier_version.tier.name
+                if subscription.tier_version_id
+                else ""
+            )
+        ),
+    )
+    effective_date = context_values.pop(
+        "effective_date", subscription.pending_change_at or subscription.starts_at
+    )
+    deadline = context_values.pop(
+        "deadline", subscription.grace_period_ends_at() or subscription.ends_at
+    )
+    return queue_organizer_notification(
+        organizer=subscription.organizer,
+        event_type=event_type,
+        logical_event_key=f"subscription:{subscription.pk}:{event_type}:{marker}",
+        related_object_type="subscription",
+        related_object_id=str(subscription.pk),
+        recipient=recipient,
+        object_name=object_name,
+        amount=amount,
+        currency=currency,
+        effective_date=effective_date,
+        deadline=deadline,
+        current_state=current_state,
+        **context_values,
+    )
+
+
+def queue_addon_notification(
+    assignment: OrganizerAddon | EventAddon,
+    event_type: BillingNotificationEventType | str,
+    *,
+    key_suffix: str = "",
+    **context_values,
+) -> BillingNotificationDelivery | None:
+    is_event_addon = isinstance(assignment, EventAddon)
+    organizer = assignment.event.organizer if is_event_addon else assignment.organizer
+    recipient = organizer_billing_recipient(organizer)
+    if not recipient:
+        return None
+    with language(recipient.locale):
+        current_state = str(assignment.get_status_display())
+    marker = key_suffix or assignment.updated_at.isoformat()
+    return queue_organizer_notification(
+        organizer=organizer,
+        event_type=event_type,
+        logical_event_key=(
+            f"{'event' if is_event_addon else 'organizer'}-addon:"
+            f"{assignment.pk}:{event_type}:{marker}"
+        ),
+        related_object_type=("event_addon" if is_event_addon else "organizer_addon"),
+        related_object_id=str(assignment.pk),
+        recipient=recipient,
+        object_name=assignment.addon.name,
+        event_name=assignment.event.name if is_event_addon else "",
+        amount=(assignment.price or Decimal("0.00")) * assignment.quantity,
+        currency=assignment.currency,
+        effective_date=assignment.starts_at,
+        deadline=assignment.cancel_at or assignment.ends_at,
+        current_state=current_state,
+        **context_values,
+    )
+
+
+def queue_platform_alert(
+    invoice: BusinessInvoice, failure_code: str
+) -> BillingNotificationDelivery | None:
+    recipient = platform_admin_recipient()
+    if not recipient:
+        logger.error(
+            "No platform administrator recipient for invoice %s billing alert",
+            invoice.invoice_number,
+        )
+        return None
+    return queue_organizer_notification(
+        organizer=invoice.organizer,
+        event_type=BillingNotificationEventType.PLATFORM_ALERT,
+        logical_event_key=f"invoice:{invoice.pk}:platform-alert:{failure_code}",
+        related_object_type="business_invoice",
+        related_object_id=str(invoice.pk),
+        recipient=recipient,
+        invoice_number=invoice.invoice_number,
+        amount=invoice.total,
+        currency=invoice.currency,
+        current_state=invoice.get_payment_state_display(),
+        failure_code=failure_code,
+        action_url=(
+            settings.SITE_URL.rstrip("/")
+            + reverse(
+                "plugins:eventyay_business:invoices.detail",
+                kwargs={"pk": invoice.pk},
+            )
+        ),
+    )
+
+
 def queue_invoice_notification(
-    invoice: BusinessInvoice, event_type: BillingNotificationEventType | str
+    invoice: BusinessInvoice,
+    event_type: BillingNotificationEventType | str,
+    *,
+    key_suffix: str = "",
+    **context_values,
 ) -> BillingNotificationDelivery | None:
     recipient = invoice_billing_recipient(invoice)
     if not recipient:
@@ -206,17 +544,31 @@ def queue_invoice_notification(
         )
         return None
     event_type = BillingNotificationEventType(event_type)
-    state_suffix = (
-        f":{invoice.payment_state}"
+    marker = key_suffix or (
+        invoice.payment_state
         if event_type == BillingNotificationEventType.COLLECTION_PROBLEM
         else ""
     )
+    state_suffix = f":{marker}" if marker else ""
+    with language(recipient.locale):
+        current_state = str(invoice.get_payment_state_display())
+    context = organizer_notification_context(
+        invoice.organizer,
+        event_type,
+        recipient,
+        invoice_number=invoice.invoice_number,
+        amount=invoice.total,
+        currency=invoice.currency,
+        current_state=current_state,
+        **context_values,
+    )
+    context.update(invoice_notification_context(invoice))
     return queue_billing_notification(
         logical_event_key=f"invoice:{invoice.pk}:{event_type}{state_suffix}",
         event_type=event_type,
         organizer=invoice.organizer,
         recipient=recipient,
-        context=invoice_notification_context(invoice),
+        context=context,
         related_object_type="business_invoice",
         related_object_id=str(invoice.pk),
     )
@@ -311,11 +663,20 @@ def retry_billing_notification(
 def preview_notification_context(_event_type: str) -> dict:
     today = now().date()
     return {
+        "event_type": BillingNotificationEventType(_event_type),
         "organizer_name": "Example Organizer",
+        "object_name": "Professional",
+        "event_name": "Example Conference",
         "invoice_number": "INV-EXAMPLE-001",
         "amount": str(Decimal("49.00")),
         "currency": "EUR",
         "issue_date": today.isoformat(),
+        "effective_date": today.isoformat(),
+        "deadline": today.isoformat(),
+        "next_retry_at": today.isoformat(),
+        "days_remaining": "3",
+        "current_state": "Active",
+        "failure_code": "stripe_unavailable",
         "action_url": settings.SITE_URL.rstrip("/") + "/control/",
         "support_email": GlobalSettingsObject().settings.get(
             "business_email_support_contact", as_type=str, default=""

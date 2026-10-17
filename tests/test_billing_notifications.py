@@ -2,6 +2,7 @@ import pytest
 from datetime import datetime
 from decimal import Decimal
 from django.db import transaction
+from django.template.loader import render_to_string
 from django.test import override_settings
 from django.urls import reverse
 from django.utils.timezone import make_aware, now
@@ -22,9 +23,11 @@ from eventyay_business.models import (
     Subscription,
 )
 from eventyay_business.notifications import (
+    NOTIFICATION_SPECS,
     BillingNotificationRecipient,
     deliver_billing_notification,
     invoice_billing_recipient,
+    preview_notification_context,
     queue_billing_notification,
     queue_invoice_notification,
 )
@@ -301,3 +304,15 @@ def test_delivery_history_uses_trimmed_organizer_filter(
     assert response.context["current_organizer"] == organizer.slug
     assert invoice.invoice_number.encode() not in response.content
     assert b"snapshot@example.com" in response.content
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("event_type", NOTIFICATION_SPECS)
+def test_all_billing_notification_templates_render(event_type):
+    spec = NOTIFICATION_SPECS[event_type]
+    body = render_to_string(
+        spec.template_name,
+        preview_notification_context(event_type),
+    )
+
+    assert body.strip()

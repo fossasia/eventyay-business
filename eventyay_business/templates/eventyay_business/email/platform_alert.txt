@@ -1,0 +1,5 @@
+{% load i18n %}{% blocktrans with organizer=organizer_name invoice=invoice_number %}Eventyay could not reconcile billing for organizer {{ organizer }} and invoice {{ invoice }} because of a platform-side condition.{% endblocktrans %}
+
+{% blocktrans with code=failure_code %}Failure code: {{ code }}{% endblocktrans %}
+{% trans "This condition was not presented to the organizer as their fault. Review the platform Stripe configuration, service availability and invoice reconciliation state:" %}
+{{ action_url }}

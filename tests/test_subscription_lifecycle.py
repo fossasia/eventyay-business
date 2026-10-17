@@ -12,6 +12,8 @@ from unittest.mock import MagicMock, patch
 
 from eventyay_business.models import (
     BillingInterval,
+    BillingNotificationDelivery,
+    BillingNotificationEventType,
     Subscription,
     SubscriptionStatus,
     Tier,
@@ -524,6 +526,46 @@ def test_manage_subscription_lifecycles_task(
     finally:
         subscription_downgraded.disconnect(on_downgraded)
         subscription_expired.disconnect(on_expired)
+
+
+@pytest.mark.django_db
+@override_settings(EVENTYAY_BUSINESS_GRACE_PERIOD_DAYS=7)
+def test_lifecycle_task_queues_deduplicated_grace_and_renewal_reminders(
+    lifecycle_data,
+):
+    organizer, _, _, _, _, pro_version, _, _ = lifecycle_data
+    subscription = Subscription.objects.get(organizer=organizer)
+    subscription.tier_version = pro_version
+    subscription.status = SubscriptionStatus.PAST_DUE
+    subscription.past_due_since = now() - timedelta(days=4)
+    subscription.save()
+
+    with patch("eventyay_business.notifications.schedule_billing_notification"):
+        manage_subscription_lifecycles()
+        manage_subscription_lifecycles()
+
+    assert (
+        BillingNotificationDelivery.objects.filter(
+            event_type=BillingNotificationEventType.GRACE_PERIOD_REMINDER,
+            related_object_id=str(subscription.pk),
+        ).count()
+        == 1
+    )
+
+    subscription.status = SubscriptionStatus.ACTIVE
+    subscription.ends_at = now() + timedelta(days=5)
+    subscription.save()
+    with patch("eventyay_business.notifications.schedule_billing_notification"):
+        manage_subscription_lifecycles()
+        manage_subscription_lifecycles()
+
+    assert (
+        BillingNotificationDelivery.objects.filter(
+            event_type=BillingNotificationEventType.RENEWAL_APPROACHING,
+            related_object_id=str(subscription.pk),
+        ).count()
+        == 1
+    )
 
 
 @pytest.mark.django_db

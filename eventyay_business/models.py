@@ -865,6 +865,37 @@ class BillingNotificationEventType(models.TextChoices):
     INVOICE_ISSUED = "invoice_issued", _("Invoice issued")
     COLLECTION_PROBLEM = "collection_problem", _("Collection problem")
     COLLECTION_SUCCEEDED = "collection_succeeded", _("Collection succeeded")
+    PAYMENT_METHOD_MISSING = "payment_method_missing", _("Payment method missing")
+    AUTHORIZATION_MISSING = "authorization_missing", _("Authorization missing")
+    PAYMENT_DECLINED = "payment_declined", _("Payment declined")
+    AUTHENTICATION_REQUIRED = "authentication_required", _("Authentication required")
+    RETRY_SCHEDULED = "retry_scheduled", _("Payment retry scheduled")
+    GRACE_PERIOD_STARTED = "grace_period_started", _("Grace period started")
+    GRACE_PERIOD_REMINDER = "grace_period_reminder", _("Grace period reminder")
+    ACCESS_EXPIRED = "access_expired", _("Access expired for nonpayment")
+    PAYMENT_METHOD_UPDATED = "payment_method_updated", _("Payment method updated")
+    ACCESS_RESTORED = "access_restored", _("Access restored")
+    SUPPORT_REQUIRED = "support_required", _("Support intervention required")
+    PLATFORM_ALERT = "platform_alert", _("Platform billing alert")
+    PLAN_ACTIVATED = "plan_activated", _("Plan activated")
+    PLAN_CHANGE_SCHEDULED = "plan_change_scheduled", _("Plan change scheduled")
+    PLAN_CHANGE_CANCELED = "plan_change_canceled", _("Plan change canceled")
+    PLAN_CHANGED = "plan_changed", _("Plan changed")
+    PLAN_CANCELLATION_SCHEDULED = "plan_cancellation_scheduled", _(
+        "Plan cancellation scheduled"
+    )
+    PLAN_CANCELLATION_CANCELED = "plan_cancellation_canceled", _(
+        "Plan cancellation canceled"
+    )
+    PLAN_CANCELED = "plan_canceled", _("Plan canceled")
+    ADDON_ACTIVATED = "addon_activated", _("Add-on activated")
+    ADDON_CANCELLATION_SCHEDULED = "addon_cancellation_scheduled", _(
+        "Add-on cancellation scheduled"
+    )
+    ADDON_CANCELED = "addon_canceled", _("Add-on canceled")
+    ADDON_EXPIRED = "addon_expired", _("Add-on expired")
+    RENEWAL_APPROACHING = "renewal_approaching", _("Renewal approaching")
+    CREDIT_ISSUED = "credit_issued", _("Credit or adjustment issued")
     ADMIN_TEST = "admin_test", _("Administrator test")
 
 
@@ -879,6 +910,7 @@ class BillingNotificationRecipientSource(models.TextChoices):
     INVOICE_SNAPSHOT = "invoice_snapshot", _("Invoice billing snapshot")
     BILLING_CONTACT = "billing_contact", _("Organizer billing contact")
     ORGANIZER_ADMIN = "organizer_admin", _("Organizer administrator")
+    PLATFORM_ADMIN = "platform_admin", _("Platform administrator")
     OVERRIDE = "override", _("Explicit test recipient")
 
 
