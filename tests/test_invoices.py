@@ -26,6 +26,8 @@ from eventyay_business.models import (
     AddonStatus,
     BillingCollectionAuthorization,
     BillingInterval,
+    BillingNotificationDelivery,
+    BillingNotificationEventType,
     BusinessInvoice,
     BusinessInvoiceLine,
     BusinessInvoiceStatus,
@@ -40,6 +42,7 @@ from eventyay_business.models import (
     TierVersion,
     UsageRecord,
 )
+from eventyay_business.notifications import deliver_billing_notification
 from eventyay_business.platform_fee_ledger import BILLING_CUTOVER_SETTING
 from eventyay_business.signals import record_automatic_collection_authorization
 from eventyay_business.tasks import generate_monthly_business_invoices
@@ -347,6 +350,11 @@ def test_finalization_snapshots_billing_address_and_notifies(
         )
     assert invoice.billing_address_snapshot["organization_name"] == "Acme Legal GmbH"
     assert invoice.billing_address_snapshot["tax_id"] == "DE123"
+    delivery = BillingNotificationDelivery.objects.get(
+        event_type=BillingNotificationEventType.INVOICE_ISSUED,
+        related_object_id=str(invoice.pk),
+    )
+    deliver_billing_notification(delivery.pk)
     assert len(mail.outbox) == 1
     assert invoice.invoice_number in mail.outbox[0].subject
     assert mail.outbox[0].to == ["accounts@example.com"]

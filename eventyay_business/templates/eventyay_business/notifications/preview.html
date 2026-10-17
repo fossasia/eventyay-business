@@ -1,0 +1,56 @@
+{% extends 'pretixcontrol/admin/base.html' %}
+{% load i18n %}
+{% load bootstrap3 %}
+
+{% block title %}{% translate 'Preview billing notifications' %}{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <h1>{% translate 'Preview billing notifications' %}</h1>
+  </div>
+
+  <div class="alert alert-info">
+    {% blocktranslate trimmed %}
+      Test delivery creates an audit record but never changes invoice, payment,
+      subscription or add-on state.
+    {% endblocktranslate %}
+  </div>
+
+  <div class="panel panel-default">
+    <div class="panel-heading">
+      <strong>{% translate 'Send a test notification' %}</strong>
+    </div>
+    <div class="panel-body">
+      <form method="post" class="form-horizontal">
+        {% csrf_token %}
+        {% bootstrap_form form layout='horizontal' %}
+        <div class="form-group">
+          <div class="col-md-9 col-md-offset-3">
+            <button type="submit" class="btn btn-primary">
+              <i class="fa fa-paper-plane" aria-hidden="true"></i>
+              {% translate 'Send test' %}
+            </button>
+            <a class="btn btn-default" href="{% url 'plugins:eventyay_business:notifications.list' %}">
+              {% translate 'View delivery history' %}
+            </a>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <h2>{% translate 'Template previews' %}</h2>
+  <div class="row">
+    {% for preview in previews %}
+      <div class="col-md-6">
+        <div class="panel panel-default">
+          <div class="panel-heading"><strong>{{ preview.label }}</strong></div>
+          <div class="panel-body">
+            <p><strong>{% translate 'Subject' %}:</strong> {{ preview.subject }}</p>
+            <pre class="notification-preview">{{ preview.body }}</pre>
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+{% endblock %}

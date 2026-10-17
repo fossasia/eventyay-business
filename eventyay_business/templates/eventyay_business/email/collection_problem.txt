@@ -1,0 +1,8 @@
+{% load i18n %}{% blocktrans with organizer=organizer_name invoice=invoice_number %}Hello {{ organizer }},
+
+We could not automatically collect payment for invoice {{ invoice }}.{% endblocktrans %}
+
+{% trans "Review your billing settings and update the saved payment method if needed:" %}
+{{ action_url }}
+
+{% if support_email %}{% blocktrans %}Questions? Contact {{ support_email }}.{% endblocktrans %}{% endif %}

@@ -22,12 +22,15 @@ from eventyay_business.invoice_collection import (
 )
 from eventyay_business.models import (
     BillingCollectionAuthorization,
+    BillingNotificationDelivery,
+    BillingNotificationEventType,
     BusinessInvoice,
     BusinessInvoiceStatus,
     InvoicePaymentState,
     Subscription,
     SubscriptionStatus,
 )
+from eventyay_business.notifications import deliver_billing_notification
 from eventyay_business.platform_fee_ledger import BILLING_CUTOVER_SETTING
 
 
@@ -132,6 +135,11 @@ def test_collects_finalized_invoice_once(
     assert invoice.stripe_payment_intent_id == "pi_invoice_1"
     assert invoice.collection_metadata["stripe_charge_id"] == "ch_invoice_1"
     assert subscription.status == SubscriptionStatus.ACTIVE
+    delivery = BillingNotificationDelivery.objects.get(
+        event_type=BillingNotificationEventType.COLLECTION_SUCCEEDED,
+        related_object_id=str(invoice.pk),
+    )
+    deliver_billing_notification(delivery.pk)
     assert len(mail.outbox) == 1
     assert invoice.invoice_number in mail.outbox[0].subject
 
@@ -209,6 +217,11 @@ def test_revoked_authorization_marks_invoice_past_due_and_notifies_once(
         collection_retry_due(invoice, current_time=now() + timedelta(days=30)) is False
     )
     assert subscription.status == SubscriptionStatus.PAST_DUE
+    delivery = BillingNotificationDelivery.objects.get(
+        event_type=BillingNotificationEventType.COLLECTION_PROBLEM,
+        related_object_id=str(invoice.pk),
+    )
+    deliver_billing_notification(delivery.pk)
     assert len(mail.outbox) == 1
     assert invoice.invoice_number in mail.outbox[0].subject
 

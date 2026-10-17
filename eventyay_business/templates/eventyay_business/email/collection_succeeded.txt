@@ -1,0 +1,8 @@
+{% load i18n %}{% blocktrans with organizer=organizer_name invoice=invoice_number amount=amount currency=currency %}Hello {{ organizer }},
+
+Payment for invoice {{ invoice }} ({{ amount }} {{ currency }}) was collected successfully.{% endblocktrans %}
+
+{% trans "The paid invoice is available in Eventyay:" %}
+{{ action_url }}
+
+{% if support_email %}{% blocktrans %}Questions? Contact {{ support_email }}.{% endblocktrans %}{% endif %}

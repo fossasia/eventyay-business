@@ -3,7 +3,6 @@ from datetime import timedelta
 from decimal import Decimal
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.core.mail import send_mail
 from django.db import DatabaseError, transaction
 from django.db.models import Q
 from django.utils.timezone import now
@@ -14,6 +13,7 @@ from eventyay.helpers.stripe_utils import get_stripe_secret_key
 from .models import (
     AddonStatus,
     BillingCollectionAuthorization,
+    BillingNotificationEventType,
     BusinessInvoice,
     BusinessInvoiceStatus,
     EventAddon,
@@ -22,6 +22,7 @@ from .models import (
     Subscription,
     SubscriptionStatus,
 )
+from .notifications import queue_invoice_notification
 from .platform_fee_ledger import organizer_consolidated_billing_enabled
 from .services import get_collection_retry_days, invalidate_entitlement_cache
 
@@ -227,46 +228,17 @@ def organizer_actionable_stripe_failure(error) -> CollectionFailureCode | None:
     return None
 
 
-def billing_contact_email(invoice: BusinessInvoice) -> str | None:
-    recipient = invoice.billing_address_snapshot.get("contact_email")
-    if not recipient:
-        billing = OrganizerBillingModel.objects.filter(
-            organizer=invoice.organizer
-        ).first()
-        recipient = billing.primary_contact_email if billing else None
-    return recipient
-
-
 def notify_collection_problem(invoice: BusinessInvoice) -> None:
-    recipient = billing_contact_email(invoice)
-    if not recipient:
-        return
-    send_mail(
-        f"Action required for Eventyay invoice {invoice.invoice_number}",
-        (
-            f"We could not automatically collect invoice {invoice.invoice_number}. "
-            "Sign in to Eventyay, review your billing settings, and update your "
-            "saved payment method if needed."
-        ),
-        settings.DEFAULT_FROM_EMAIL,
-        [recipient],
-        fail_silently=True,
+    queue_invoice_notification(
+        invoice,
+        BillingNotificationEventType.COLLECTION_PROBLEM,
     )
 
 
 def notify_collection_succeeded(invoice: BusinessInvoice) -> None:
-    recipient = billing_contact_email(invoice)
-    if not recipient:
-        return
-    send_mail(
-        f"Eventyay invoice {invoice.invoice_number} paid",
-        (
-            f"Payment for invoice {invoice.invoice_number} was collected "
-            "successfully. The paid invoice remains available in Eventyay."
-        ),
-        settings.DEFAULT_FROM_EMAIL,
-        [recipient],
-        fail_silently=True,
+    queue_invoice_notification(
+        invoice,
+        BillingNotificationEventType.COLLECTION_SUCCEEDED,
     )
 
 
