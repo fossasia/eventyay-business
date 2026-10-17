@@ -1,0 +1,103 @@
+{% extends 'pretixcontrol/admin/base.html' %}
+{% load i18n %}
+{% block title %}{% trans 'Billing reconciliation' %}{% endblock %}
+{% block content %}
+  <div class="page-header">
+    <h1>{% trans 'Billing reconciliation' %}</h1>
+  </div>
+  <div class="alert alert-info">
+    {% blocktranslate trimmed %}
+      Reporting mode calculates the consolidated invoice and records its inputs, but
+      rolls back invoices, source claims, emails and collection. No money is moved.
+    {% endblocktranslate %}
+  </div>
+  <div class="panel panel-default">
+    <div class="panel-heading"><strong>{% trans 'Run reporting mode' %}</strong></div>
+    <form method="post" action="{% url 'plugins:eventyay_business:reconciliation.run' %}">
+      {% csrf_token %}
+      <div class="panel-body">
+        <div class="form-inline">
+          <label for="run-period">{% trans 'Closed billing month' %}</label>
+          <input id="run-period" class="form-control" type="month" name="period">
+          <button class="btn btn-primary" type="submit">
+            <i class="fa fa-play" aria-hidden="true"></i> {% trans 'Run reconciliation' %}
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
+  <div class="panel panel-default">
+    <div class="panel-heading"><strong>{% trans 'Filters' %}</strong></div>
+    <form method="get">
+      <div class="panel-body">
+        <div class="row">
+          <div class="col-sm-4">
+            <label for="filter-organizer">{% trans 'Organizer' %}</label>
+            <select id="filter-organizer" class="form-control" name="organizer">
+              <option value="">{% trans 'All organizers' %}</option>
+              {% for organizer in organizers %}
+                <option value="{{ organizer.slug }}" {% if current_organizer == organizer.slug %}selected{% endif %}>{{ organizer.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-sm-4">
+            <label for="filter-period">{% trans 'Billing month' %}</label>
+            <input id="filter-period" class="form-control" type="month" name="period" value="{{ current_period }}">
+          </div>
+          <div class="col-sm-4">
+            <label for="filter-status">{% trans 'Status' %}</label>
+            <select id="filter-status" class="form-control" name="status">
+              <option value="">{% trans 'All statuses' %}</option>
+              {% for value, label in statuses %}
+                <option value="{{ value }}" {% if current_status == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="panel-footer text-right">
+        <a class="btn btn-default" href="{% url 'plugins:eventyay_business:reconciliation.list' %}">{% trans 'Reset' %}</a>
+        <button class="btn btn-primary" type="submit">{% trans 'Apply filters' %}</button>
+      </div>
+    </form>
+  </div>
+  {% if latest_run %}
+    <p class="text-right">
+      <a class="btn btn-default" href="{% url 'plugins:eventyay_business:reconciliation.export' pk=latest_run.pk %}">
+        <i class="fa fa-download" aria-hidden="true"></i> {% trans 'Export latest run' %}
+      </a>
+    </p>
+  {% endif %}
+  <div class="table-responsive">
+    <table class="table table-striped">
+      <thead>
+        <tr>
+          <th>{% trans 'Period' %}</th>
+          <th>{% trans 'Organizer' %}</th>
+          <th>{% trans 'Currency' %}</th>
+          <th>{% trans 'Expected total' %}</th>
+          <th>{% trans 'Status' %}</th>
+          <th>{% trans 'Findings' %}</th>
+          <th>{% trans 'Accepted' %}</th>
+          <th><span class="sr-only">{% trans 'Actions' %}</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for result in results %}
+          <tr>
+            <td>{{ result.run.period_start|date:'Y-m' }}</td>
+            <td>{{ result.organizer.name }}</td>
+            <td>{{ result.currency }}</td>
+            <td>{{ result.expected_total }}</td>
+            <td>{{ result.get_status_display }}</td>
+            <td>{{ result.blocking_finding_count }}</td>
+            <td>{% if result.is_currently_accepted %}{% trans 'Yes' %}{% else %}{% trans 'No' %}{% endif %}</td>
+            <td><a class="btn btn-sm btn-default" href="{% url 'plugins:eventyay_business:reconciliation.detail' pk=result.pk %}">{% trans 'Review' %}</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="8">{% trans 'No reconciliation results found.' %}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

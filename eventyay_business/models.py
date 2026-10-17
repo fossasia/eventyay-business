@@ -1232,6 +1232,20 @@ class BillingReconciliationResult(models.Model):
     findings = models.JSONField(default=list, blank=True, verbose_name=_("Findings"))
     snapshot = models.JSONField(default=dict, blank=True, verbose_name=_("Snapshot"))
     fingerprint = models.CharField(max_length=64, verbose_name=_("Fingerprint"))
+    accepted_fingerprint = models.CharField(
+        max_length=64, blank=True, verbose_name=_("Accepted fingerprint")
+    )
+    accepted_at = models.DateTimeField(
+        null=True, blank=True, verbose_name=_("Accepted at")
+    )
+    accepted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="accepted_billing_reconciliations",
+        verbose_name=_("Accepted by"),
+    )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("Created at"))
     updated_at = models.DateTimeField(auto_now=True, verbose_name=_("Updated at"))
 
@@ -1252,6 +1266,16 @@ class BillingReconciliationResult(models.Model):
 
     def __str__(self):
         return f"{self.organizer} {self.currency} reconciliation"
+
+    @property
+    def is_currently_accepted(self) -> bool:
+        return bool(
+            self.accepted_at
+            and self.accepted_fingerprint
+            and self.accepted_fingerprint == self.fingerprint
+            and self.status == BillingReconciliationResultStatus.READY
+            and self.blocking_finding_count == 0
+        )
 
 
 class BusinessInvoiceLine(models.Model):

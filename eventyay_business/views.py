@@ -77,6 +77,9 @@ from .models import (
     BillingNotificationEventType,
     BillingNotificationRecipientSource,
     BillingNotificationStatus,
+    BillingReconciliationResult,
+    BillingReconciliationResultStatus,
+    BillingReconciliationRun,
     BusinessInvoice,
     BusinessInvoiceStatus,
     CountryFeeSetting,
@@ -101,6 +104,10 @@ from .notifications import (
     retry_billing_notification,
 )
 from .platform_fee_ledger import organizer_consolidated_billing_enabled
+from .reconciliation import (
+    accept_reconciliation_result,
+    run_billing_reconciliation,
+)
 from .services import (
     invalidate_entitlement_cache,
     log_addon_lifecycle_action,
@@ -2635,6 +2642,146 @@ class AdminBillingActivationView(AdministratorPermissionRequiredMixin, TemplateV
             for organizer in Organizer.objects.order_by("name", "slug")
         ]
         return ctx
+
+
+class AdminBillingReconciliationListView(
+    AdministratorPermissionRequiredMixin, ListView
+):
+    model = BillingReconciliationResult
+    template_name = "eventyay_business/billing/reconciliation_list.html"
+    context_object_name = "results"
+    paginate_by = 100
+
+    def get_queryset(self):
+        queryset = BillingReconciliationResult.objects.select_related(
+            "run", "organizer", "accepted_by"
+        )
+        organizer = (self.request.GET.get("organizer") or "").strip()
+        status = (self.request.GET.get("status") or "").strip()
+        period = (self.request.GET.get("period") or "").strip()
+        if organizer:
+            queryset = queryset.filter(organizer__slug=organizer)
+        if status in BillingReconciliationResultStatus.values:
+            queryset = queryset.filter(status=status)
+        if period:
+            period_start, period_end, _ = parse_month(period)
+            queryset = queryset.filter(
+                run__period_start=period_start,
+                run__period_end=period_end,
+            )
+        return queryset.order_by("-run__period_start", "organizer__name", "currency")
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(
+            {
+                "organizers": Organizer.objects.order_by("name", "slug"),
+                "statuses": BillingReconciliationResultStatus.choices,
+                "current_organizer": (self.request.GET.get("organizer") or "").strip(),
+                "current_status": (self.request.GET.get("status") or "").strip(),
+                "current_period": (self.request.GET.get("period") or "").strip(),
+                "latest_run": BillingReconciliationRun.objects.first(),
+            }
+        )
+        return context
+
+
+class AdminBillingReconciliationDetailView(
+    AdministratorPermissionRequiredMixin, DetailView
+):
+    model = BillingReconciliationResult
+    template_name = "eventyay_business/billing/reconciliation_detail.html"
+    context_object_name = "result"
+
+    def get_queryset(self):
+        return super().get_queryset().select_related("run", "organizer", "accepted_by")
+
+
+class AdminBillingReconciliationRunView(AdministratorPermissionRequiredMixin, View):
+    def post(self, request, *args, **kwargs):
+        period = (request.POST.get("period") or "").strip()
+        if period:
+            period_start, period_end, _ = parse_month(period)
+            run = run_billing_reconciliation(period_start, period_end)
+        else:
+            run = run_billing_reconciliation()
+        messages.success(
+            request,
+            _("Billing reconciliation completed for %(count)s result(s).")
+            % {"count": run.summary.get("processed", 0)},
+        )
+        return redirect("plugins:eventyay_business:reconciliation.list")
+
+
+class AdminBillingReconciliationAcceptView(AdministratorPermissionRequiredMixin, View):
+    def post(self, request, *args, **kwargs):
+        result = get_object_or_404(BillingReconciliationResult, pk=kwargs["pk"])
+        try:
+            accept_reconciliation_result(result.pk, request.user)
+        except ValidationError:
+            messages.error(
+                request,
+                _("Resolve every blocking finding before accepting this result."),
+            )
+        else:
+            messages.success(request, _("Reconciliation result accepted."))
+        return redirect(
+            "plugins:eventyay_business:reconciliation.detail",
+            pk=result.pk,
+        )
+
+
+class AdminBillingReconciliationExportView(AdministratorPermissionRequiredMixin, View):
+    def get(self, request, *args, **kwargs):
+        run = get_object_or_404(BillingReconciliationRun, pk=kwargs["pk"])
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = (
+            f'attachment; filename="billing-reconciliation-{run.pk}.csv"'
+        )
+        writer = csv.writer(response)
+        writer.writerow(
+            [
+                "Organizer",
+                "Currency",
+                "Result status",
+                "Accepted",
+                "Expected total",
+                "Line type",
+                "Description",
+                "Service period start",
+                "Service period end",
+                "Amount",
+                "Source reference",
+                "Blocking findings",
+            ]
+        )
+        for result in run.results.select_related("organizer").order_by(
+            "organizer__slug", "currency"
+        ):
+            lines = result.snapshot.get("invoice", {}).get("lines", []) or [{}]
+            finding_codes = ", ".join(
+                finding["code"]
+                for finding in result.findings
+                if finding.get("severity") == "blocking"
+            )
+            for line in lines:
+                writer.writerow(
+                    [
+                        result.organizer.slug,
+                        result.currency,
+                        result.status,
+                        result.is_currently_accepted,
+                        result.expected_total,
+                        line.get("line_type", ""),
+                        line.get("description", ""),
+                        line.get("service_period_start", ""),
+                        line.get("service_period_end", ""),
+                        line.get("amount", ""),
+                        line.get("usage_reference", ""),
+                        finding_codes,
+                    ]
+                )
+        return response
 
 
 class AdminBillingActivationEnableView(AdministratorPermissionRequiredMixin, View):

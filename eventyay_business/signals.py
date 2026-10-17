@@ -529,6 +529,15 @@ if nav_global:
                 "parent": reverse("eventyay_admin:admin.global.business"),
             },
             {
+                "label": _("Billing reconciliation"),
+                "url": reverse("plugins:eventyay_business:reconciliation.list"),
+                "active": (
+                    url.namespace == "plugins:eventyay_business"
+                    and url.url_name.startswith("reconciliation.")
+                ),
+                "parent": reverse("eventyay_admin:admin.global.business"),
+            },
+            {
                 "label": _("Billing activation"),
                 "url": reverse("plugins:eventyay_business:billing_activation"),
                 "active": (
