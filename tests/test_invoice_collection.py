@@ -1,15 +1,14 @@
-from datetime import datetime, timedelta
-from decimal import Decimal
-from unittest.mock import patch
-
 import pytest
 import stripe
+from datetime import datetime, timedelta
+from decimal import Decimal
 from django.core import mail
 from django.core.exceptions import ValidationError
 from django.test import override_settings
 from django.utils.timezone import make_aware, now
 from eventyay.base.models import Organizer
 from eventyay.base.models.organizer import OrganizerBillingModel
+from unittest.mock import patch
 
 from eventyay_business.invoice_collection import (
     CollectionFailureCode,

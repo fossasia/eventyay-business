@@ -3,9 +3,6 @@ import logging
 from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
-from types import SimpleNamespace
-from uuid import uuid4
-
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -39,6 +36,8 @@ from eventyay.control.permissions import (
 from eventyay.control.views.organizer_views.organizer_detail_view_mixin import (
     OrganizerDetailViewMixin,
 )
+from types import SimpleNamespace
+from uuid import uuid4
 
 from .billing_migration import (
     consolidated_billing_preflight,
@@ -2194,9 +2193,7 @@ class OrganizerInvoiceDownloadView(
         return response
 
 
-class AdminBillingNotificationListView(
-    AdministratorPermissionRequiredMixin, ListView
-):
+class AdminBillingNotificationListView(AdministratorPermissionRequiredMixin, ListView):
     model = BillingNotificationDelivery
     template_name = "eventyay_business/notifications/admin_list.html"
     context_object_name = "deliveries"
@@ -2233,9 +2230,7 @@ class AdminBillingNotificationListView(
         return context
 
 
-class AdminBillingNotificationRetryView(
-    AdministratorPermissionRequiredMixin, View
-):
+class AdminBillingNotificationRetryView(AdministratorPermissionRequiredMixin, View):
     def post(self, request, *args, **kwargs):
         delivery = get_object_or_404(BillingNotificationDelivery, pk=kwargs["pk"])
         if delivery.status == BillingNotificationStatus.SENT:

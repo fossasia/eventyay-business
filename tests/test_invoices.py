@@ -1,8 +1,6 @@
+import pytest
 from datetime import datetime, time, timedelta
 from decimal import Decimal
-from unittest.mock import patch
-
-import pytest
 from django.core import mail
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -12,6 +10,7 @@ from eventyay.base.models import Event, Organizer, User
 from eventyay.base.models.auth import StaffSession
 from eventyay.base.models.organizer import OrganizerBillingModel
 from eventyay.base.settings import GlobalSettingsObject
+from unittest.mock import patch
 
 from eventyay_business.invoicing_service import (
     InvoiceCalculationError,

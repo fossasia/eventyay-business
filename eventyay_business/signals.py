@@ -1,6 +1,5 @@
 import datetime
 import logging
-
 from django.db import DatabaseError, transaction
 from django.db.models import Q, Sum
 from django.db.models.signals import post_save

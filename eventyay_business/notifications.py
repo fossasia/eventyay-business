@@ -1,9 +1,8 @@
 import logging
 import smtplib
+from celery.exceptions import CeleryError
 from dataclasses import dataclass
 from decimal import Decimal
-
-from celery.exceptions import CeleryError
 from django.conf import settings
 from django.db import transaction
 from django.template import TemplateDoesNotExist

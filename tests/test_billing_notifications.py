@@ -1,8 +1,6 @@
+import pytest
 from datetime import datetime
 from decimal import Decimal
-from unittest.mock import patch
-
-import pytest
 from django.db import transaction
 from django.test import override_settings
 from django.urls import reverse
@@ -11,6 +9,7 @@ from eventyay.base.models import Organizer, User
 from eventyay.base.models.auth import StaffSession
 from eventyay.base.models.organizer import OrganizerBillingModel
 from eventyay.base.services.mail import SendMailException
+from unittest.mock import patch
 
 from eventyay_business.models import (
     BillingNotificationDelivery,

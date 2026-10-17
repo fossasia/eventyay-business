@@ -1,13 +1,12 @@
 import logging
 from datetime import timedelta
 from decimal import Decimal
-from enum import StrEnum
-
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import DatabaseError, transaction
 from django.db.models import Q
 from django.utils.timezone import now
+from enum import StrEnum
 from eventyay.base.models.organizer import OrganizerBillingModel
 from eventyay.helpers.stripe_utils import get_stripe_secret_key
 

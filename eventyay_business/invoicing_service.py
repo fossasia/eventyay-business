@@ -1,7 +1,6 @@
 import logging
 from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
-
 from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils.timezone import is_aware, make_aware, now

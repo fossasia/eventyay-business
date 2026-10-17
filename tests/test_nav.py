@@ -1,7 +1,6 @@
-from unittest.mock import Mock
-
 from django.test import RequestFactory
 from django.urls import ResolverMatch
+from unittest.mock import Mock
 
 from eventyay_business.signals import (
     business_event_addons_nav,

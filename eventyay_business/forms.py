@@ -1,5 +1,4 @@
 from collections import OrderedDict
-
 from django import forms
 from django.conf import settings
 from django.forms import inlineformset_factory
@@ -33,8 +32,6 @@ try:
 except ImportError:
     from django.forms import (
         SplitDateTimeField,
-    )
-    from django.forms import (
         SplitDateTimeWidget as SplitDateTimePickerWidget,
     )
 
