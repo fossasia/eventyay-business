@@ -6,7 +6,7 @@ from django.core import mail
 from django.core.exceptions import ValidationError
 from django.test import override_settings
 from django.utils.timezone import make_aware, now
-from eventyay.base.models import Organizer
+from eventyay.base.models import Organizer, User
 from eventyay.base.models.organizer import OrganizerBillingModel
 from unittest.mock import patch
 
@@ -218,7 +218,7 @@ def test_revoked_authorization_marks_invoice_past_due_and_notifies_once(
     )
     assert subscription.status == SubscriptionStatus.PAST_DUE
     delivery = BillingNotificationDelivery.objects.get(
-        event_type=BillingNotificationEventType.COLLECTION_PROBLEM,
+        event_type=BillingNotificationEventType.AUTHORIZATION_MISSING,
         related_object_id=str(invoice.pk),
     )
     deliver_billing_notification(delivery.pk)
@@ -229,6 +229,7 @@ def test_revoked_authorization_marks_invoice_past_due_and_notifies_once(
 @pytest.mark.django_db
 def test_missing_payment_method_blocks_retries_until_payment_method_update(
     collection_setup,
+    django_capture_on_commit_callbacks,
 ):
     _, subscription, billing, invoice = collection_setup
     billing.stripe_payment_method_id = ""
@@ -239,7 +240,9 @@ def test_missing_payment_method_blocks_retries_until_payment_method_update(
         return_value="sk_test_collection",
     ), patch(
         "eventyay_business.invoice_collection.stripe.PaymentIntent.create"
-    ) as create:
+    ) as create, django_capture_on_commit_callbacks(
+        execute=True
+    ):
         result = collect_business_invoice(invoice)
 
     create.assert_not_called()
@@ -252,16 +255,35 @@ def test_missing_payment_method_blocks_retries_until_payment_method_update(
         collection_retry_due(result, current_time=now() + timedelta(days=30)) is False
     )
     assert subscription.status == SubscriptionStatus.PAST_DUE
+    assert (
+        BillingNotificationDelivery.objects.filter(
+            event_type=BillingNotificationEventType.PAYMENT_METHOD_MISSING,
+            related_object_id=str(invoice.pk),
+        ).count()
+        == 1
+    )
+    assert (
+        BillingNotificationDelivery.objects.filter(
+            event_type=BillingNotificationEventType.GRACE_PERIOD_STARTED,
+            related_object_id=str(subscription.pk),
+        ).count()
+        == 1
+    )
 
 
 @pytest.mark.django_db
-def test_platform_configuration_failure_keeps_subscription_active(collection_setup):
+def test_platform_configuration_failure_keeps_subscription_active(
+    collection_setup, django_capture_on_commit_callbacks
+):
     _, subscription, _, invoice = collection_setup
+    User.objects.create_user(
+        email="platform-admin@example.com", password="secret", is_staff=True
+    )
 
     with patch(
         "eventyay_business.invoice_collection.get_stripe_secret_key",
         side_effect=ValidationError("Stripe is not configured"),
-    ):
+    ), django_capture_on_commit_callbacks(execute=True):
         result = collect_business_invoice(invoice)
 
     subscription.refresh_from_db()
@@ -270,6 +292,63 @@ def test_platform_configuration_failure_keeps_subscription_active(collection_set
     assert result.collection_metadata["last_error"] == {
         "code": CollectionFailureCode.STRIPE_NOT_CONFIGURED
     }
+    assert subscription.status == SubscriptionStatus.ACTIVE
+    delivery = BillingNotificationDelivery.objects.get(
+        event_type=BillingNotificationEventType.PLATFORM_ALERT,
+        related_object_id=str(invoice.pk),
+    )
+    assert delivery.recipient == "platform-admin@example.com"
+    assert not BillingNotificationDelivery.objects.filter(
+        organizer=invoice.organizer,
+        event_type__in=[
+            BillingNotificationEventType.PAYMENT_DECLINED,
+            BillingNotificationEventType.PAYMENT_METHOD_MISSING,
+        ],
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_declined_payment_queues_retry_and_recovery_notifications(
+    collection_setup, django_capture_on_commit_callbacks
+):
+    _, subscription, _, invoice = collection_setup
+    invoice.collection_attempt_count = 1
+    invoice.last_collection_attempt_at = now()
+
+    with django_capture_on_commit_callbacks(execute=True):
+        update_invoice_from_payment_intent(
+            invoice,
+            {
+                "id": "pi_declined",
+                "status": "requires_payment_method",
+                "last_payment_error": {"code": "card_declined"},
+            },
+        )
+
+    assert BillingNotificationDelivery.objects.filter(
+        event_type=BillingNotificationEventType.PAYMENT_DECLINED,
+        related_object_id=str(invoice.pk),
+    ).exists()
+    retry = BillingNotificationDelivery.objects.get(
+        event_type=BillingNotificationEventType.RETRY_SCHEDULED,
+        related_object_id=str(invoice.pk),
+    )
+    assert retry.context["next_retry_at"]
+    subscription.refresh_from_db()
+    assert subscription.status == SubscriptionStatus.PAST_DUE
+
+    invoice.refresh_from_db()
+    with django_capture_on_commit_callbacks(execute=True):
+        update_invoice_from_payment_intent(
+            invoice,
+            {"id": "pi_declined", "status": "succeeded"},
+        )
+
+    assert BillingNotificationDelivery.objects.filter(
+        event_type=BillingNotificationEventType.ACCESS_RESTORED,
+        related_object_id=str(invoice.pk),
+    ).exists()
+    subscription.refresh_from_db()
     assert subscription.status == SubscriptionStatus.ACTIVE
 
 

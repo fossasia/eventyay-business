@@ -22,7 +22,11 @@ from .models import (
     Subscription,
     SubscriptionStatus,
 )
-from .notifications import queue_invoice_notification
+from .notifications import (
+    queue_invoice_notification,
+    queue_platform_alert,
+    queue_subscription_notification,
+)
 from .platform_fee_ledger import organizer_consolidated_billing_enabled
 from .services import get_collection_retry_days, invalidate_entitlement_cache
 
@@ -151,6 +155,25 @@ def collection_retry_due(invoice: BusinessInvoice, current_time=None) -> bool:
     return invoice.last_collection_attempt_at + retry_delay <= (current_time or now())
 
 
+def next_collection_retry_at(invoice: BusinessInvoice):
+    if not invoice.last_collection_attempt_at:
+        return None
+    retry_delays = collection_retry_delays()
+    if not retry_delays:
+        return None
+    metadata = (
+        invoice.collection_metadata
+        if isinstance(invoice.collection_metadata, dict)
+        else {}
+    )
+    attempt_count = collection_retry_attempt_count(invoice, metadata)
+    retry_index = min(max(attempt_count - 1, 0), len(retry_delays) - 1)
+    previous_offset = retry_delays[retry_index - 1] if retry_index else timedelta(0)
+    return invoice.last_collection_attempt_at + (
+        retry_delays[retry_index] - previous_offset
+    )
+
+
 def invoice_amount_in_minor_units(invoice: BusinessInvoice) -> int:
     places = settings.CURRENCY_PLACES.get(invoice.currency, 2)
     return int(invoice.total * (Decimal("10") ** places))
@@ -229,10 +252,74 @@ def organizer_actionable_stripe_failure(error) -> CollectionFailureCode | None:
 
 
 def notify_collection_problem(invoice: BusinessInvoice) -> None:
+    failure_code = invoice_collection_failure_code(invoice)
+    platform_failure_codes = {
+        CollectionFailureCode.STRIPE_UNAVAILABLE,
+        CollectionFailureCode.STRIPE_NOT_CONFIGURED,
+        CollectionFailureCode.STRIPE_CONNECTION_ERROR,
+        CollectionFailureCode.STRIPE_ERROR,
+        CollectionFailureCode.UNKNOWN_PAYMENT_STATE,
+    }
+    if failure_code in platform_failure_codes:
+        queue_platform_alert(invoice, str(failure_code))
+        return
+
+    event_type = {
+        CollectionFailureCode.BILLING_RECORD_MISSING: (
+            BillingNotificationEventType.PAYMENT_METHOD_MISSING
+        ),
+        CollectionFailureCode.BILLING_CUSTOMER_MISSING: (
+            BillingNotificationEventType.PAYMENT_METHOD_MISSING
+        ),
+        CollectionFailureCode.PAYMENT_METHOD_MISSING: (
+            BillingNotificationEventType.PAYMENT_METHOD_MISSING
+        ),
+        CollectionFailureCode.AUTHORIZATION_MISSING: (
+            BillingNotificationEventType.AUTHORIZATION_MISSING
+        ),
+        CollectionFailureCode.AUTHENTICATION_REQUIRED: (
+            BillingNotificationEventType.AUTHENTICATION_REQUIRED
+        ),
+    }.get(failure_code, BillingNotificationEventType.PAYMENT_DECLINED)
+    if invoice.collection_metadata.get("retry_exhausted"):
+        event_type = BillingNotificationEventType.SUPPORT_REQUIRED
     queue_invoice_notification(
         invoice,
-        BillingNotificationEventType.COLLECTION_PROBLEM,
+        event_type,
+        key_suffix=str(failure_code or "unknown"),
     )
+
+    subscription = (
+        Subscription.objects.filter(
+            organizer=invoice.organizer,
+            status=SubscriptionStatus.PAST_DUE,
+        )
+        .select_related("tier_version", "tier_version__tier")
+        .first()
+    )
+    if subscription:
+        queue_subscription_notification(
+            subscription,
+            BillingNotificationEventType.GRACE_PERIOD_STARTED,
+            key_suffix=(
+                subscription.past_due_since.isoformat()
+                if subscription.past_due_since
+                else str(invoice.pk)
+            ),
+        )
+
+    if (
+        failure_code not in COLLECTION_RETRY_BLOCKED_CODES
+        and not invoice.collection_metadata.get("retry_exhausted")
+    ):
+        retry_at = next_collection_retry_at(invoice)
+        if retry_at:
+            queue_invoice_notification(
+                invoice,
+                BillingNotificationEventType.RETRY_SCHEDULED,
+                key_suffix=str(invoice.collection_attempt_count),
+                next_retry_at=retry_at,
+            )
 
 
 def notify_collection_succeeded(invoice: BusinessInvoice) -> None:
@@ -240,6 +327,11 @@ def notify_collection_succeeded(invoice: BusinessInvoice) -> None:
         invoice,
         BillingNotificationEventType.COLLECTION_SUCCEEDED,
     )
+    if invoice.collection_metadata.get("recovered_from"):
+        queue_invoice_notification(
+            invoice,
+            BillingNotificationEventType.ACCESS_RESTORED,
+        )
 
 
 def update_organizer_collection_health(organizer, succeeded: bool) -> None:
@@ -311,7 +403,11 @@ def update_invoice_from_payment_intent(
     if error_details:
         metadata["last_error"] = error_details
     elif status == "succeeded":
-        metadata.pop("last_error", None)
+        previous_error = metadata.pop("last_error", None) or metadata.get(
+            "previous_error"
+        )
+        if previous_error:
+            metadata["recovered_from"] = previous_error
         metadata.pop("retry_exhausted", None)
         metadata.pop("retry_after_payment_method_update", None)
         metadata.pop("retry_cycle_start_attempt", None)
@@ -366,12 +462,12 @@ def update_invoice_from_payment_intent(
         in (InvoicePaymentState.FAILED, InvoicePaymentState.REQUIRES_ACTION)
         and previous_state != invoice.payment_state
     ):
-        transaction.on_commit(lambda: notify_collection_problem(invoice))
+        transaction.on_commit(lambda: notify_collection_problem(invoice), robust=True)
     elif (
         invoice.payment_state == InvoicePaymentState.SUCCEEDED
         and previous_state != InvoicePaymentState.SUCCEEDED
     ):
-        transaction.on_commit(lambda: notify_collection_succeeded(invoice))
+        transaction.on_commit(lambda: notify_collection_succeeded(invoice), robust=True)
     return invoice
 
 
@@ -402,7 +498,7 @@ def fail_invoice_collection(
     )
     update_organizer_collection_health(invoice.organizer, succeeded=False)
     if previous_state != InvoicePaymentState.FAILED:
-        transaction.on_commit(lambda: notify_collection_problem(invoice))
+        transaction.on_commit(lambda: notify_collection_problem(invoice), robust=True)
     return invoice
 
 
@@ -430,6 +526,10 @@ def mark_collection_reconciliation(
             "collection_metadata",
             "updated_at",
         ]
+    )
+    transaction.on_commit(
+        lambda: notify_collection_problem(invoice),
+        robust=True,
     )
     return invoice
 

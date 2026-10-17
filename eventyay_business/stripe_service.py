@@ -29,9 +29,13 @@ from .models import (
 from .platform_fee_ledger import organizer_consolidated_billing_enabled
 from .services import invalidate_entitlement_cache, log_addon_lifecycle_action
 from .signals import (
+    addon_canceled,
     addon_purchased,
     record_automatic_collection_authorization,
+    subscription_canceled,
+    subscription_past_due,
     subscription_purchased,
+    subscription_recovered,
 )
 
 logger = logging.getLogger(__name__)
@@ -1295,6 +1299,7 @@ def process_subscription_change(event_type: str, sub_data: dict):
                 .first()
             )
             if sub:
+                previous_status = sub.status
                 is_downgrading = False
                 if (
                     event_type == "customer.subscription.deleted"
@@ -1326,6 +1331,25 @@ def process_subscription_change(event_type: str, sub_data: dict):
                     from .signals import subscription_downgraded
 
                     subscription_downgraded.send(sender=Subscription, instance=sub)
+                elif (
+                    sub.status == SubscriptionStatus.CANCELED
+                    and previous_status != sub.status
+                ):
+                    subscription_canceled.send(sender=Subscription, instance=sub)
+                elif (
+                    sub.status == SubscriptionStatus.PAST_DUE
+                    and previous_status != sub.status
+                ):
+                    subscription_past_due.send(sender=Subscription, instance=sub)
+                elif (
+                    sub.status == SubscriptionStatus.ACTIVE
+                    and previous_status == SubscriptionStatus.PAST_DUE
+                ):
+                    subscription_recovered.send(
+                        sender=Subscription,
+                        instance=sub,
+                        recovery_marker=stripe_sub_id,
+                    )
                 invalidate_entitlement_cache(organizer=sub.organizer)
 
             # 2. Check OrganizerAddon
@@ -1335,6 +1359,7 @@ def process_subscription_change(event_type: str, sub_data: dict):
                 .first()
             )
             if org_addon:
+                previous_status = org_addon.status
                 if (
                     event_type == "customer.subscription.deleted"
                     or stripe_status == "canceled"
@@ -1347,6 +1372,13 @@ def process_subscription_change(event_type: str, sub_data: dict):
                     if period_end:
                         org_addon.ends_at = period_end
                 org_addon.save()
+                if (
+                    org_addon.status == AddonStatus.CANCELED
+                    and previous_status != org_addon.status
+                ):
+                    addon_canceled.send(
+                        sender=OrganizerAddon, instance=org_addon, immediate=False
+                    )
                 invalidate_entitlement_cache(organizer=org_addon.organizer)
 
             # 3. Check EventAddon
@@ -1356,6 +1388,7 @@ def process_subscription_change(event_type: str, sub_data: dict):
                 .first()
             )
             if event_addon:
+                previous_status = event_addon.status
                 if (
                     event_type == "customer.subscription.deleted"
                     or stripe_status == "canceled"
@@ -1368,6 +1401,13 @@ def process_subscription_change(event_type: str, sub_data: dict):
                     if period_end:
                         event_addon.ends_at = period_end
                 event_addon.save()
+                if (
+                    event_addon.status == AddonStatus.CANCELED
+                    and previous_status != event_addon.status
+                ):
+                    addon_canceled.send(
+                        sender=EventAddon, instance=event_addon, immediate=False
+                    )
                 invalidate_entitlement_cache(
                     organizer=event_addon.event.organizer,
                     event=event_addon.event,
@@ -1390,11 +1430,14 @@ def process_invoice_payment_failed(invoice_data: dict):
                 .first()
             )
             if sub:
+                was_past_due = sub.status == SubscriptionStatus.PAST_DUE
                 sub.status = SubscriptionStatus.PAST_DUE
                 if not sub.past_due_since:
                     sub.past_due_since = now()
                 sub.save(update_fields=["status", "past_due_since", "updated_at"])
                 invalidate_entitlement_cache(organizer=sub.organizer)
+                if not was_past_due:
+                    subscription_past_due.send(sender=Subscription, instance=sub)
 
             # Also mark linked recurring add-ons past due
             org_addons = OrganizerAddon.objects.select_for_update().filter(
@@ -1434,10 +1477,16 @@ def process_invoice_paid(invoice_data: dict):
                 .first()
             )
             if sub and sub.status == SubscriptionStatus.PAST_DUE:
+                recovery_marker = invoice_data.get("id") or stripe_sub_id
                 sub.status = SubscriptionStatus.ACTIVE
                 sub.past_due_since = None
                 sub.save(update_fields=["status", "past_due_since", "updated_at"])
                 invalidate_entitlement_cache(organizer=sub.organizer)
+                subscription_recovered.send(
+                    sender=Subscription,
+                    instance=sub,
+                    recovery_marker=recovery_marker,
+                )
 
             if sub:
                 stripe_inv_id = invoice_data.get("id")

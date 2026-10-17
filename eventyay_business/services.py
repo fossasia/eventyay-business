@@ -11,6 +11,7 @@ from .models import CountryFeeSetting
 logger = logging.getLogger(__name__)
 
 DEFAULT_COLLECTION_RETRY_DAYS = (1, 3, 5)
+DEFAULT_GRACE_REMINDER_DAYS = (3, 1)
 MAX_COLLECTION_RETRY_INTERVALS = 10
 MAX_COLLECTION_RETRY_DELAY_DAYS = 365
 
@@ -62,6 +63,54 @@ def get_collection_retry_days() -> tuple[int, ...]:
                 configured,
             )
     return DEFAULT_COLLECTION_RETRY_DAYS
+
+
+def normalize_grace_reminder_days(value) -> tuple[int, ...]:
+    if isinstance(value, str):
+        values = [part.strip() for part in value.split(",") if part.strip()]
+    elif isinstance(value, (list, tuple)):
+        values = list(value)
+    else:
+        raise ValueError("Reminder days must be a comma-separated list.")
+    try:
+        days = tuple(int(item) for item in values)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Reminder days must contain whole numbers only.") from exc
+    if not days or any(day < 1 or day > 365 for day in days):
+        raise ValueError("Reminder days must be between 1 and 365 days.")
+    if len(set(days)) != len(days):
+        raise ValueError("Reminder days must be unique.")
+    return tuple(sorted(days, reverse=True))
+
+
+def get_grace_reminder_days() -> tuple[int, ...]:
+    try:
+        configured = GlobalSettingsObject().settings.get(
+            "business_grace_reminder_days", as_type=str
+        )
+    except (AttributeError, DatabaseError, TypeError, ValueError):
+        configured = None
+    if configured:
+        try:
+            return normalize_grace_reminder_days(configured)
+        except ValueError:
+            logger.warning(
+                "Ignoring invalid business billing reminder schedule: %r",
+                configured,
+            )
+    return DEFAULT_GRACE_REMINDER_DAYS
+
+
+def get_renewal_reminder_days() -> int:
+    try:
+        configured = GlobalSettingsObject().settings.get(
+            "business_renewal_reminder_days", as_type=int
+        )
+        if configured is not None and 1 <= int(configured) <= 365:
+            return int(configured)
+    except (AttributeError, DatabaseError, TypeError, ValueError):
+        pass
+    return 7
 
 
 def record_usage(

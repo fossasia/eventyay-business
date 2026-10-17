@@ -1,0 +1,36 @@
+{% load i18n %}{% blocktrans with organizer=organizer_name %}Hello {{ organizer }},{% endblocktrans %}
+
+{% if event_type == 'payment_method_missing' %}{% blocktrans with invoice=invoice_number %}Eventyay could not collect invoice {{ invoice }} because no usable payment method is saved. Your paid access remains available only until the deadline below. Add a payment method to keep the subscription and recurring add-ons active.{% endblocktrans %}
+{% elif event_type == 'authorization_missing' %}{% blocktrans with invoice=invoice_number %}Automatic collection is disabled for invoice {{ invoice }}. Your subscription remains active, but Eventyay cannot collect the amount until automatic payments are enabled or the payment details are saved again.{% endblocktrans %}
+{% elif event_type == 'payment_declined' %}{% blocktrans with invoice=invoice_number %}The saved payment method was declined for invoice {{ invoice }}. Eventyay will retry according to the billing schedule unless a replacement payment method is required.{% endblocktrans %}
+{% elif event_type == 'authentication_required' %}{% blocktrans with invoice=invoice_number %}Invoice {{ invoice }} requires payment authentication. Open Eventyay billing settings to confirm the payment or replace the payment method.{% endblocktrans %}
+{% elif event_type == 'retry_scheduled' %}{% blocktrans with invoice=invoice_number retry=next_retry_at %}Another collection attempt for invoice {{ invoice }} is scheduled for {{ retry }}.{% endblocktrans %}
+{% elif event_type == 'grace_period_started' %}{% blocktrans with deadline=deadline %}The billing grace period has started. Paid plan and recurring add-on access is scheduled to expire on {{ deadline }} if the outstanding balance is not paid.{% endblocktrans %}
+{% elif event_type == 'grace_period_reminder' %}{% blocktrans with days=days_remaining deadline=deadline %}There are {{ days }} days left in the billing grace period. Paid access is scheduled to expire on {{ deadline }} if payment is not recovered.{% endblocktrans %}
+{% elif event_type == 'access_expired' %}{% blocktrans %}Paid plan or add-on access expired because the outstanding payment was not recovered before the grace deadline. This was a nonpayment expiry, not a voluntary cancellation.{% endblocktrans %}
+{% elif event_type == 'payment_method_updated' %}{% blocktrans %}Your payment method was updated and Eventyay started retrying eligible outstanding invoices. No plan or add-on was canceled by this update.{% endblocktrans %}
+{% elif event_type == 'access_restored' %}{% blocktrans %}Late payment succeeded and Eventyay restored the paid plan and recurring add-on access associated with this organizer.{% endblocktrans %}
+{% elif event_type == 'support_required' %}{% blocktrans with invoice=invoice_number %}Automatic collection for invoice {{ invoice }} is exhausted or cannot continue safely. Contact support to resolve the outstanding balance.{% endblocktrans %}
+{% elif event_type == 'plan_activated' %}{% blocktrans with plan=object_name %}Your {{ plan }} plan is active.{% endblocktrans %}
+{% elif event_type == 'plan_change_scheduled' %}{% blocktrans with plan=object_name date=effective_date %}Your change to the {{ plan }} plan is scheduled for {{ date }}. Your current plan remains active until then.{% endblocktrans %}
+{% elif event_type == 'plan_change_canceled' %}{% blocktrans %}The scheduled plan change was canceled. Your current plan remains active.{% endblocktrans %}
+{% elif event_type == 'plan_changed' %}{% blocktrans with plan=object_name %}Your plan changed to {{ plan }}.{% endblocktrans %}
+{% elif event_type == 'plan_cancellation_scheduled' %}{% blocktrans with deadline=deadline plan=object_name %}Your paid plan is scheduled to end on {{ deadline }} and transition to {{ plan }}. Paid features remain available until then.{% endblocktrans %}
+{% elif event_type == 'plan_cancellation_canceled' %}{% blocktrans %}The scheduled plan cancellation was canceled. Your current paid plan remains active.{% endblocktrans %}
+{% elif event_type == 'plan_canceled' %}{% blocktrans %}Your paid plan ended following the cancellation you requested. This message does not refer to a nonpayment expiry.{% endblocktrans %}
+{% elif event_type == 'addon_activated' %}{% if event_name %}{% blocktrans with addon=object_name event=event_name %}The {{ addon }} add-on is active for {{ event }}.{% endblocktrans %}{% else %}{% blocktrans with addon=object_name %}The {{ addon }} add-on is active.{% endblocktrans %}{% endif %}
+{% elif event_type == 'addon_cancellation_scheduled' %}{% blocktrans with addon=object_name deadline=deadline %}The {{ addon }} add-on is scheduled to end on {{ deadline }}. Its features remain active until then.{% endblocktrans %}
+{% elif event_type == 'addon_canceled' %}{% blocktrans with addon=object_name %}The {{ addon }} add-on ended following the requested cancellation.{% endblocktrans %}
+{% elif event_type == 'addon_expired' %}{% blocktrans with addon=object_name %}Access provided by the {{ addon }} add-on expired.{% endblocktrans %}
+{% elif event_type == 'renewal_approaching' %}{% blocktrans with name=object_name date=effective_date %}The {{ name }} renewal is approaching on {{ date }}.{% endblocktrans %}
+{% elif event_type == 'credit_issued' %}{% blocktrans with invoice=invoice_number %}A credit or adjustment was issued for invoice {{ invoice }}.{% endblocktrans %}
+{% else %}{% blocktrans %}There is an update to your Eventyay Business billing account.{% endblocktrans %}{% endif %}
+
+{% if amount and currency %}{% blocktrans %}Amount: {{ amount }} {{ currency }}{% endblocktrans %}
+{% endif %}{% if current_state %}{% blocktrans %}Current state: {{ current_state }}{% endblocktrans %}
+{% endif %}{% if deadline and event_type != 'grace_period_started' and event_type != 'grace_period_reminder' and event_type != 'plan_cancellation_scheduled' and event_type != 'addon_cancellation_scheduled' %}{% blocktrans %}Deadline: {{ deadline }}{% endblocktrans %}
+{% endif %}
+{% trans "Review this in Eventyay:" %}
+{{ action_url }}
+
+{% if support_email %}{% blocktrans %}Questions? Contact {{ support_email }}.{% endblocktrans %}{% endif %}
