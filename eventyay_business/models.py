@@ -914,6 +914,18 @@ class BillingNotificationRecipientSource(models.TextChoices):
     OVERRIDE = "override", _("Explicit test recipient")
 
 
+class BillingReconciliationRunStatus(models.TextChoices):
+    RUNNING = "running", _("Running")
+    COMPLETED = "completed", _("Completed")
+    FAILED = "failed", _("Failed")
+
+
+class BillingReconciliationResultStatus(models.TextChoices):
+    READY = "ready", _("Ready for review")
+    BLOCKED = "blocked", _("Blocked")
+    ERROR = "error", _("Calculation error")
+
+
 class InvoiceLineType(models.TextChoices):
     SUBSCRIPTION = "subscription", _("Subscription plan")
     ADDON = "addon", _("Add-on package")
@@ -1155,6 +1167,91 @@ class BillingNotificationDelivery(models.Model):
 
     def __str__(self):
         return f"{self.get_event_type_display()} to {self.recipient}"
+
+
+class BillingReconciliationRun(models.Model):
+    period_start = models.DateTimeField(verbose_name=_("Billing period start"))
+    period_end = models.DateTimeField(verbose_name=_("Billing period end"))
+    status = models.CharField(
+        max_length=20,
+        choices=BillingReconciliationRunStatus.choices,
+        default=BillingReconciliationRunStatus.RUNNING,
+        verbose_name=_("Status"),
+    )
+    summary = models.JSONField(default=dict, blank=True, verbose_name=_("Summary"))
+    started_at = models.DateTimeField(default=now, verbose_name=_("Started at"))
+    completed_at = models.DateTimeField(
+        null=True, blank=True, verbose_name=_("Completed at")
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("Created at"))
+    updated_at = models.DateTimeField(auto_now=True, verbose_name=_("Updated at"))
+
+    class Meta:
+        ordering = ["-period_start", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["period_start", "period_end"],
+                name="unique_billing_reconciliation_period",
+            )
+        ]
+
+    def __str__(self):
+        return f"Billing reconciliation {self.period_start:%Y-%m-%d}"
+
+
+class BillingReconciliationResult(models.Model):
+    run = models.ForeignKey(
+        BillingReconciliationRun,
+        on_delete=models.CASCADE,
+        related_name="results",
+        verbose_name=_("Reconciliation run"),
+    )
+    organizer = models.ForeignKey(
+        "base.Organizer",
+        on_delete=models.CASCADE,
+        related_name="billing_reconciliation_results",
+        verbose_name=_("Organizer"),
+    )
+    currency = models.CharField(max_length=3, verbose_name=_("Currency"))
+    status = models.CharField(
+        max_length=20,
+        choices=BillingReconciliationResultStatus.choices,
+        default=BillingReconciliationResultStatus.BLOCKED,
+        verbose_name=_("Status"),
+    )
+    expected_total = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        verbose_name=_("Expected total"),
+    )
+    line_count = models.PositiveIntegerField(default=0, verbose_name=_("Line count"))
+    blocking_finding_count = models.PositiveIntegerField(
+        default=0, verbose_name=_("Blocking finding count")
+    )
+    findings = models.JSONField(default=list, blank=True, verbose_name=_("Findings"))
+    snapshot = models.JSONField(default=dict, blank=True, verbose_name=_("Snapshot"))
+    fingerprint = models.CharField(max_length=64, verbose_name=_("Fingerprint"))
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("Created at"))
+    updated_at = models.DateTimeField(auto_now=True, verbose_name=_("Updated at"))
+
+    class Meta:
+        ordering = ["organizer__name", "currency"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["run", "organizer", "currency"],
+                name="unique_billing_reconciliation_result",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=["status", "updated_at"],
+                name="billing_recon_status_updated",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.organizer} {self.currency} reconciliation"
 
 
 class BusinessInvoiceLine(models.Model):
