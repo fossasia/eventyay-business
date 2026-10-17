@@ -10,6 +10,7 @@ from .invoice_collection import (
     retry_outstanding_business_invoices_after_payment_method_update,
 )
 from .notifications import deliver_billing_notification
+from .reconciliation import run_billing_reconciliation
 
 logger = logging.getLogger(__name__)
 
@@ -427,6 +428,12 @@ def generate_monthly_business_invoices_task():
     return generate_monthly_business_invoices()
 
 
+@app.task(name="eventyay_business.run_billing_reconciliation")
+def run_billing_reconciliation_task():
+    run = run_billing_reconciliation()
+    return {"run_id": run.pk, **run.summary}
+
+
 if periodic_task:
 
     @receiver(periodic_task, dispatch_uid="business_manage_subscription_lifecycles")
@@ -436,3 +443,8 @@ if periodic_task:
     @receiver(periodic_task, dispatch_uid="business_generate_monthly_invoices")
     def periodic_generate_business_invoices(sender, **kwargs):
         return generate_monthly_business_invoices()
+
+    @receiver(periodic_task, dispatch_uid="business_billing_reconciliation")
+    def periodic_billing_reconciliation(sender, **kwargs):
+        run = run_billing_reconciliation()
+        return {"run_id": run.pk, **run.summary}
