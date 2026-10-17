@@ -21,6 +21,7 @@ from .models import (
     TierPrice,
     TierVersion,
 )
+from .services import normalize_collection_retry_days
 
 try:
     from eventyay.base.forms.widgets import SplitDateTimePickerWidget
@@ -936,6 +937,18 @@ class GlobalBusinessSettingsForm(SettingsForm):
                             ),
                         ),
                     ),
+                    (
+                        "business_collection_retry_days",
+                        forms.CharField(
+                            label=_("Invoice collection retry days"),
+                            required=False,
+                            initial="1, 3, 5",
+                            help_text=_(
+                                "Comma-separated days after a failed charge to retry, for example 1, 3, 5. "
+                                "Use up to 10 ascending values between 1 and 365."
+                            ),
+                        ),
+                    ),
                 ]
             )
         )
@@ -952,6 +965,10 @@ class GlobalBusinessSettingsForm(SettingsForm):
         )
         if grace_days is not None:
             self.initial["business_grace_period_days"] = int(grace_days)
+        retry_days = self.obj.settings.get(
+            "business_collection_retry_days", as_type=str, default="1, 3, 5"
+        )
+        self.initial["business_collection_retry_days"] = retry_days or "1, 3, 5"
 
         self.field_groups = [
             (
@@ -964,6 +981,7 @@ class GlobalBusinessSettingsForm(SettingsForm):
                     "payment_stripe_test_secret_key",
                     "stripe_webhook_secret_key",
                     "business_grace_period_days",
+                    "business_collection_retry_days",
                 ],
             ),
             (
@@ -974,6 +992,14 @@ class GlobalBusinessSettingsForm(SettingsForm):
                 ],
             ),
         ]
+
+    def clean_business_collection_retry_days(self):
+        value = self.cleaned_data.get("business_collection_retry_days") or "1, 3, 5"
+        try:
+            days = normalize_collection_retry_days(value)
+        except ValueError as exc:
+            raise forms.ValidationError(str(exc)) from exc
+        return ", ".join(str(day) for day in days)
 
 
 class InvoicePresentationSettingsForm(SettingsForm):

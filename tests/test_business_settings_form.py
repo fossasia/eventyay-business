@@ -43,3 +43,21 @@ def test_business_settings_sidebar_target_opens_plugin_page(client):
     response = client.get(url)
     assert response.status_code == 200
     assert b"Business Settings" in response.content
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("value", ["", "1, 3, 5", "2, 7"])
+def test_collection_retry_schedule_accepts_bounded_ascending_days(value):
+    form = GlobalBusinessSettingsForm(data={"business_collection_retry_days": value})
+
+    assert form.is_valid(), form.errors
+    assert form.cleaned_data["business_collection_retry_days"] == (value or "1, 3, 5")
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("value", ["0, 3", "3, 1", "1, 1", "one, two"])
+def test_collection_retry_schedule_rejects_invalid_values(value):
+    form = GlobalBusinessSettingsForm(data={"business_collection_retry_days": value})
+
+    assert not form.is_valid()
+    assert "business_collection_retry_days" in form.errors

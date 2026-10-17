@@ -3,6 +3,7 @@ import stripe
 from datetime import datetime, timedelta
 from decimal import Decimal
 from django.core import mail
+from django.core.exceptions import ValidationError
 from django.test import override_settings
 from django.utils.timezone import make_aware, now
 from eventyay.base.models import Organizer
@@ -10,10 +11,14 @@ from eventyay.base.models.organizer import OrganizerBillingModel
 from unittest.mock import patch
 
 from eventyay_business.invoice_collection import (
+    CollectionFailureCode,
     InvoiceCollectionError,
     collect_business_invoice,
     collect_ready_business_invoices,
+    collection_retry_due,
     process_business_payment_intent,
+    retry_outstanding_business_invoices_after_payment_method_update,
+    update_invoice_from_payment_intent,
 )
 from eventyay_business.models import (
     BillingCollectionAuthorization,
@@ -170,11 +175,13 @@ def test_collection_waits_for_organizer_cutover(collection_setup):
     EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
     DEFAULT_FROM_EMAIL="billing@eventyay.com",
 )
-def test_missing_authorization_marks_invoice_past_due_and_notifies_once(
+def test_revoked_authorization_marks_invoice_past_due_and_notifies_once(
     collection_setup, django_capture_on_commit_callbacks
 ):
     _, subscription, _, invoice = collection_setup
-    BillingCollectionAuthorization.objects.filter(organizer=invoice.organizer).delete()
+    BillingCollectionAuthorization.objects.filter(organizer=invoice.organizer).update(
+        revoked_at=now()
+    )
 
     with patch(
         "eventyay_business.invoice_collection.get_stripe_secret_key",
@@ -194,10 +201,93 @@ def test_missing_authorization_marks_invoice_past_due_and_notifies_once(
     assert invoice.status == BusinessInvoiceStatus.OPEN
     assert invoice.payment_state == InvoicePaymentState.FAILED
     assert invoice.last_collection_attempt_at is not None
-    assert invoice.collection_metadata["last_error"] == {"code": "billing_not_ready"}
+    assert invoice.collection_metadata["last_error"] == {
+        "code": CollectionFailureCode.AUTHORIZATION_MISSING
+    }
+    assert invoice.collection_metadata["retry_after_payment_method_update"] is True
+    assert (
+        collection_retry_due(invoice, current_time=now() + timedelta(days=30)) is False
+    )
     assert subscription.status == SubscriptionStatus.PAST_DUE
     assert len(mail.outbox) == 1
     assert invoice.invoice_number in mail.outbox[0].subject
+
+
+@pytest.mark.django_db
+def test_missing_payment_method_blocks_retries_until_payment_method_update(
+    collection_setup,
+):
+    _, subscription, billing, invoice = collection_setup
+    billing.stripe_payment_method_id = ""
+    billing.save(update_fields=["stripe_payment_method_id"])
+
+    with patch(
+        "eventyay_business.invoice_collection.get_stripe_secret_key",
+        return_value="sk_test_collection",
+    ), patch(
+        "eventyay_business.invoice_collection.stripe.PaymentIntent.create"
+    ) as create:
+        result = collect_business_invoice(invoice)
+
+    create.assert_not_called()
+    subscription.refresh_from_db()
+    assert result.payment_state == InvoicePaymentState.FAILED
+    assert result.collection_metadata["last_error"] == {
+        "code": CollectionFailureCode.PAYMENT_METHOD_MISSING
+    }
+    assert (
+        collection_retry_due(result, current_time=now() + timedelta(days=30)) is False
+    )
+    assert subscription.status == SubscriptionStatus.PAST_DUE
+
+
+@pytest.mark.django_db
+def test_platform_configuration_failure_keeps_subscription_active(collection_setup):
+    _, subscription, _, invoice = collection_setup
+
+    with patch(
+        "eventyay_business.invoice_collection.get_stripe_secret_key",
+        side_effect=ValidationError("Stripe is not configured"),
+    ):
+        result = collect_business_invoice(invoice)
+
+    subscription.refresh_from_db()
+    assert result.payment_state == InvoicePaymentState.PROCESSING
+    assert result.collection_metadata["reconciliation_required"] is True
+    assert result.collection_metadata["last_error"] == {
+        "code": CollectionFailureCode.STRIPE_NOT_CONFIGURED
+    }
+    assert subscription.status == SubscriptionStatus.ACTIVE
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("billing_change", "expected_code"),
+    [
+        ("delete", CollectionFailureCode.BILLING_RECORD_MISSING),
+        ("clear_customer", CollectionFailureCode.BILLING_CUSTOMER_MISSING),
+    ],
+)
+def test_missing_billing_configuration_is_organizer_actionable(
+    collection_setup, billing_change, expected_code
+):
+    _, subscription, billing, invoice = collection_setup
+    if billing_change == "delete":
+        billing.delete()
+    else:
+        billing.stripe_customer_id = ""
+        billing.save(update_fields=["stripe_customer_id"])
+
+    with patch(
+        "eventyay_business.invoice_collection.get_stripe_secret_key",
+        return_value="sk_test_collection",
+    ):
+        result = collect_business_invoice(invoice)
+
+    subscription.refresh_from_db()
+    assert result.payment_state == InvoicePaymentState.FAILED
+    assert result.collection_metadata["last_error"]["code"] == expected_code
+    assert subscription.status == SubscriptionStatus.PAST_DUE
 
 
 @pytest.mark.django_db
@@ -387,6 +477,98 @@ def test_connection_failure_remains_reconciliation_state(collection_setup):
 
 
 @pytest.mark.django_db
+def test_stripe_library_failure_remains_reconciliation_state(collection_setup):
+    _, subscription, _, invoice = collection_setup
+
+    with patch("eventyay_business.invoice_collection.stripe", None):
+        result = collect_business_invoice(invoice)
+
+    subscription.refresh_from_db()
+    assert result.payment_state == InvoicePaymentState.PROCESSING
+    assert result.collection_metadata["last_error"]["code"] == (
+        CollectionFailureCode.STRIPE_UNAVAILABLE
+    )
+    assert subscription.status == SubscriptionStatus.ACTIVE
+
+
+@pytest.mark.django_db
+def test_generic_stripe_failure_remains_reconciliation_state(collection_setup):
+    _, subscription, _, invoice = collection_setup
+    stripe_error = stripe.error.APIError("Stripe internal error")
+
+    with patch(
+        "eventyay_business.invoice_collection.get_stripe_secret_key",
+        return_value="sk_test_collection",
+    ), patch(
+        "eventyay_business.invoice_collection.stripe.PaymentIntent.search",
+        side_effect=stripe_error,
+    ):
+        result = collect_business_invoice(invoice)
+
+    subscription.refresh_from_db()
+    assert result.payment_state == InvoicePaymentState.PROCESSING
+    assert result.collection_metadata["last_error"]["code"] == (
+        CollectionFailureCode.STRIPE_ERROR
+    )
+    assert subscription.status == SubscriptionStatus.ACTIVE
+
+
+@pytest.mark.django_db
+def test_detached_payment_method_is_organizer_actionable(collection_setup):
+    _, subscription, _, invoice = collection_setup
+    detached_method_error = stripe.error.InvalidRequestError(
+        "The payment method is detached.",
+        "payment_method",
+        code="payment_method_unexpected_state",
+    )
+
+    with patch(
+        "eventyay_business.invoice_collection.get_stripe_secret_key",
+        return_value="sk_test_collection",
+    ), patch(
+        "eventyay_business.invoice_collection.stripe.PaymentIntent.search",
+        return_value={"data": []},
+    ), patch(
+        "eventyay_business.invoice_collection.stripe.PaymentIntent.create",
+        side_effect=detached_method_error,
+    ):
+        result = collect_business_invoice(invoice)
+
+    subscription.refresh_from_db()
+    assert result.payment_state == InvoicePaymentState.FAILED
+    assert (
+        result.collection_metadata["last_error"]["code"]
+        == CollectionFailureCode.PAYMENT_METHOD_MISSING
+    )
+    assert result.collection_metadata["retry_after_payment_method_update"] is True
+    assert subscription.status == SubscriptionStatus.PAST_DUE
+
+
+@pytest.mark.django_db
+def test_unknown_payment_state_remains_reconciliation_state(collection_setup):
+    _, subscription, _, invoice = collection_setup
+    invoice.stripe_payment_intent_id = "pi_unknown"
+    invoice.save(update_fields=["stripe_payment_intent_id", "updated_at"])
+
+    with patch(
+        "eventyay_business.invoice_collection.get_stripe_secret_key",
+        return_value="sk_test_collection",
+    ), patch(
+        "eventyay_business.invoice_collection.stripe.PaymentIntent.retrieve",
+        return_value={"id": "pi_unknown", "status": "unexpected_future_state"},
+    ):
+        result = collect_business_invoice(invoice)
+
+    subscription.refresh_from_db()
+    assert result.payment_state == InvoicePaymentState.PROCESSING
+    assert (
+        result.collection_metadata["last_error"]["code"]
+        == CollectionFailureCode.UNKNOWN_PAYMENT_STATE
+    )
+    assert subscription.status == SubscriptionStatus.ACTIVE
+
+
+@pytest.mark.django_db
 def test_ready_collection_continues_after_one_invoice_failure(collection_setup):
     organizer, _, _, invoice = collection_setup
     second_invoice = BusinessInvoice.objects.create(
@@ -485,3 +667,182 @@ def test_ready_collection_respects_retry_delay(collection_setup):
     collect.assert_called_once_with(invoice.pk)
     assert result["processed"] == 1
     assert result["failed"] == 1
+
+
+@pytest.mark.django_db
+def test_collection_retry_schedule_is_bounded(collection_setup):
+    _, _, _, invoice = collection_setup
+    invoice.payment_state = InvoicePaymentState.FAILED
+    invoice.collection_attempt_count = 1
+    invoice.last_collection_attempt_at = now()
+    invoice.collection_metadata = {
+        "last_error": {"code": "card_declined"},
+        "organizer_actionable": True,
+    }
+
+    assert (
+        collection_retry_due(
+            invoice,
+            current_time=invoice.last_collection_attempt_at + timedelta(hours=23),
+        )
+        is False
+    )
+    assert (
+        collection_retry_due(
+            invoice, current_time=invoice.last_collection_attempt_at + timedelta(days=1)
+        )
+        is True
+    )
+
+    invoice.collection_attempt_count = 4
+    invoice.collection_metadata["retry_exhausted"] = True
+    assert (
+        collection_retry_due(
+            invoice,
+            current_time=invoice.last_collection_attempt_at + timedelta(days=30),
+        )
+        is False
+    )
+
+
+@pytest.mark.django_db
+@override_settings(EVENTYAY_BUSINESS_COLLECTION_RETRY_DAYS=(2, 6))
+def test_collection_retry_schedule_uses_configured_days(collection_setup):
+    _, _, _, invoice = collection_setup
+    invoice.payment_state = InvoicePaymentState.FAILED
+    invoice.collection_attempt_count = 1
+    invoice.last_collection_attempt_at = now()
+    invoice.collection_metadata = {
+        "last_error": {"code": "card_declined"},
+        "organizer_actionable": True,
+    }
+
+    assert not collection_retry_due(
+        invoice,
+        current_time=invoice.last_collection_attempt_at + timedelta(days=1),
+    )
+    assert collection_retry_due(
+        invoice,
+        current_time=invoice.last_collection_attempt_at + timedelta(days=2),
+    )
+
+
+@pytest.mark.django_db
+def test_failed_invoice_becomes_uncollectible_after_retry_budget(collection_setup):
+    _, subscription, _, invoice = collection_setup
+    invoice.collection_attempt_count = 4
+
+    result = update_invoice_from_payment_intent(
+        invoice,
+        {
+            "id": "pi_exhausted",
+            "status": "requires_payment_method",
+            "last_payment_error": {"code": "card_declined"},
+        },
+    )
+
+    subscription.refresh_from_db()
+    assert result.status == BusinessInvoiceStatus.UNCOLLECTIBLE
+    assert result.payment_state == InvoicePaymentState.FAILED
+    assert result.collection_metadata["retry_exhausted"] is True
+    assert subscription.status == SubscriptionStatus.PAST_DUE
+
+
+@pytest.mark.django_db
+def test_payment_method_update_retries_and_recovers_uncollectible_invoice(
+    collection_setup,
+):
+    _, subscription, billing, invoice = collection_setup
+    invoice.status = BusinessInvoiceStatus.UNCOLLECTIBLE
+    invoice.payment_state = InvoicePaymentState.FAILED
+    invoice.collection_attempt_count = 4
+    invoice.last_collection_attempt_at = now()
+    invoice.stripe_payment_intent_id = "pi_recover"
+    invoice.collection_metadata = {
+        "last_error": {"code": "card_declined"},
+        "organizer_actionable": True,
+        "retry_exhausted": True,
+    }
+    invoice.save()
+    scheduled_end = now() + timedelta(days=10)
+    subscription.status = SubscriptionStatus.EXPIRED
+    subscription.past_due_since = now() - timedelta(days=2)
+    subscription.ends_at = scheduled_end
+    subscription.save()
+
+    with patch(
+        "eventyay_business.invoice_collection.get_stripe_secret_key",
+        return_value="sk_test_collection",
+    ), patch(
+        "eventyay_business.invoice_collection.stripe.PaymentIntent.retrieve",
+        return_value={"id": "pi_recover", "status": "requires_payment_method"},
+    ), patch(
+        "eventyay_business.invoice_collection.stripe.PaymentIntent.confirm",
+        return_value={"id": "pi_recover", "status": "succeeded"},
+    ) as confirm:
+        result = retry_outstanding_business_invoices_after_payment_method_update(
+            invoice.organizer_id
+        )
+        duplicate_result = (
+            retry_outstanding_business_invoices_after_payment_method_update(
+                invoice.organizer_id
+            )
+        )
+
+    confirm.assert_called_once_with(
+        "pi_recover",
+        payment_method=billing.stripe_payment_method_id,
+        off_session=True,
+        idempotency_key=f"eventyay-business-invoice-{invoice.pk}-retry-5",
+    )
+    invoice.refresh_from_db()
+    subscription.refresh_from_db()
+    assert result["succeeded"] == 1
+    assert invoice.status == BusinessInvoiceStatus.PAID
+    assert invoice.payment_state == InvoicePaymentState.SUCCEEDED
+    assert subscription.status == SubscriptionStatus.ACTIVE
+    assert subscription.ends_at == scheduled_end
+    assert duplicate_result["processed"] == 0
+
+
+@pytest.mark.django_db
+def test_payment_method_update_unblocks_all_invoice_currencies(collection_setup):
+    organizer, _, _, invoice = collection_setup
+    second_invoice = BusinessInvoice.objects.create(
+        organizer=organizer,
+        invoice_number="INV-202610-0001-USD",
+        billing_period_start=invoice.billing_period_start,
+        billing_period_end=invoice.billing_period_end,
+        currency="USD",
+        status=BusinessInvoiceStatus.OPEN,
+        payment_state=InvoicePaymentState.FAILED,
+        subtotal=Decimal("5.00"),
+        total=Decimal("5.00"),
+        finalized_at=now(),
+        collection_metadata={
+            "last_error": {"code": CollectionFailureCode.PAYMENT_METHOD_MISSING},
+            "organizer_actionable": True,
+            "retry_after_payment_method_update": True,
+        },
+    )
+    invoice.payment_state = InvoicePaymentState.FAILED
+    invoice.collection_metadata = {
+        "last_error": {"code": CollectionFailureCode.PAYMENT_METHOD_MISSING},
+        "organizer_actionable": True,
+        "retry_after_payment_method_update": True,
+    }
+    invoice.save()
+
+    with patch(
+        "eventyay_business.invoice_collection.collect_ready_business_invoices",
+        return_value={"processed": 2},
+    ) as collect:
+        result = retry_outstanding_business_invoices_after_payment_method_update(
+            organizer.pk
+        )
+
+    assert result == {"processed": 2}
+    assert set(collect.call_args.kwargs["invoice_ids"]) == {
+        invoice.pk,
+        second_invoice.pk,
+    }

@@ -222,6 +222,35 @@ def test_integer_addon_zero_typed_value(test_setup):
 
 
 @pytest.mark.django_db
+def test_past_due_addon_remains_available_only_during_subscription_grace(
+    test_setup,
+):
+    organizer = test_setup
+    addon = AddonDefinition.objects.create(
+        slug="grace-loungemesh",
+        name="Grace Loungemesh",
+        capability="video.loungemesh",
+        entitlement_value="true",
+    )
+    OrganizerAddon.objects.create(
+        organizer=organizer,
+        addon=addon,
+        status=AddonStatus.PAST_DUE,
+    )
+    subscription = organizer.subscriptions.get(status=SubscriptionStatus.ACTIVE)
+    subscription.status = SubscriptionStatus.PAST_DUE
+    subscription.past_due_since = now() - timedelta(days=2)
+    subscription.save()
+
+    assert check_entitlement(organizer, "video.loungemesh").allowed is True
+
+    subscription.past_due_since = now() - timedelta(days=8)
+    subscription.save(update_fields=["past_due_since", "updated_at"])
+
+    assert check_entitlement(organizer, "video.loungemesh").allowed is False
+
+
+@pytest.mark.django_db
 def test_addon_grandfathered_entitlements_and_migration(test_setup):
     from eventyay_business.services import migrate_addon_assignments
 

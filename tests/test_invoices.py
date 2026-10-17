@@ -114,7 +114,7 @@ def test_setup(db):
 
 @pytest.mark.django_db
 def test_saved_payment_method_authorizes_automatic_collection(
-    test_setup, organizer_user
+    test_setup, organizer_user, django_capture_on_commit_callbacks
 ):
     org, _, _, _ = test_setup
     OrganizerBillingModel.objects.create(
@@ -133,16 +133,20 @@ def test_saved_payment_method_authorizes_automatic_collection(
         stripe_payment_method_id="pm_automatic",
     )
 
-    authorization = record_automatic_collection_authorization(
-        organizer=org,
-        user=organizer_user,
-        stripe_customer_id="cus_automatic",
-    )
+    with patch(
+        "eventyay_business.tasks.retry_outstanding_business_invoices_task.delay"
+    ) as retry, django_capture_on_commit_callbacks(execute=True):
+        authorization = record_automatic_collection_authorization(
+            organizer=org,
+            user=organizer_user,
+            stripe_customer_id="cus_automatic",
+        )
 
     assert authorization is not None
     assert authorization.authorized_by == organizer_user
     assert authorization.revoked_at is None
     assert authorization.terms_version == "2"
+    retry.assert_called_once_with(org.pk)
 
 
 @pytest.mark.django_db

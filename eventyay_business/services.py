@@ -2,13 +2,66 @@ import logging
 from decimal import Decimal
 from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
-from django.db import IntegrityError, transaction
+from django.db import DatabaseError, IntegrityError, transaction
 from django.utils.timezone import now
 from eventyay.base.settings import GlobalSettingsObject
 
 from .models import CountryFeeSetting
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_COLLECTION_RETRY_DAYS = (1, 3, 5)
+MAX_COLLECTION_RETRY_INTERVALS = 10
+MAX_COLLECTION_RETRY_DELAY_DAYS = 365
+
+
+def normalize_collection_retry_days(value) -> tuple[int, ...]:
+    if isinstance(value, str):
+        values = [part.strip() for part in value.split(",") if part.strip()]
+    elif isinstance(value, (list, tuple)):
+        values = list(value)
+    else:
+        raise ValueError("Retry days must be a comma-separated list.")
+
+    try:
+        days = tuple(int(item) for item in values)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Retry days must contain whole numbers only.") from exc
+
+    if not days:
+        raise ValueError("At least one retry delay is required.")
+    if len(days) > MAX_COLLECTION_RETRY_INTERVALS:
+        raise ValueError(
+            f"At most {MAX_COLLECTION_RETRY_INTERVALS} retry delays are allowed."
+        )
+    if any(day < 1 or day > MAX_COLLECTION_RETRY_DELAY_DAYS for day in days):
+        raise ValueError(
+            f"Retry delays must be between 1 and {MAX_COLLECTION_RETRY_DELAY_DAYS} days."
+        )
+    if any(current <= previous for previous, current in zip(days, days[1:])):
+        raise ValueError("Retry delays must be unique and in ascending order.")
+    return days
+
+
+def get_collection_retry_days() -> tuple[int, ...]:
+    configured = getattr(settings, "EVENTYAY_BUSINESS_COLLECTION_RETRY_DAYS", None)
+    if configured is None:
+        try:
+            configured = GlobalSettingsObject().settings.get(
+                "business_collection_retry_days", as_type=str
+            )
+        except (AttributeError, DatabaseError, TypeError, ValueError):
+            configured = None
+
+    if configured is not None:
+        try:
+            return normalize_collection_retry_days(configured)
+        except ValueError:
+            logger.warning(
+                "Ignoring invalid business invoice collection retry schedule: %r",
+                configured,
+            )
+    return DEFAULT_COLLECTION_RETRY_DAYS
 
 
 def record_usage(

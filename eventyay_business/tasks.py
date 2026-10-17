@@ -4,7 +4,10 @@ from django.db.models import Q
 from django.dispatch import receiver
 from django.utils.timezone import now
 
-from .invoice_collection import collect_ready_business_invoices
+from .invoice_collection import (
+    collect_ready_business_invoices,
+    retry_outstanding_business_invoices_after_payment_method_update,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -318,8 +321,13 @@ def generate_monthly_business_invoices(start_date=None, end_date=None):
 
 
 @app.task(name="eventyay_business.collect_ready_business_invoices")
-def collect_ready_business_invoices_task():
-    return collect_ready_business_invoices()
+def collect_ready_business_invoices_task(invoice_ids=None):
+    return collect_ready_business_invoices(invoice_ids=invoice_ids)
+
+
+@app.task(name="eventyay_business.retry_outstanding_business_invoices")
+def retry_outstanding_business_invoices_task(organizer_id: int):
+    return retry_outstanding_business_invoices_after_payment_method_update(organizer_id)
 
 
 @app.task(name="eventyay_business.generate_monthly_business_invoices")
