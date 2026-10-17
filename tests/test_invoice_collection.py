@@ -694,6 +694,23 @@ def test_collection_retry_schedule_is_bounded(collection_setup):
         is True
     )
 
+    invoice.collection_attempt_count = 2
+    invoice.last_collection_attempt_at = now()
+    assert (
+        collection_retry_due(
+            invoice,
+            current_time=invoice.last_collection_attempt_at + timedelta(days=1),
+        )
+        is False
+    )
+    assert (
+        collection_retry_due(
+            invoice,
+            current_time=invoice.last_collection_attempt_at + timedelta(days=2),
+        )
+        is True
+    )
+
     invoice.collection_attempt_count = 4
     invoice.collection_metadata["retry_exhausted"] = True
     assert (
@@ -702,6 +719,30 @@ def test_collection_retry_schedule_is_bounded(collection_setup):
             current_time=invoice.last_collection_attempt_at + timedelta(days=30),
         )
         is False
+    )
+
+
+@pytest.mark.django_db
+def test_exhausted_platform_reconciliation_uses_final_retry_interval(
+    collection_setup,
+):
+    _, _, _, invoice = collection_setup
+    invoice.payment_state = InvoicePaymentState.PROCESSING
+    invoice.last_collection_attempt_at = now()
+    invoice.collection_metadata = {
+        "last_error": {"code": CollectionFailureCode.STRIPE_CONNECTION_ERROR},
+        "reconciliation_required": True,
+        "reconciliation_attempt_count": 4,
+        "retry_exhausted": True,
+    }
+
+    assert not collection_retry_due(
+        invoice,
+        current_time=invoice.last_collection_attempt_at + timedelta(days=1),
+    )
+    assert collection_retry_due(
+        invoice,
+        current_time=invoice.last_collection_attempt_at + timedelta(days=2),
     )
 
 
@@ -759,7 +800,7 @@ def test_payment_method_update_retries_and_recovers_uncollectible_invoice(
     invoice.last_collection_attempt_at = now()
     invoice.stripe_payment_intent_id = "pi_recover"
     invoice.collection_metadata = {
-        "last_error": {"code": "card_declined"},
+        "last_error": {"code": CollectionFailureCode.PAYMENT_METHOD_MISSING},
         "organizer_actionable": True,
         "retry_exhausted": True,
     }
@@ -800,6 +841,9 @@ def test_payment_method_update_retries_and_recovers_uncollectible_invoice(
     assert result["succeeded"] == 1
     assert invoice.status == BusinessInvoiceStatus.PAID
     assert invoice.payment_state == InvoicePaymentState.SUCCEEDED
+    assert invoice.collection_metadata["previous_error"] == {
+        "code": CollectionFailureCode.PAYMENT_METHOD_MISSING
+    }
     assert subscription.status == SubscriptionStatus.ACTIVE
     assert subscription.ends_at == scheduled_end
     assert duplicate_result["processed"] == 0

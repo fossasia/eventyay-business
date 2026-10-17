@@ -130,17 +130,23 @@ def collection_retry_due(invoice: BusinessInvoice, current_time=None) -> bool:
         if isinstance(invoice.collection_metadata, dict)
         else {}
     )
-    if metadata.get("retry_exhausted"):
+    is_reconciliation = invoice.payment_state == InvoicePaymentState.PROCESSING
+    if metadata.get("retry_exhausted") and not is_reconciliation:
         return False
     attempt_count = collection_retry_attempt_count(invoice, metadata)
-    if invoice.payment_state == InvoicePaymentState.PROCESSING:
+    if is_reconciliation:
         attempt_count = int(metadata.get("reconciliation_attempt_count", 1))
-    if collection_retry_exhausted(attempt_count, retry_delays):
+    if (
+        collection_retry_exhausted(attempt_count, retry_delays)
+        and not is_reconciliation
+    ):
         return False
     if not invoice.last_collection_attempt_at:
         return True
     retry_index = max(attempt_count - 1, 0)
-    retry_delay = retry_delays[min(retry_index, len(retry_delays) - 1)]
+    retry_index = min(retry_index, len(retry_delays) - 1)
+    previous_offset = retry_delays[retry_index - 1] if retry_index else timedelta(0)
+    retry_delay = retry_delays[retry_index] - previous_offset
     return invoice.last_collection_attempt_at + retry_delay <= (current_time or now())
 
 
@@ -787,6 +793,9 @@ def retry_outstanding_business_invoices_after_payment_method_update(
                 continue
             metadata["retry_after_payment_method_update"] = True
             metadata["retry_cycle_start_attempt"] = invoice.collection_attempt_count
+            previous_error = metadata.pop("last_error", None)
+            if previous_error:
+                metadata["previous_error"] = previous_error
             metadata.pop("retry_exhausted", None)
             metadata.pop("reconciliation_required", None)
             metadata.pop("reconciliation_attempt_count", None)

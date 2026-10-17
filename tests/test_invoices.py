@@ -150,6 +150,46 @@ def test_saved_payment_method_authorizes_automatic_collection(
 
 
 @pytest.mark.django_db
+def test_saved_payment_method_runs_plain_recovery_task_robustly(
+    test_setup, organizer_user, django_capture_on_commit_callbacks
+):
+    org, _, _, _ = test_setup
+    OrganizerBillingModel.objects.create(
+        organizer=org,
+        primary_contact_name="Billing Contact",
+        primary_contact_email="billing@example.com",
+        company_or_organization_name="Test Org",
+        address_line_1="Example Street 1",
+        address_line_2="",
+        city="Berlin",
+        zip_code="10115",
+        country="DE",
+        preferred_language="en",
+        tax_id="",
+        stripe_customer_id="cus_plain_task",
+        stripe_payment_method_id="pm_plain_task",
+    )
+    calls = []
+
+    def plain_task(organizer_id):
+        calls.append(organizer_id)
+        raise RuntimeError("queue unavailable")
+
+    with patch(
+        "eventyay_business.tasks.retry_outstanding_business_invoices_task",
+        plain_task,
+    ), django_capture_on_commit_callbacks(execute=True):
+        authorization = record_automatic_collection_authorization(
+            organizer=org,
+            user=organizer_user,
+            stripe_customer_id="cus_plain_task",
+        )
+
+    assert authorization is not None
+    assert calls == [org.pk]
+
+
+@pytest.mark.django_db
 def test_generate_invoice_number(test_setup):
     org, _, _, _ = test_setup
     period_start = make_aware(datetime(2026, 8, 1, 0, 0, 0))

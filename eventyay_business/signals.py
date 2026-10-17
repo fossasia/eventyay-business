@@ -178,10 +178,15 @@ def record_automatic_collection_authorization(
         )
         from .tasks import retry_outstanding_business_invoices_task
 
+        def retry_outstanding_invoices(organizer_id=organizer.pk):
+            delay = getattr(retry_outstanding_business_invoices_task, "delay", None)
+            if delay:
+                return delay(organizer_id)
+            return retry_outstanding_business_invoices_task(organizer_id)
+
         transaction.on_commit(
-            lambda organizer_id=organizer.pk: (
-                retry_outstanding_business_invoices_task.delay(organizer_id)
-            )
+            retry_outstanding_invoices,
+            robust=True,
         )
     return authorization
 
