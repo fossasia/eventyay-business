@@ -1,0 +1,68 @@
+{% extends 'pretixcontrol/admin/base.html' %}
+{% load i18n %}
+{% block title %}{% trans 'Reconciliation result' %}{% endblock %}
+{% block content %}
+  <div class="page-header">
+    <h1>{% blocktranslate with organizer=result.organizer.name currency=result.currency %}Reconciliation: {{ organizer }} ({{ currency }}){% endblocktranslate %}</h1>
+  </div>
+  <dl class="dl-horizontal">
+    <dt>{% trans 'Billing period' %}</dt><dd>{{ result.run.period_start|date:'SHORT_DATE_FORMAT' }} – {{ result.run.period_end|date:'SHORT_DATE_FORMAT' }}</dd>
+    <dt>{% trans 'Status' %}</dt><dd>{{ result.get_status_display }}</dd>
+    <dt>{% trans 'Expected total' %}</dt><dd>{{ result.expected_total }} {{ result.currency }}</dd>
+    <dt>{% trans 'Fingerprint' %}</dt><dd><code>{{ result.fingerprint }}</code></dd>
+    <dt>{% trans 'Accepted' %}</dt>
+    <dd>
+      {% if result.is_currently_accepted %}
+        {% blocktranslate with user=result.accepted_by date=result.accepted_at|date:'SHORT_DATETIME_FORMAT' %}Accepted by {{ user }} on {{ date }}{% endblocktranslate %}
+      {% else %}
+        {% trans 'Not accepted' %}
+      {% endif %}
+    </dd>
+  </dl>
+  {% if result.findings %}
+    <div class="panel panel-warning">
+      <div class="panel-heading"><strong>{% trans 'Findings' %}</strong></div>
+      <ul class="list-group">
+        {% for finding in result.findings %}
+          <li class="list-group-item">
+            <strong>{{ finding.code }}</strong> — {{ finding.message }}
+            <span class="label {% if finding.severity == 'blocking' %}label-danger{% else %}label-warning{% endif %}">{{ finding.severity }}</span>
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+  <div class="panel panel-default">
+    <div class="panel-heading"><strong>{% trans 'Expected invoice lines' %}</strong></div>
+    <div class="table-responsive">
+      <table class="table table-striped">
+        <thead><tr><th>{% trans 'Type' %}</th><th>{% trans 'Description' %}</th><th>{% trans 'Service period' %}</th><th>{% trans 'Source' %}</th><th class="text-right">{% trans 'Amount' %}</th></tr></thead>
+        <tbody>
+          {% for line in result.snapshot.invoice.lines %}
+            <tr>
+              <td>{{ line.line_type }}</td>
+              <td>{{ line.description }}</td>
+              <td>{{ line.service_period_start|default:'—' }} – {{ line.service_period_end|default:'—' }}</td>
+              <td><code>{{ line.usage_reference }}</code></td>
+              <td class="text-right">{{ line.amount }} {{ result.currency }}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="5">{% trans 'No billable lines.' %}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <p>
+    {% blocktranslate with fees=result.snapshot.sources.platform_fee_entries|length usage=result.snapshot.sources.usage_records|length %}
+      Saved inputs: {{ fees }} platform-fee entries and {{ usage }} usage records.
+    {% endblocktranslate %}
+  </p>
+  {% if result.status == 'ready' and not result.is_currently_accepted %}
+    <form method="post" action="{% url 'plugins:eventyay_business:reconciliation.accept' pk=result.pk %}">
+      {% csrf_token %}
+      <button class="btn btn-success" type="submit">{% trans 'Accept this reconciliation' %}</button>
+    </form>
+  {% endif %}
+  <p><a href="{% url 'plugins:eventyay_business:reconciliation.list' %}">{% trans 'Back to reconciliation' %}</a></p>
+{% endblock %}

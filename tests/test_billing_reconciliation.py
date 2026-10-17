@@ -1,8 +1,10 @@
 import pytest
 from datetime import datetime
 from decimal import Decimal
+from django.urls import reverse
 from django.utils.timezone import make_aware, now
-from eventyay.base.models import Organizer
+from eventyay.base.models import Organizer, User
+from eventyay.base.models.auth import StaffSession
 from eventyay.base.models.organizer import OrganizerBillingModel
 
 from eventyay_business.models import (
@@ -20,6 +22,20 @@ from eventyay_business.models import (
     TierVersion,
 )
 from eventyay_business.reconciliation import run_billing_reconciliation
+
+
+@pytest.fixture
+def reconciliation_admin_client(admin_client, admin_user):
+    session = admin_client.session
+    session.save()
+    StaffSession.objects.create(
+        user=admin_user,
+        session_key=session.session_key,
+        comment="test",
+    )
+    admin_user.is_staff = True
+    admin_user.save(update_fields=["is_staff"])
+    return admin_client
 
 
 @pytest.fixture
@@ -181,3 +197,133 @@ def test_reporting_mode_records_calculation_error_without_partial_invoice(
     ]
     assert result.snapshot["error_type"] == "InvoiceCalculationError"
     assert not BusinessInvoice.objects.exists()
+
+
+@pytest.mark.django_db
+def test_administrator_can_review_export_and_accept_ready_result(
+    reconciliation_admin_client,
+    reconciliation_setup,
+):
+    organizer, _, _, _ = reconciliation_setup
+    run = run_billing_reconciliation(
+        make_aware(datetime(2026, 9, 1)),
+        make_aware(datetime(2026, 9, 30, 23, 59, 59, 999999)),
+        organizers=[organizer],
+    )
+    result = run.results.get()
+
+    response = reconciliation_admin_client.get(
+        reverse("plugins:eventyay_business:reconciliation.list"),
+        {"organizer": f"  {organizer.slug}  ", "status": "ready"},
+    )
+    assert response.status_code == 200
+    assert list(response.context["results"]) == [result]
+
+    detail = reconciliation_admin_client.get(
+        reverse(
+            "plugins:eventyay_business:reconciliation.detail",
+            kwargs={"pk": result.pk},
+        )
+    )
+    assert detail.status_code == 200
+    assert b"reporting-mode" not in detail.content
+    assert b"Plan Subscription" in detail.content
+
+    export = reconciliation_admin_client.get(
+        reverse(
+            "plugins:eventyay_business:reconciliation.export",
+            kwargs={"pk": run.pk},
+        )
+    )
+    assert export.status_code == 200
+    assert export["Content-Type"] == "text/csv"
+    assert organizer.slug.encode() in export.content
+    assert b"Plan Subscription" in export.content
+
+    accept_url = reverse(
+        "plugins:eventyay_business:reconciliation.accept",
+        kwargs={"pk": result.pk},
+    )
+    accepted = reconciliation_admin_client.post(accept_url)
+    assert accepted.status_code == 302
+    result.refresh_from_db()
+    accepted_at = result.accepted_at
+    assert result.is_currently_accepted
+    assert result.accepted_by is not None
+
+    reconciliation_admin_client.post(accept_url)
+    result.refresh_from_db()
+    assert result.accepted_at == accepted_at
+
+
+@pytest.mark.django_db
+def test_blocked_result_cannot_be_accepted(
+    reconciliation_admin_client,
+    reconciliation_setup,
+):
+    organizer, _, billing, _ = reconciliation_setup
+    billing.stripe_payment_method_id = ""
+    billing.save(update_fields=["stripe_payment_method_id"])
+    result = run_billing_reconciliation(
+        make_aware(datetime(2026, 9, 1)),
+        make_aware(datetime(2026, 9, 30, 23, 59, 59, 999999)),
+        organizers=[organizer],
+    ).results.get()
+
+    response = reconciliation_admin_client.post(
+        reverse(
+            "plugins:eventyay_business:reconciliation.accept",
+            kwargs={"pk": result.pk},
+        )
+    )
+
+    assert response.status_code == 302
+    result.refresh_from_db()
+    assert result.accepted_at is None
+    assert not result.is_currently_accepted
+
+
+@pytest.mark.django_db
+def test_changed_calculation_invalidates_previous_acceptance(
+    reconciliation_admin_client,
+    reconciliation_setup,
+):
+    organizer, _, _, price = reconciliation_setup
+    period_start = make_aware(datetime(2026, 9, 1))
+    period_end = make_aware(datetime(2026, 9, 30, 23, 59, 59, 999999))
+    result = run_billing_reconciliation(
+        period_start,
+        period_end,
+        organizers=[organizer],
+    ).results.get()
+    reconciliation_admin_client.post(
+        reverse(
+            "plugins:eventyay_business:reconciliation.accept",
+            kwargs={"pk": result.pk},
+        )
+    )
+    result.refresh_from_db()
+    assert result.is_currently_accepted
+
+    price.amount = Decimal("55.00")
+    price.save(update_fields=["amount"])
+    run_billing_reconciliation(
+        period_start,
+        period_end,
+        organizers=[organizer],
+    )
+
+    result.refresh_from_db()
+    assert result.accepted_at is not None
+    assert result.accepted_fingerprint != result.fingerprint
+    assert not result.is_currently_accepted
+
+
+@pytest.mark.django_db
+def test_regular_user_cannot_access_reconciliation(client):
+    user = User.objects.create_user("regular@example.com", "secret")
+    client.force_login(user)
+
+    response = client.get(reverse("plugins:eventyay_business:reconciliation.list"))
+
+    assert response.status_code in (302, 403)

@@ -93,7 +93,7 @@ def test_business_tiers_nav_staff_on_admin_page():
     )
 
     items = business_tiers_nav(sender=None, request=request)
-    assert len(items) == 8
+    assert len(items) == 9
     assert str(items[0]["label"]) == "Business Settings"
     assert str(items[1]["label"]) == "Tiers"
     assert str(items[2]["label"]) == "Subscriptions"
@@ -101,7 +101,8 @@ def test_business_tiers_nav_staff_on_admin_page():
     assert str(items[4]["label"]) == "Current charges"
     assert str(items[5]["label"]) == "Invoices"
     assert str(items[6]["label"]) == "Notification delivery"
-    assert str(items[7]["label"]) == "Billing activation"
+    assert str(items[7]["label"]) == "Billing reconciliation"
+    assert str(items[8]["label"]) == "Billing activation"
     assert items[0]["active"] is False
     assert items[1]["active"] is False
     assert items[2]["active"] is False
@@ -110,6 +111,7 @@ def test_business_tiers_nav_staff_on_admin_page():
     assert items[5]["active"] is False
     assert items[6]["active"] is False
     assert items[7]["active"] is False
+    assert items[8]["active"] is False
 
 
 def test_business_tiers_nav_staff_on_tiers_list():
@@ -127,7 +129,7 @@ def test_business_tiers_nav_staff_on_tiers_list():
     )
 
     items = business_tiers_nav(sender=None, request=request)
-    assert len(items) == 8
+    assert len(items) == 9
     assert items[0]["active"] is False
     assert items[1]["active"] is True
     assert items[2]["active"] is False
@@ -136,6 +138,7 @@ def test_business_tiers_nav_staff_on_tiers_list():
     assert items[5]["active"] is False
     assert items[6]["active"] is False
     assert items[7]["active"] is False
+    assert items[8]["active"] is False
 
 
 def test_business_tiers_nav_staff_on_addons_list():
@@ -153,7 +156,7 @@ def test_business_tiers_nav_staff_on_addons_list():
     )
 
     items = business_tiers_nav(sender=None, request=request)
-    assert len(items) == 8
+    assert len(items) == 9
     assert items[0]["active"] is False
     assert items[1]["active"] is False
     assert items[2]["active"] is False
@@ -162,6 +165,7 @@ def test_business_tiers_nav_staff_on_addons_list():
     assert items[5]["active"] is False
     assert items[6]["active"] is False
     assert items[7]["active"] is False
+    assert items[8]["active"] is False
 
 
 def test_business_tiers_nav_staff_on_invoices_list():
@@ -179,7 +183,7 @@ def test_business_tiers_nav_staff_on_invoices_list():
     )
 
     items = business_tiers_nav(sender=None, request=request)
-    assert len(items) == 8
+    assert len(items) == 9
     assert items[0]["active"] is False
     assert items[1]["active"] is False
     assert items[2]["active"] is False
@@ -188,6 +192,7 @@ def test_business_tiers_nav_staff_on_invoices_list():
     assert items[5]["active"] is True
     assert items[6]["active"] is False
     assert items[7]["active"] is False
+    assert items[8]["active"] is False
 
 
 def test_business_tiers_nav_staff_on_current_charges():
@@ -204,11 +209,12 @@ def test_business_tiers_nav_staff_on_current_charges():
     )
 
     items = business_tiers_nav(sender=None, request=request)
-    assert len(items) == 8
+    assert len(items) == 9
     assert items[4]["active"] is True
     assert items[5]["active"] is False
     assert items[6]["active"] is False
     assert items[7]["active"] is False
+    assert items[8]["active"] is False
 
 
 def test_business_tiers_nav_staff_on_notification_delivery():
@@ -225,9 +231,10 @@ def test_business_tiers_nav_staff_on_notification_delivery():
     )
 
     items = business_tiers_nav(sender=None, request=request)
-    assert len(items) == 8
+    assert len(items) == 9
     assert items[6]["active"] is True
     assert items[7]["active"] is False
+    assert items[8]["active"] is False
 
 
 def test_business_tiers_nav_staff_on_billing_activation():
@@ -244,9 +251,10 @@ def test_business_tiers_nav_staff_on_billing_activation():
     )
 
     items = business_tiers_nav(sender=None, request=request)
-    assert len(items) == 8
+    assert len(items) == 9
     assert items[6]["active"] is False
-    assert items[7]["active"] is True
+    assert items[7]["active"] is False
+    assert items[8]["active"] is True
 
 
 def test_business_event_addons_nav_anonymous():
