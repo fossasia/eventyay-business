@@ -98,12 +98,18 @@ def test_enable_consolidated_billing_requires_ready_preflight(db):
     )
     accept_latest_reconciliation(organizer)
 
-    enable_consolidated_billing(organizer)
-    first_cutover = organizer.settings.get(BILLING_CUTOVER_SETTING, as_type=str)
+    activated_organizer = enable_consolidated_billing(organizer)
+    first_cutover = activated_organizer.settings.get(
+        BILLING_CUTOVER_SETTING, as_type=str
+    )
     assert first_cutover
 
-    enable_consolidated_billing(organizer)
-    assert organizer.settings.get(BILLING_CUTOVER_SETTING, as_type=str) == first_cutover
+    activated_organizer = enable_consolidated_billing(organizer)
+    assert (
+        activated_organizer.settings.get(BILLING_CUTOVER_SETTING, as_type=str)
+        == first_cutover
+    )
+    organizer = Organizer.objects.get(pk=organizer.pk)
     assert consolidated_billing_preflight(organizer).activated_at is not None
 
 
@@ -133,7 +139,7 @@ def test_admin_activation_shows_preflight_and_preserves_cutover(
         stripe_customer_id=billing.stripe_customer_id,
         authorized_at=now(),
     )
-    acceptance = accept_latest_reconciliation(organizer, admin_user)
+    accept_latest_reconciliation(organizer, admin_user)
     list_url = reverse("plugins:eventyay_business:billing_activation")
     enable_url = reverse(
         "plugins:eventyay_business:billing_activation.enable",
@@ -147,18 +153,18 @@ def test_admin_activation_shows_preflight_and_preserves_cutover(
     assert b"Ready" in response.content
     assert b"Authorized" in response.content
     assert b"Accepted" in response.content
-    assert str(acceptance.pk).encode() in response.content
+    assert b"Review required" not in response.content
     assert enable_url.encode() in response.content
 
     response = admin_client.post(enable_url)
     assert response.status_code == 302
-    organizer.refresh_from_db()
+    organizer = Organizer.objects.get(pk=organizer.pk)
     first_cutover = organizer.settings.get(BILLING_CUTOVER_SETTING, as_type=str)
     assert first_cutover
 
     response = admin_client.post(enable_url)
     assert response.status_code == 302
-    organizer.refresh_from_db()
+    organizer = Organizer.objects.get(pk=organizer.pk)
     assert organizer.settings.get(BILLING_CUTOVER_SETTING, as_type=str) == first_cutover
 
     response = admin_client.get(list_url)
@@ -207,7 +213,7 @@ def test_batch_activation_rechecks_and_skips_blocked_organizers(
     )
 
     assert response.status_code == 302
-    ready.refresh_from_db()
-    blocked.refresh_from_db()
+    ready = Organizer.objects.get(pk=ready.pk)
+    blocked = Organizer.objects.get(pk=blocked.pk)
     assert ready.settings.get(BILLING_CUTOVER_SETTING, as_type=str)
     assert not blocked.settings.get(BILLING_CUTOVER_SETTING, as_type=str)
