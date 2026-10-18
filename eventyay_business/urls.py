@@ -118,6 +118,31 @@ urlpatterns = [
         name="billing_activation",
     ),
     path(
+        "admin/global/business/reconciliation/",
+        views.AdminBillingReconciliationListView.as_view(),
+        name="reconciliation.list",
+    ),
+    path(
+        "admin/global/business/reconciliation/run/",
+        views.AdminBillingReconciliationRunView.as_view(),
+        name="reconciliation.run",
+    ),
+    path(
+        "admin/global/business/reconciliation/<int:pk>/",
+        views.AdminBillingReconciliationDetailView.as_view(),
+        name="reconciliation.detail",
+    ),
+    path(
+        "admin/global/business/reconciliation/<int:pk>/accept/",
+        views.AdminBillingReconciliationAcceptView.as_view(),
+        name="reconciliation.accept",
+    ),
+    path(
+        "admin/global/business/reconciliation/runs/<int:pk>/export/",
+        views.AdminBillingReconciliationExportView.as_view(),
+        name="reconciliation.export",
+    ),
+    path(
         "admin/global/business/activation/<str:organizer>/",
         views.AdminBillingActivationEnableView.as_view(),
         name="billing_activation.enable",

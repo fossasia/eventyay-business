@@ -2,6 +2,7 @@ import hashlib
 import json
 import logging
 from decimal import Decimal
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Q
 from django.utils.timezone import now
@@ -386,3 +387,29 @@ def run_billing_reconciliation(
     }
     run.save(update_fields=["status", "completed_at", "summary", "updated_at"])
     return run
+
+
+@transaction.atomic
+def accept_reconciliation_result(result_id: int, user):
+    result = BillingReconciliationResult.objects.select_for_update().get(pk=result_id)
+    if (
+        result.status != BillingReconciliationResultStatus.READY
+        or result.blocking_finding_count
+    ):
+        raise ValidationError(
+            "Blocking reconciliation findings must be resolved before acceptance."
+        )
+    if result.is_currently_accepted:
+        return result
+    result.accepted_fingerprint = result.fingerprint
+    result.accepted_at = now()
+    result.accepted_by = user
+    result.save(
+        update_fields=[
+            "accepted_fingerprint",
+            "accepted_at",
+            "accepted_by",
+            "updated_at",
+        ]
+    )
+    return result
