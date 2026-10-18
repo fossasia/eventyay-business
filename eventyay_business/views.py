@@ -6,7 +6,7 @@ from decimal import Decimal
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Q, Sum
+from django.db.models import Prefetch, Q, Sum
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
@@ -103,7 +103,10 @@ from .notifications import (
     render_notification_subject,
     retry_billing_notification,
 )
-from .platform_fee_ledger import organizer_consolidated_billing_enabled
+from .platform_fee_ledger import (
+    organizer_billing_cutover_at,
+    organizer_consolidated_billing_enabled,
+)
 from .reconciliation import (
     accept_reconciliation_result,
     run_billing_reconciliation,
@@ -2642,6 +2645,93 @@ class AdminBillingActivationView(AdministratorPermissionRequiredMixin, TemplateV
             for organizer in Organizer.objects.order_by("name", "slug")
         ]
         return ctx
+
+
+class AdminBillingActivationBatchView(AdministratorPermissionRequiredMixin, View):
+    def post(self, request, *args, **kwargs):
+        organizer_slugs = {
+            slug.strip() for slug in request.POST.getlist("organizers") if slug.strip()
+        }
+        activated = 0
+        skipped = 0
+        for organizer in Organizer.objects.filter(slug__in=organizer_slugs).order_by(
+            "pk"
+        ):
+            try:
+                enable_consolidated_billing(organizer)
+            except ValidationError:
+                skipped += 1
+            else:
+                activated += 1
+        if activated:
+            messages.success(
+                request,
+                _("Activated consolidated billing for %(count)s organizer(s).")
+                % {"count": activated},
+            )
+        if skipped:
+            messages.warning(
+                request,
+                _("Skipped %(count)s organizer(s) that failed the locked preflight.")
+                % {"count": skipped},
+            )
+        return redirect("plugins:eventyay_business:billing_activation")
+
+
+class AdminBillingRolloutMonitorView(
+    AdministratorPermissionRequiredMixin, TemplateView
+):
+    template_name = "eventyay_business/billing/rollout_monitor.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        organizers = Organizer.objects.prefetch_related(
+            Prefetch(
+                "business_invoices",
+                queryset=BusinessInvoice.objects.order_by("-created_at"),
+                to_attr="monitoring_invoices",
+            ),
+            Prefetch(
+                "subscriptions",
+                queryset=Subscription.objects.order_by("-starts_at"),
+                to_attr="monitoring_subscriptions",
+            ),
+        ).order_by("name", "slug")
+        rows = []
+        for organizer in organizers:
+            cutover_at = organizer_billing_cutover_at(organizer)
+            if not cutover_at:
+                continue
+            invoice = (
+                organizer.monitoring_invoices[0]
+                if organizer.monitoring_invoices
+                else None
+            )
+            subscription = (
+                organizer.monitoring_subscriptions[0]
+                if organizer.monitoring_subscriptions
+                else None
+            )
+            metadata = (
+                invoice.collection_metadata
+                if invoice and isinstance(invoice.collection_metadata, dict)
+                else {}
+            )
+            rows.append(
+                {
+                    "organizer": organizer,
+                    "cutover_at": cutover_at,
+                    "invoice": invoice,
+                    "subscription": subscription,
+                    "reconciliation_required": bool(
+                        metadata.get("reconciliation_required")
+                    ),
+                    "retry_exhausted": bool(metadata.get("retry_exhausted")),
+                    "last_error": (metadata.get("last_error") or {}).get("code", ""),
+                }
+            )
+        context["rollout_rows"] = rows
+        return context
 
 
 class AdminBillingReconciliationListView(

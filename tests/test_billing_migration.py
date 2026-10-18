@@ -17,6 +17,15 @@ from eventyay_business.models import (
     SubscriptionStatus,
 )
 from eventyay_business.platform_fee_ledger import BILLING_CUTOVER_SETTING
+from eventyay_business.reconciliation import (
+    accept_reconciliation_result,
+    run_billing_reconciliation,
+)
+
+
+def accept_latest_reconciliation(organizer, user=None):
+    run = run_billing_reconciliation(organizers=[organizer])
+    return accept_reconciliation_result(run.results.get(organizer=organizer).pk, user)
 
 
 def test_preflight_requires_billing_setup_authorization_and_no_stripe_subscription(db):
@@ -27,6 +36,7 @@ def test_preflight_requires_billing_setup_authorization_and_no_stripe_subscripti
     assert result.billing_customer_ready is False
     assert result.payment_method_ready is False
     assert result.collection_authorized is False
+    assert result.reconciliation_ready is False
 
     billing = OrganizerBillingModel.objects.create(
         organizer=organizer,
@@ -40,6 +50,10 @@ def test_preflight_requires_billing_setup_authorization_and_no_stripe_subscripti
     )
 
     result = consolidated_billing_preflight(organizer)
+    assert result.ready is False
+    accept_latest_reconciliation(organizer)
+    result = consolidated_billing_preflight(organizer)
+    assert result.reconciliation_ready is True
     assert result.ready is True
 
     authorization.stripe_customer_id = "cus_other"
@@ -82,6 +96,7 @@ def test_enable_consolidated_billing_requires_ready_preflight(db):
         stripe_customer_id=billing.stripe_customer_id,
         authorized_at=now(),
     )
+    accept_latest_reconciliation(organizer)
 
     enable_consolidated_billing(organizer)
     first_cutover = organizer.settings.get(BILLING_CUTOVER_SETTING, as_type=str)
@@ -118,6 +133,7 @@ def test_admin_activation_shows_preflight_and_preserves_cutover(
         stripe_customer_id=billing.stripe_customer_id,
         authorized_at=now(),
     )
+    acceptance = accept_latest_reconciliation(organizer, admin_user)
     list_url = reverse("plugins:eventyay_business:billing_activation")
     enable_url = reverse(
         "plugins:eventyay_business:billing_activation.enable",
@@ -130,6 +146,8 @@ def test_admin_activation_shows_preflight_and_preserves_cutover(
     assert b"Before activation" in response.content
     assert b"Ready" in response.content
     assert b"Authorized" in response.content
+    assert b"Accepted" in response.content
+    assert str(acceptance.pk).encode() in response.content
     assert enable_url.encode() in response.content
 
     response = admin_client.post(enable_url)
@@ -146,3 +164,50 @@ def test_admin_activation_shows_preflight_and_preserves_cutover(
     response = admin_client.get(list_url)
     assert b"Active since" in response.content
     assert enable_url.encode() not in response.content
+
+    monitor = admin_client.get(
+        reverse("plugins:eventyay_business:billing_rollout.monitor")
+    )
+    assert monitor.status_code == 200
+    assert b"Activation Org" in monitor.content
+    assert b"Awaiting first invoice" in monitor.content
+
+
+@pytest.mark.django_db
+def test_batch_activation_rechecks_and_skips_blocked_organizers(
+    admin_client, admin_user
+):
+    session = admin_client.session
+    session.save()
+    StaffSession.objects.create(
+        user=admin_user,
+        session_key=session.session_key,
+        comment="test",
+    )
+    admin_user.is_staff = True
+    admin_user.save(update_fields=["is_staff"])
+
+    ready = Organizer.objects.create(name="Ready Org", slug="ready-org")
+    billing = OrganizerBillingModel.objects.create(
+        organizer=ready,
+        stripe_customer_id="cus_ready",
+        stripe_payment_method_id="pm_ready",
+    )
+    BillingCollectionAuthorization.objects.create(
+        organizer=ready,
+        stripe_customer_id=billing.stripe_customer_id,
+        authorized_at=now(),
+    )
+    accept_latest_reconciliation(ready, admin_user)
+    blocked = Organizer.objects.create(name="Blocked Org", slug="blocked-org")
+
+    response = admin_client.post(
+        reverse("plugins:eventyay_business:billing_activation.batch"),
+        {"organizers": [ready.slug, blocked.slug]},
+    )
+
+    assert response.status_code == 302
+    ready.refresh_from_db()
+    blocked.refresh_from_db()
+    assert ready.settings.get(BILLING_CUTOVER_SETTING, as_type=str)
+    assert not blocked.settings.get(BILLING_CUTOVER_SETTING, as_type=str)

@@ -155,6 +155,8 @@ def _readiness_snapshot(organizer) -> tuple[dict, list[dict]]:
         "active_stripe_subscription_ids": list(
             preflight.active_stripe_subscription_ids
         ),
+        "reconciliation_ready": preflight.reconciliation_ready,
+        "reconciliation_result_id": preflight.reconciliation_result_id,
         "activated_at": _serialize_datetime(preflight.activated_at),
     }
     findings = []

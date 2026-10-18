@@ -147,6 +147,16 @@ urlpatterns = [
         views.AdminBillingActivationEnableView.as_view(),
         name="billing_activation.enable",
     ),
+    path(
+        "admin/global/business/activation-batch/",
+        views.AdminBillingActivationBatchView.as_view(),
+        name="billing_activation.batch",
+    ),
+    path(
+        "admin/global/business/rollout-monitor/",
+        views.AdminBillingRolloutMonitorView.as_view(),
+        name="billing_rollout.monitor",
+    ),
     # Fee Settings
     path(
         "admin/global/business/fees/",

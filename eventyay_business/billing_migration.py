@@ -9,6 +9,8 @@ from eventyay.base.models.organizer import OrganizerBillingModel
 from .models import (
     AddonStatus,
     BillingCollectionAuthorization,
+    BillingReconciliationResult,
+    BillingReconciliationRunStatus,
     EventAddon,
     OrganizerAddon,
     Subscription,
@@ -23,6 +25,8 @@ class ConsolidatedBillingPreflight:
     payment_method_ready: bool
     collection_authorized: bool
     active_stripe_subscription_ids: tuple[str, ...]
+    reconciliation_ready: bool
+    reconciliation_result_id: int | None
     activated_at: datetime.datetime | None
 
     @property
@@ -32,6 +36,7 @@ class ConsolidatedBillingPreflight:
             and self.payment_method_ready
             and self.collection_authorized
             and not self.active_stripe_subscription_ids
+            and self.reconciliation_ready
         )
 
 
@@ -79,11 +84,27 @@ def consolidated_billing_preflight(organizer) -> ConsolidatedBillingPreflight:
         subscription_ids.update(
             (snapshot or {}).get("uncanceled_stripe_subscription_ids", [])
         )
+    reconciliation_result = (
+        BillingReconciliationResult.objects.filter(
+            organizer=organizer,
+            run__status=BillingReconciliationRunStatus.COMPLETED,
+        )
+        .select_related("run")
+        .order_by("-run__period_end", "-pk")
+        .first()
+    )
+    reconciliation_ready = bool(
+        reconciliation_result and reconciliation_result.is_currently_accepted
+    )
     return ConsolidatedBillingPreflight(
         billing_customer_ready=bool(billing and billing.stripe_customer_id),
         payment_method_ready=bool(billing and billing.stripe_payment_method_id),
         collection_authorized=authorization_exists,
         active_stripe_subscription_ids=tuple(sorted(subscription_ids)),
+        reconciliation_ready=reconciliation_ready,
+        reconciliation_result_id=(
+            reconciliation_result.pk if reconciliation_result else None
+        ),
         activated_at=organizer_billing_cutover_at(organizer),
     )
 

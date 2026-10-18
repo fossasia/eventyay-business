@@ -2,7 +2,13 @@
 {% load i18n %}
 {% block title %}{% trans 'Billing activation' %}{% endblock %}
 {% block content %}
-  <h1>{% trans 'Consolidated billing activation' %}</h1>
+  <div class="page-header">
+    <div class="pull-right">
+      <a class="btn btn-default" href="{% url 'plugins:eventyay_business:reconciliation.list' %}">{% trans 'Review reconciliation' %}</a>
+      <a class="btn btn-default" href="{% url 'plugins:eventyay_business:billing_rollout.monitor' %}">{% trans 'Monitor rollout' %}</a>
+    </div>
+    <h1>{% trans 'Consolidated billing activation' %}</h1>
+  </div>
   <p class="alert alert-info">
     {% blocktranslate trimmed %}
       Activation records the organizer’s cutover time. Ticket payments completed after
@@ -18,6 +24,7 @@
         <li>{% trans 'Save a payment method for that customer.' %}</li>
         <li>{% trans 'Have the organizer save a payment method and accept automatic payments in the same action.' %}</li>
         <li>{% trans 'Cancel every legacy Stripe plan and add-on subscription so it cannot charge independently.' %}</li>
+        <li>{% trans 'Run reporting mode and explicitly accept the latest reconciliation result.' %}</li>
       </ol>
       <p class="text-muted">
         {% blocktranslate trimmed %}
@@ -28,6 +35,12 @@
       </p>
     </div>
   </div>
+  <form id="batch-activation-form" method="post" action="{% url 'plugins:eventyay_business:billing_activation.batch' %}">
+    {% csrf_token %}
+    <p class="text-right">
+      <button class="btn btn-primary" type="submit">{% trans 'Activate selected ready organizers' %}</button>
+    </p>
+  </form>
   <div class="table-responsive">
     <table class="table table-striped">
       <thead>
@@ -38,6 +51,7 @@
           <th scope="col">{% trans 'Payment method' %}</th>
           <th scope="col">{% trans 'Authorization' %}</th>
           <th scope="col">{% trans 'Legacy subscriptions' %}</th>
+          <th scope="col">{% trans 'Reconciliation' %}</th>
           <th scope="col"><span class="sr-only">{% trans 'Actions' %}</span></th>
         </tr>
       </thead>
@@ -57,6 +71,7 @@
                   {% if not preflight.payment_method_ready %}<li>{% trans 'Payment method missing' %}</li>{% endif %}
                   {% if not preflight.collection_authorized %}<li>{% trans 'Authorization missing' %}</li>{% endif %}
                   {% if preflight.active_stripe_subscription_ids %}<li>{% trans 'Legacy subscriptions still active' %}</li>{% endif %}
+                  {% if not preflight.reconciliation_ready %}<li>{% trans 'Accepted reconciliation missing or stale' %}</li>{% endif %}
                 </ul>
               {% endif %}
             </td>
@@ -71,7 +86,18 @@
               {% endif %}
             </td>
             <td>
+              {% if preflight.reconciliation_ready %}
+                <span class="label label-success">{% trans 'Accepted' %}</span>
+              {% elif preflight.reconciliation_result_id %}
+                <a href="{% url 'plugins:eventyay_business:reconciliation.detail' pk=preflight.reconciliation_result_id %}">{% trans 'Review required' %}</a>
+              {% else %}
+                <a href="{% url 'plugins:eventyay_business:reconciliation.list' %}">{% trans 'Not run' %}</a>
+              {% endif %}
+            </td>
+            <td>
               {% if preflight.ready and not preflight.activated_at %}
+                <label class="sr-only" for="activate-{{ organizer.pk }}">{% blocktrans with organizer=organizer.name %}Select {{ organizer }}{% endblocktrans %}</label>
+                <input id="activate-{{ organizer.pk }}" type="checkbox" name="organizers" value="{{ organizer.slug }}" form="batch-activation-form">
                 <form method="post" action="{% url 'plugins:eventyay_business:billing_activation.enable' organizer=organizer.slug %}">
                   {% csrf_token %}
                   <button class="btn btn-primary" type="submit">{% trans 'Activate' %}</button>
@@ -81,7 +107,7 @@
           </tr>
         {% empty %}
           <tr>
-            <td colspan="7">{% trans 'No organizers found.' %}</td>
+            <td colspan="8">{% trans 'No organizers found.' %}</td>
           </tr>
         {% endfor %}
       </tbody>

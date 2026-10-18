@@ -1,0 +1,58 @@
+{% extends 'pretixcontrol/admin/base.html' %}
+{% load i18n %}
+{% block title %}{% trans 'Billing rollout monitor' %}{% endblock %}
+{% block content %}
+  <div class="page-header">
+    <h1>{% trans 'Billing rollout monitor' %}</h1>
+  </div>
+  <div class="alert alert-info">
+    {% blocktranslate trimmed %}
+      This read-only view follows activated organizers through their first consolidated
+      invoice cycle. It does not retry collection or change billing state.
+    {% endblocktranslate %}
+  </div>
+  <div class="table-responsive">
+    <table class="table table-striped">
+      <thead>
+        <tr>
+          <th>{% trans 'Organizer' %}</th>
+          <th>{% trans 'Cutover' %}</th>
+          <th>{% trans 'Latest invoice' %}</th>
+          <th>{% trans 'Payment state' %}</th>
+          <th>{% trans 'PaymentIntent' %}</th>
+          <th>{% trans 'Attempts' %}</th>
+          <th>{% trans 'Access state' %}</th>
+          <th>{% trans 'Attention' %}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rollout_rows %}
+          <tr>
+            <td>{{ row.organizer.name }}</td>
+            <td>{{ row.cutover_at|date:'SHORT_DATETIME_FORMAT' }}</td>
+            <td>
+              {% if row.invoice %}
+                <a href="{% url 'plugins:eventyay_business:invoices.detail' pk=row.invoice.pk %}">{{ row.invoice.invoice_number }}</a>
+              {% else %}
+                {% trans 'Awaiting first invoice' %}
+              {% endif %}
+            </td>
+            <td>{% if row.invoice %}{{ row.invoice.get_payment_state_display }}{% else %}—{% endif %}</td>
+            <td>{% if row.invoice.stripe_payment_intent_id %}<code>{{ row.invoice.stripe_payment_intent_id }}</code>{% else %}—{% endif %}</td>
+            <td>{% if row.invoice %}{{ row.invoice.collection_attempt_count }}{% else %}0{% endif %}</td>
+            <td>{% if row.subscription %}{{ row.subscription.get_status_display }}{% else %}—{% endif %}</td>
+            <td>
+              {% if row.reconciliation_required %}<span class="label label-danger">{% trans 'Reconciliation required' %}</span>{% endif %}
+              {% if row.retry_exhausted %}<span class="label label-danger">{% trans 'Retries exhausted' %}</span>{% endif %}
+              {% if row.last_error %}<code>{{ row.last_error }}</code>{% endif %}
+              {% if not row.reconciliation_required and not row.retry_exhausted and not row.last_error %}—{% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="8">{% trans 'No organizers have activated consolidated billing.' %}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p><a href="{% url 'plugins:eventyay_business:billing_activation' %}">{% trans 'Back to activation' %}</a></p>
+{% endblock %}
