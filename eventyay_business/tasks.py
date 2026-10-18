@@ -1,4 +1,5 @@
 import logging
+from datetime import timedelta
 from django.db import transaction
 from django.db.models import Q
 from django.dispatch import receiver
@@ -191,13 +192,31 @@ def manage_subscription_lifecycles():
     2. Expire past-due subscriptions where the configured grace period has ended.
     Invalidates entitlement cache and emits lifecycle signals.
     """
-    from .models import Subscription, SubscriptionStatus
-    from .services import invalidate_entitlement_cache
+    from .models import (
+        AddonPricingMode,
+        AddonStatus,
+        BillingNotificationEventType,
+        EventAddon,
+        OrganizerAddon,
+        Subscription,
+        SubscriptionStatus,
+    )
+    from .notifications import (
+        queue_addon_notification,
+        queue_subscription_notification,
+    )
+    from .services import (
+        get_grace_reminder_days,
+        get_renewal_reminder_days,
+        invalidate_entitlement_cache,
+    )
     from .signals import subscription_downgraded, subscription_expired
 
     current_time = now()
     downgraded_count = 0
     expired_count = 0
+    reminder_count = 0
+    renewal_reminder_count = 0
 
     with scopes_disabled():
         # 1. Apply scheduled downgrades
@@ -254,7 +273,18 @@ def manage_subscription_lifecycles():
             ).select_related("organizer", "tier_version")
         )
         for item in past_due_subs:
+            grace_deadline = item.grace_period_ends_at()
             if item.is_in_grace_period():
+                days_remaining = (grace_deadline.date() - current_time.date()).days
+                if days_remaining in get_grace_reminder_days():
+                    delivery = queue_subscription_notification(
+                        item,
+                        BillingNotificationEventType.GRACE_PERIOD_REMINDER,
+                        key_suffix=f"{grace_deadline.isoformat()}:{days_remaining}",
+                        days_remaining=days_remaining,
+                        deadline=grace_deadline,
+                    )
+                    reminder_count += int(delivery is not None)
                 continue
             with transaction.atomic():
                 locked_sub = (
@@ -272,18 +302,69 @@ def manage_subscription_lifecycles():
                 organizer = locked_sub.organizer
                 sub_instance = locked_sub
                 transaction.on_commit(
-                    lambda org=organizer, inst=sub_instance: (
+                    lambda org=organizer, inst=sub_instance, deadline=grace_deadline: (
                         invalidate_entitlement_cache(organizer=org),
-                        subscription_expired.send(sender=Subscription, instance=inst),
-                    )
+                        subscription_expired.send(
+                            sender=Subscription,
+                            instance=inst,
+                            grace_deadline=deadline,
+                        ),
+                    ),
+                    robust=True,
                 )
 
+        renewal_cutoff = current_time + timedelta(days=get_renewal_reminder_days())
+        renewing_subscriptions = Subscription.objects.filter(
+            status=SubscriptionStatus.ACTIVE,
+            ends_at__gt=current_time,
+            ends_at__lte=renewal_cutoff,
+            cancel_at__isnull=True,
+        ).select_related("organizer", "tier_version", "tier_version__tier")
+        for item in renewing_subscriptions:
+            delivery = queue_subscription_notification(
+                item,
+                BillingNotificationEventType.RENEWAL_APPROACHING,
+                key_suffix=item.ends_at.isoformat(),
+                effective_date=item.ends_at,
+            )
+            renewal_reminder_count += int(delivery is not None)
+
+        addon_filters = {
+            "status": AddonStatus.ACTIVE,
+            "addon__pricing_mode": AddonPricingMode.RECURRING,
+            "ends_at__gt": current_time,
+            "ends_at__lte": renewal_cutoff,
+            "cancel_at__isnull": True,
+        }
+        organizer_addons = OrganizerAddon.objects.filter(
+            **addon_filters
+        ).select_related("organizer", "addon")
+        event_addons = EventAddon.objects.filter(**addon_filters).select_related(
+            "event", "event__organizer", "addon"
+        )
+        for item in (*organizer_addons, *event_addons):
+            delivery = queue_addon_notification(
+                item,
+                BillingNotificationEventType.RENEWAL_APPROACHING,
+                key_suffix=item.ends_at.isoformat(),
+                effective_date=item.ends_at,
+            )
+            renewal_reminder_count += int(delivery is not None)
+
     logger.info(
-        "manage_subscription_lifecycles completed: %d downgraded, %d expired",
+        "manage_subscription_lifecycles completed: %d downgraded, %d expired, "
+        "%d grace reminders, %d renewal reminders",
         downgraded_count,
         expired_count,
+        reminder_count,
+        renewal_reminder_count,
     )
-    return {"downgraded": downgraded_count, "expired": expired_count}
+    return {
+        "downgraded": downgraded_count,
+        "expired": expired_count,
+        "grace_reminders": reminder_count,
+        "renewal_reminders": renewal_reminder_count,
+    }
 
 
 @app.task(name="eventyay_business.manage_subscription_lifecycles")

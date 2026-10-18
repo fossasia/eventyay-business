@@ -110,7 +110,10 @@ from .services import (
 from .signals import (
     AUTOMATIC_COLLECTION_TERMS_VERSION,
     addon_canceled,
+    addon_cancellation_scheduled,
     organizer_billing_payment_method_saved,
+    subscription_change_canceled,
+    subscription_change_scheduled,
     subscription_downgraded,
     subscription_purchased,
 )
@@ -907,6 +910,11 @@ class OrganizerPlanUpgradeView(
                             "updated_at",
                         ]
                     )
+                    subscription_change_scheduled.send(
+                        sender=Subscription,
+                        instance=sub_locked,
+                        cancellation=False,
+                    )
                     is_immediate = False
                 else:
                     sub_locked.tier_version = target_version
@@ -1095,6 +1103,15 @@ class OrganizerPlanCancelDowngradeView(
                     "plugins:eventyay_business:organizer.plan",
                     organizer=organizer.slug,
                 )
+            canceled_marker = (
+                sub_locked.pending_change_at.isoformat()
+                if sub_locked.pending_change_at
+                else sub_locked.updated_at.isoformat()
+            )
+            was_cancellation = bool(
+                sub_locked.pending_tier_version_id
+                and sub_locked.pending_tier_version.tier.slug == "free"
+            )
             sub_locked.pending_tier_version = None
             sub_locked.pending_billing_interval = None
             sub_locked.pending_change_at = None
@@ -1105,6 +1122,12 @@ class OrganizerPlanCancelDowngradeView(
                     "pending_change_at",
                     "updated_at",
                 ]
+            )
+            subscription_change_canceled.send(
+                sender=Subscription,
+                instance=sub_locked,
+                cancellation=was_cancellation,
+                canceled_marker=canceled_marker,
             )
 
         messages.success(
@@ -1258,6 +1281,11 @@ class OrganizerPlanCancelView(
                         "updated_at",
                     ]
                 )
+                subscription_change_scheduled.send(
+                    sender=Subscription,
+                    instance=sub_locked,
+                    cancellation=True,
+                )
                 is_immediate = False
             else:
                 sub_locked.tier_version = free_version
@@ -1273,7 +1301,9 @@ class OrganizerPlanCancelView(
                     lambda org=org_ref, inst=inst_ref: (
                         invalidate_entitlement_cache(organizer=org),
                         subscription_downgraded.send(
-                            sender=Subscription, instance=inst
+                            sender=Subscription,
+                            instance=inst,
+                            cancellation=True,
                         ),
                     )
                 )
@@ -1504,6 +1534,10 @@ class OrganizerAddonCancelView(OrganizerPermissionRequiredMixin, TemplateView):
                             else None
                         )
                     },
+                )
+                addon_cancellation_scheduled.send(
+                    sender=OrganizerAddon,
+                    instance=assignment,
                 )
 
         if immediate or assignment.status == AddonStatus.CANCELED:
@@ -1765,6 +1799,10 @@ class EventAddonCancelView(EventPermissionRequiredMixin, TemplateView):
                             else None
                         )
                     },
+                )
+                addon_cancellation_scheduled.send(
+                    sender=EventAddon,
+                    instance=assignment,
                 )
 
         if immediate or assignment.status == AddonStatus.CANCELED:
@@ -2252,11 +2290,9 @@ class AdminBillingNotificationPreviewView(
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         locale = self.request.GET.get("locale") or "en"
-        preview_context = preview_notification_context(
-            BillingNotificationEventType.ADMIN_TEST
-        )
         previews = []
         for event_type, spec in NOTIFICATION_SPECS.items():
+            preview_context = preview_notification_context(event_type)
             with language(locale):
                 body = render_to_string(spec.template_name, preview_context)
             previews.append(

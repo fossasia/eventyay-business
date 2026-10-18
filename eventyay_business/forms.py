@@ -24,7 +24,7 @@ from .models import (
     TierPrice,
     TierVersion,
 )
-from .services import normalize_collection_retry_days
+from .services import normalize_collection_retry_days, normalize_grace_reminder_days
 
 try:
     from eventyay.base.forms.widgets import SplitDateTimePickerWidget
@@ -953,6 +953,27 @@ class GlobalBusinessSettingsForm(SettingsForm):
                         ),
                     ),
                     (
+                        "business_grace_reminder_days",
+                        forms.CharField(
+                            label=_("Grace-period reminder days"),
+                            required=False,
+                            initial="3, 1",
+                            help_text=_(
+                                "Comma-separated days before paid access expires when reminders are sent."
+                            ),
+                        ),
+                    ),
+                    (
+                        "business_renewal_reminder_days",
+                        forms.IntegerField(
+                            label=_("Renewal reminder lead time (days)"),
+                            required=False,
+                            min_value=1,
+                            max_value=365,
+                            initial=7,
+                        ),
+                    ),
+                    (
                         "business_email_sender",
                         forms.EmailField(
                             label=_("Billing notification sender"),
@@ -1003,6 +1024,14 @@ class GlobalBusinessSettingsForm(SettingsForm):
             "business_collection_retry_days", as_type=str, default="1, 3, 5"
         )
         self.initial["business_collection_retry_days"] = retry_days or "1, 3, 5"
+        reminder_days = self.obj.settings.get(
+            "business_grace_reminder_days", as_type=str, default="3, 1"
+        )
+        self.initial["business_grace_reminder_days"] = reminder_days or "3, 1"
+        renewal_days = self.obj.settings.get(
+            "business_renewal_reminder_days", as_type=int, default=7
+        )
+        self.initial["business_renewal_reminder_days"] = renewal_days or 7
 
         self.field_groups = [
             (
@@ -1032,6 +1061,8 @@ class GlobalBusinessSettingsForm(SettingsForm):
                     "business_email_sender",
                     "business_email_reply_to",
                     "business_email_support_contact",
+                    "business_grace_reminder_days",
+                    "business_renewal_reminder_days",
                 ],
             ),
         ]
@@ -1044,6 +1075,14 @@ class GlobalBusinessSettingsForm(SettingsForm):
             raise forms.ValidationError(str(exc)) from exc
         return ", ".join(str(day) for day in days)
 
+    def clean_business_grace_reminder_days(self):
+        value = self.cleaned_data.get("business_grace_reminder_days") or "3, 1"
+        try:
+            days = normalize_grace_reminder_days(value)
+        except ValueError as exc:
+            raise forms.ValidationError(str(exc)) from exc
+        return ", ".join(str(day) for day in days)
+
 
 class BillingNotificationTestForm(forms.Form):
     organizer = forms.ModelChoiceField(
@@ -1051,24 +1090,7 @@ class BillingNotificationTestForm(forms.Form):
         label=_("Organizer"),
     )
     event_type = forms.ChoiceField(
-        choices=(
-            (
-                BillingNotificationEventType.INVOICE_ISSUED,
-                BillingNotificationEventType.INVOICE_ISSUED.label,
-            ),
-            (
-                BillingNotificationEventType.COLLECTION_PROBLEM,
-                BillingNotificationEventType.COLLECTION_PROBLEM.label,
-            ),
-            (
-                BillingNotificationEventType.COLLECTION_SUCCEEDED,
-                BillingNotificationEventType.COLLECTION_SUCCEEDED.label,
-            ),
-            (
-                BillingNotificationEventType.ADMIN_TEST,
-                BillingNotificationEventType.ADMIN_TEST.label,
-            ),
-        ),
+        choices=BillingNotificationEventType.choices,
         label=_("Notification type"),
     )
     recipient = forms.EmailField(label=_("Test recipient"))
