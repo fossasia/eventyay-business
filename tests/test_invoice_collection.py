@@ -221,9 +221,25 @@ def test_revoked_authorization_marks_invoice_past_due_and_notifies_once(
         event_type=BillingNotificationEventType.AUTHORIZATION_MISSING,
         related_object_id=str(invoice.pk),
     )
+    grace_delivery = BillingNotificationDelivery.objects.get(
+        event_type=BillingNotificationEventType.GRACE_PERIOD_STARTED,
+        related_object_id=str(subscription.pk),
+    )
     deliver_billing_notification(delivery.pk)
-    assert len(mail.outbox) == 1
-    assert invoice.invoice_number in mail.outbox[0].subject
+    deliver_billing_notification(grace_delivery.pk)
+    delivery.refresh_from_db()
+    grace_delivery.refresh_from_db()
+    assert delivery.attempt_count == 1
+    assert grace_delivery.attempt_count == 1
+    assert len(mail.outbox) == 2
+
+    # Delivering either durable record again must remain idempotent.
+    deliver_billing_notification(delivery.pk)
+    deliver_billing_notification(grace_delivery.pk)
+    assert len(mail.outbox) == 2
+    assert (
+        sum(invoice.invoice_number in message.subject for message in mail.outbox) == 1
+    )
 
 
 @pytest.mark.django_db
