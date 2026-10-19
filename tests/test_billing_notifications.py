@@ -36,7 +36,10 @@ from eventyay_business.notifications import (
     queue_invoice_notification,
     save_notification_template,
 )
-from eventyay_business.signals import register_business_mail_templates
+from eventyay_business.signals import (
+    platform_mail_templates,
+    register_business_mail_templates,
+)
 
 
 @pytest.fixture
@@ -376,6 +379,10 @@ def test_business_notifications_are_registered_in_message_center():
 
 
 @pytest.mark.django_db
+@pytest.mark.skipif(
+    platform_mail_templates is None,
+    reason="The installed core version does not expose the platform template registry",
+)
 def test_message_center_lists_business_notification_templates(business_admin_client):
     templates = get_platform_mail_templates()
     invoice_template = next(
