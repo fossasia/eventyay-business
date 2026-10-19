@@ -102,6 +102,7 @@ from .notifications import (
     NOTIFICATION_PLACEHOLDERS,
     NOTIFICATION_SPECS,
     BillingNotificationRecipient,
+    notification_template_overrides,
     notification_template_sources,
     preview_notification_context,
     queue_billing_notification,
@@ -2445,13 +2446,25 @@ class AdminBillingNotificationTemplateView(
         active_locales = form.cleaned_data["active_locales"]
         subjects = form.cleaned_data["subject"].data
         messages_by_locale = form.cleaned_data["message"].data
+        initial = form.initial
         for locale, _label in settings.LANGUAGES:
             if locale in active_locales:
+                subject_override, body_override = notification_template_overrides(
+                    event_type, locale
+                )
+                submitted_subject = subjects.get(locale, "")
+                submitted_body = messages_by_locale.get(locale, "")
+                initial_subject = initial["subject"].get(locale, "").strip()
+                initial_body = initial["message"].get(locale, "").strip()
+                if submitted_subject != initial_subject:
+                    subject_override = submitted_subject
+                if submitted_body != initial_body:
+                    body_override = submitted_body
                 save_notification_template(
                     event_type,
                     locale,
-                    subjects.get(locale, ""),
-                    messages_by_locale.get(locale, ""),
+                    subject_override,
+                    body_override,
                 )
             else:
                 reset_notification_template(event_type, locale)

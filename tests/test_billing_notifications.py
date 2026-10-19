@@ -32,6 +32,7 @@ from eventyay_business.notifications import (
     BillingNotificationRecipient,
     deliver_billing_notification,
     invoice_billing_recipient,
+    notification_template_overrides,
     notification_template_sources,
     preview_notification_context,
     queue_billing_notification,
@@ -543,6 +544,38 @@ def test_notification_template_prefills_inactive_language_defaults(
     assert response.context["form"].initial["message"]["de"] == default_body
     assert default_subject.strip()
     assert default_body.strip()
+
+
+@pytest.mark.django_db
+def test_notification_template_does_not_store_unchanged_defaults(
+    business_admin_client, notification_setup
+):
+    event_type = BillingNotificationEventType.ADDON_ACTIVATED
+    edit_url = reverse(
+        "plugins:eventyay_business:notifications.template",
+        kwargs={"event_type": event_type},
+    )
+    english_subject, english_body, _is_custom = notification_template_sources(
+        event_type, "en"
+    )
+    _german_subject, german_body, _is_custom = notification_template_sources(
+        event_type, "de"
+    )
+    form_data = notification_template_form_data(english_subject, english_body)
+    form_data.update(
+        notification_template_form_data("Deutscher Betreff", german_body, "de")
+    )
+    form_data["active_locales"] = "en,de"
+
+    for _attempt in range(2):
+        response = business_admin_client.post(edit_url, form_data)
+
+        assert response.status_code == 302
+        assert notification_template_overrides(event_type, "en") == ("", "")
+        assert notification_template_overrides(event_type, "de") == (
+            "Deutscher Betreff",
+            "",
+        )
 
 
 @pytest.mark.django_db
