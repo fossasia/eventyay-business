@@ -33,6 +33,7 @@ from .models import (
 logger = logging.getLogger(__name__)
 
 CUSTOM_NOTIFICATION_TEMPLATE = "eventyay_business/email/custom_notification.txt"
+MAX_NOTIFICATION_SUBJECT_LENGTH = 255
 NOTIFICATION_PLACEHOLDERS = {
     "organizer_name": _("Organizer name"),
     "object_name": _("Plan or add-on name"),
@@ -397,6 +398,7 @@ def queue_billing_notification(
     subject, custom_body, _is_custom = render_notification_content(
         event_type, context, recipient.locale
     )
+    subject = subject[:MAX_NOTIFICATION_SUBJECT_LENGTH]
     delivery_context = context
     template_name = spec.template_name
     if custom_body is not None:

@@ -25,6 +25,7 @@ from eventyay_business.models import (
 )
 from eventyay_business.notifications import (
     CUSTOM_NOTIFICATION_TEMPLATE,
+    MAX_NOTIFICATION_SUBJECT_LENGTH,
     NOTIFICATION_SPECS,
     BillingNotificationRecipient,
     deliver_billing_notification,
@@ -32,6 +33,7 @@ from eventyay_business.notifications import (
     preview_notification_context,
     queue_billing_notification,
     queue_invoice_notification,
+    save_notification_template,
 )
 
 
@@ -407,3 +409,65 @@ def test_notification_template_reset_restores_default(
     edit_page = business_admin_client.get(edit_url, {"locale": "en"})
     assert b"Custom subject" not in edit_page.content
     assert b"Eventyay Business notification test" in edit_page.content
+
+
+@pytest.mark.django_db
+def test_notification_template_language_is_loaded_before_editing(
+    business_admin_client, notification_setup
+):
+    event_type = BillingNotificationEventType.ADMIN_TEST
+    edit_url = reverse(
+        "plugins:eventyay_business:notifications.template",
+        kwargs={"event_type": event_type},
+    )
+    business_admin_client.post(
+        edit_url,
+        {"locale": "en", "subject": "English custom", "body": "English body"},
+    )
+
+    response = business_admin_client.get(edit_url, {"locale": "de"})
+
+    assert response.status_code == 200
+    assert response.context["current_locale"] == "de"
+    assert response.context["form"].fields["locale"].widget.is_hidden
+    assert response.context["form"].initial["locale"] == "de"
+    assert b"English custom" not in response.content
+    assert b'method="get"' in response.content
+    assert b'id="template-language"' in response.content
+    assert b'type="hidden" name="locale" value="de"' in response.content
+
+
+@pytest.mark.django_db
+def test_rendered_notification_subject_is_truncated_to_model_limit(
+    notification_setup,
+):
+    organizer, _, _invoice = notification_setup
+    event_type = BillingNotificationEventType.ADMIN_TEST
+    save_notification_template(
+        event_type,
+        "en",
+        "Notice for {organizer_name}",
+        "Notification body",
+    )
+    context = preview_notification_context(event_type)
+    context["organizer_name"] = "A" * 300
+    recipient = BillingNotificationRecipient(
+        email="billing@example.com",
+        locale="en",
+        source=BillingNotificationRecipientSource.BILLING_CONTACT,
+    )
+
+    with patch("eventyay_business.notifications.schedule_billing_notification"):
+        delivery = queue_billing_notification(
+            logical_event_key="admin-test:long-subject",
+            event_type=event_type,
+            organizer=organizer,
+            recipient=recipient,
+            context=context,
+        )
+
+    assert len(delivery.subject) == MAX_NOTIFICATION_SUBJECT_LENGTH
+    assert (
+        delivery.subject
+        == ("Notice for " + "A" * 300)[:MAX_NOTIFICATION_SUBJECT_LENGTH]
+    )

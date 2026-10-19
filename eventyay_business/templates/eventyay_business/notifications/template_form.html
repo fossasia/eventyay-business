@@ -9,6 +9,16 @@
     <h1>{% blocktranslate with notification=event_label %}Edit {{ notification }} email{% endblocktranslate %}</h1>
   </div>
 
+  <form method="get" class="form-inline well well-sm">
+    <label for="template-language">{% translate 'Template language' %}</label>
+    <select id="template-language" name="locale" class="form-control">
+      {% for code, label in language_choices %}
+        <option value="{{ code }}"{% if code == current_locale %} selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn btn-default">{% translate 'Load template' %}</button>
+  </form>
+
   <div class="row">
     <div class="col-md-8">
       <div class="panel panel-default">
@@ -16,7 +26,9 @@
         <div class="panel-body">
           <form method="post" class="form-horizontal">
             {% csrf_token %}
-            {% bootstrap_form form layout='horizontal' %}
+            {{ form.locale }}
+            {% bootstrap_field form.subject layout='horizontal' %}
+            {% bootstrap_field form.body layout='horizontal' %}
             <div class="form-group">
               <div class="col-md-9 col-md-offset-3">
                 <button type="submit" class="btn btn-primary">
@@ -28,7 +40,7 @@
                     {% translate 'Reset to default' %}
                   </button>
                 {% endif %}
-                <a class="btn btn-default" href="{% url 'plugins:eventyay_business:notifications.preview' %}?locale={{ form.locale.value|urlencode }}">
+                <a class="btn btn-default" href="{% url 'plugins:eventyay_business:notifications.preview' %}?locale={{ current_locale|urlencode }}">
                   {% translate 'Back to previews' %}
                 </a>
               </div>

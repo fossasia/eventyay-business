@@ -1107,7 +1107,7 @@ class BillingNotificationTemplateForm(forms.Form):
     locale = forms.ChoiceField(
         choices=settings.LANGUAGES,
         label=_("Language"),
-        help_text=_("This customization applies only to the selected language."),
+        widget=forms.HiddenInput,
     )
     subject = forms.CharField(label=_("Subject"), max_length=255)
     body = forms.CharField(

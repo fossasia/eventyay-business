@@ -2444,6 +2444,8 @@ class AdminBillingNotificationTemplateView(
                 "event_type": event_type,
                 "event_label": event_type.label,
                 "is_custom": is_custom,
+                "current_locale": self.get_locale(),
+                "language_choices": settings.LANGUAGES,
                 "placeholders": NOTIFICATION_PLACEHOLDERS.items(),
             }
         )
