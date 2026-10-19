@@ -2324,6 +2324,13 @@ class AdminBillingNotificationPreviewView(
     template_name = "eventyay_business/notifications/preview.html"
     form_class = BillingNotificationTestForm
 
+    def get_initial(self):
+        initial = super().get_initial()
+        locale = self.request.GET.get("locale")
+        if locale in {code for code, _label in settings.LANGUAGES}:
+            initial["locale"] = locale
+        return initial
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         locale = self.request.GET.get("locale") or "en"
@@ -2376,7 +2383,10 @@ class AdminBillingNotificationPreviewView(
             self.request,
             _("The test notification was queued without changing billing state."),
         )
-        return redirect("plugins:eventyay_business:notifications.preview")
+        return redirect(
+            f"{reverse('plugins:eventyay_business:notifications.preview')}"
+            f"?locale={form.cleaned_data['locale']}"
+        )
 
 
 class AdminBillingNotificationTemplateView(

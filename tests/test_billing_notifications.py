@@ -10,6 +10,7 @@ from eventyay.base.models import Organizer, User
 from eventyay.base.models.auth import StaffSession
 from eventyay.base.models.organizer import OrganizerBillingModel
 from eventyay.base.services.mail import SendMailException
+from eventyay.control.views.admin_messages import get_platform_mail_templates
 from unittest.mock import patch
 
 from eventyay_business.forms import BillingNotificationTemplateForm
@@ -35,6 +36,7 @@ from eventyay_business.notifications import (
     queue_invoice_notification,
     save_notification_template,
 )
+from eventyay_business.signals import register_business_mail_templates
 
 
 @pytest.fixture
@@ -349,6 +351,54 @@ def test_notification_template_form_rejects_unknown_placeholders():
     assert "Invalid placeholder" in str(form.errors["body"])
 
 
+def test_notification_template_form_uses_shared_email_editor():
+    form = BillingNotificationTemplateForm()
+
+    assert form.fields["body"].widget.attrs["data-tiptap-profile"] == "email"
+    assert "invoice_number" in form.fields["body"].widget.placeholders
+
+
+@pytest.mark.django_db
+def test_business_notifications_are_registered_in_message_center():
+    templates = register_business_mail_templates(sender=None)
+
+    assert len(templates) == len(BillingNotificationEventType.choices)
+    assert {str(template["category"]) for template in templates} == {"Business"}
+    invoice_template = next(
+        template
+        for template in templates
+        if template["key"] == f"business-{BillingNotificationEventType.INVOICE_ISSUED}"
+    )
+    assert invoice_template["url"] == reverse(
+        "plugins:eventyay_business:notifications.template",
+        kwargs={"event_type": BillingNotificationEventType.INVOICE_ISSUED},
+    )
+
+
+@pytest.mark.django_db
+def test_message_center_lists_business_notification_templates(business_admin_client):
+    templates = get_platform_mail_templates()
+    invoice_template = next(
+        template
+        for template in templates
+        if template["key"] == f"business-{BillingNotificationEventType.INVOICE_ISSUED}"
+    )
+
+    assert str(invoice_template["category"]) == "Business"
+    edit_url = reverse(
+        "plugins:eventyay_business:notifications.template",
+        kwargs={"event_type": BillingNotificationEventType.INVOICE_ISSUED},
+    )
+    assert invoice_template["url"] == edit_url
+
+    response = business_admin_client.get(
+        reverse("eventyay_admin:admin.messages.templates")
+    )
+    assert response.status_code == 200
+    assert edit_url.encode() in response.content
+    assert b"Business" in response.content
+
+
 @pytest.mark.django_db
 def test_custom_notification_template_is_previewed_and_snapshotted(
     business_admin_client, notification_setup
@@ -449,6 +499,32 @@ def test_notification_template_language_is_loaded_before_editing(
     assert b'method="get"' in response.content
     assert b'id="template-language"' in response.content
     assert b'type="hidden" name="locale" value="de"' in response.content
+    assert b'data-tiptap-profile="email"' in response.content
+
+
+@pytest.mark.django_db
+def test_test_notification_preserves_selected_language(
+    business_admin_client, notification_setup
+):
+    organizer, _, _invoice = notification_setup
+
+    with patch("eventyay_business.notifications.schedule_billing_notification"):
+        response = business_admin_client.post(
+            reverse("plugins:eventyay_business:notifications.preview"),
+            {
+                "organizer": organizer.pk,
+                "event_type": BillingNotificationEventType.ADMIN_TEST,
+                "recipient": "test@example.com",
+                "locale": "de",
+            },
+        )
+
+    assert response.status_code == 302
+    assert response.url.endswith("?locale=de")
+
+    preview = business_admin_client.get(response.url)
+    assert preview.context["preview_locale"] == "de"
+    assert preview.context["form"].initial["locale"] == "de"
 
 
 @pytest.mark.django_db

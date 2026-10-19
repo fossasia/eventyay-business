@@ -7,6 +7,7 @@ from eventyay.base.forms import SecretKeySettingsField, SettingsForm
 from eventyay.base.forms.validators import PlaceholderValidator
 from eventyay.base.models import Organizer
 from eventyay.base.settings import GlobalSettingsObject
+from eventyay.common.forms.fields import EmailBodyField
 from eventyay.control.forms import ExtFileField
 from eventyay.control.forms.global_settings import StripeKeyValidator
 
@@ -1110,11 +1111,13 @@ class BillingNotificationTemplateForm(forms.Form):
         widget=forms.HiddenInput,
     )
     subject = forms.CharField(label=_("Subject"), max_length=255)
-    body = forms.CharField(
+    body = EmailBodyField(
         label=_("Message"),
         max_length=20000,
-        widget=forms.Textarea(attrs={"rows": 16}),
-        help_text=_("Plain text with optional placeholders such as {organizer_name}."),
+        placeholders=tuple(NOTIFICATION_PLACEHOLDERS),
+        help_text=_(
+            "Use the placeholder menu to insert values such as {organizer_name}."
+        ),
     )
 
     def __init__(self, *args, **kwargs):
