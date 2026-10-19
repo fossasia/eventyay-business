@@ -297,6 +297,44 @@ def notification_template_setting_key(
     return f"business_notification_template_{event_type}_{locale}_{field}"
 
 
+def notification_template_active_locales_setting_key(
+    event_type: BillingNotificationEventType | str,
+) -> str:
+    return f"business_notification_template_{event_type}_active_locales"
+
+
+def notification_template_active_locales(
+    event_type: BillingNotificationEventType | str,
+) -> set[str]:
+    configured_locales = {locale for locale, _label in settings.LANGUAGES}
+    stored_locales = GlobalSettingsObject().settings.get(
+        notification_template_active_locales_setting_key(event_type),
+        as_type=str,
+        default="",
+    )
+    active_locales = {
+        locale.strip()
+        for locale in stored_locales.split(",")
+        if locale.strip() in configured_locales
+    }
+    active_locales.add(settings.LANGUAGE_CODE)
+    return active_locales
+
+
+def save_notification_template_active_locales(
+    event_type: BillingNotificationEventType | str, locales: set[str]
+) -> None:
+    active_locales = set(locales)
+    active_locales.add(settings.LANGUAGE_CODE)
+    ordered_locales = [
+        locale for locale, _label in settings.LANGUAGES if locale in active_locales
+    ]
+    GlobalSettingsObject().settings.set(
+        notification_template_active_locales_setting_key(event_type),
+        ",".join(ordered_locales),
+    )
+
+
 def notification_template_sources(
     event_type: BillingNotificationEventType | str, locale: str
 ) -> tuple[str, str, bool]:

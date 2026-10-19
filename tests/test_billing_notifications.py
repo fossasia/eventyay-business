@@ -32,6 +32,7 @@ from eventyay_business.notifications import (
     BillingNotificationRecipient,
     deliver_billing_notification,
     invoice_billing_recipient,
+    notification_template_active_locales,
     notification_template_overrides,
     notification_template_sources,
     preview_notification_context,
@@ -576,6 +577,38 @@ def test_notification_template_does_not_store_unchanged_defaults(
             "Deutscher Betreff",
             "",
         )
+
+    edit_page = business_admin_client.get(edit_url)
+    assert edit_page.context["form"].initial["active_locales"] == "en,de"
+    assert notification_template_active_locales(event_type) == {"en", "de"}
+
+
+@pytest.mark.django_db
+def test_notification_template_saves_language_without_custom_content(
+    business_admin_client, notification_setup
+):
+    event_type = BillingNotificationEventType.PLAN_CANCELLATION_SCHEDULED
+    edit_url = reverse(
+        "plugins:eventyay_business:notifications.template",
+        kwargs={"event_type": event_type},
+    )
+    english_subject, english_body, _is_custom = notification_template_sources(
+        event_type, "en"
+    )
+    german_subject, german_body, _is_custom = notification_template_sources(
+        event_type, "de"
+    )
+    form_data = notification_template_form_data(english_subject, english_body)
+    form_data.update(notification_template_form_data(german_subject, german_body, "de"))
+    form_data["active_locales"] = "en,de"
+
+    response = business_admin_client.post(edit_url, form_data)
+
+    assert response.status_code == 302
+    assert notification_template_overrides(event_type, "de") == ("", "")
+    assert notification_template_active_locales(event_type) == {"en", "de"}
+    edit_page = business_admin_client.get(edit_url)
+    assert edit_page.context["form"].initial["active_locales"] == "en,de"
 
 
 @pytest.mark.django_db

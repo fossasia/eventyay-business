@@ -102,6 +102,7 @@ from .notifications import (
     NOTIFICATION_PLACEHOLDERS,
     NOTIFICATION_SPECS,
     BillingNotificationRecipient,
+    notification_template_active_locales,
     notification_template_overrides,
     notification_template_sources,
     preview_notification_context,
@@ -110,6 +111,7 @@ from .notifications import (
     reset_notification_template,
     retry_billing_notification,
     save_notification_template,
+    save_notification_template_active_locales,
 )
 from .platform_fee_ledger import (
     organizer_billing_cutover_at,
@@ -2406,18 +2408,22 @@ class AdminBillingNotificationTemplateView(
         initial = super().get_initial()
         subjects = {}
         messages_by_locale = {}
-        active_locales = [settings.LANGUAGE_CODE]
+        active_locales = notification_template_active_locales(self.get_event_type())
         for locale, _label in settings.LANGUAGES:
             subject, body, is_custom = notification_template_sources(
                 self.get_event_type(), locale
             )
             subjects[locale] = subject
             messages_by_locale[locale] = body
-            if is_custom and locale not in active_locales:
-                active_locales.append(locale)
+            if is_custom:
+                active_locales.add(locale)
         initial.update(
             {
-                "active_locales": ",".join(active_locales),
+                "active_locales": ",".join(
+                    locale
+                    for locale, _label in settings.LANGUAGES
+                    if locale in active_locales
+                ),
                 "subject": subjects,
                 "message": messages_by_locale,
             }
@@ -2429,6 +2435,9 @@ class AdminBillingNotificationTemplateView(
             event_type = self.get_event_type()
             for locale, _label in settings.LANGUAGES:
                 reset_notification_template(event_type, locale)
+            save_notification_template_active_locales(
+                event_type, {settings.LANGUAGE_CODE}
+            )
             messages.success(
                 request,
                 _("The notification template was reset to its translated defaults."),
@@ -2444,6 +2453,7 @@ class AdminBillingNotificationTemplateView(
     def form_valid(self, form):
         event_type = self.get_event_type()
         active_locales = form.cleaned_data["active_locales"]
+        save_notification_template_active_locales(event_type, active_locales)
         subjects = form.cleaned_data["subject"].data
         messages_by_locale = form.cleaned_data["message"].data
         initial = form.initial
