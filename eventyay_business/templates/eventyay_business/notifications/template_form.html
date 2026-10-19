@@ -30,6 +30,7 @@
           <form method="post" class="form-horizontal">
             {% csrf_token %}
             {{ form.active_locales }}
+            {{ form.selected_locale }}
             <div class="d-flex align-items-center mb-3">
               <div id="mail-language-tabs" role="tablist" hidden
                    data-default-locale="{{ platform_default_locale }}"></div>

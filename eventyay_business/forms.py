@@ -1111,6 +1111,10 @@ class BillingNotificationTemplateForm(forms.Form):
         required=False,
         widget=forms.HiddenInput(attrs={"id": "mail-active-locales"}),
     )
+    selected_locale = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput(attrs={"id": "mail-selected-locale"}),
+    )
     subject = I18nFormField(
         label=_("Subject"),
         locales=[code for code, _label in settings.LANGUAGES],
@@ -1172,6 +1176,13 @@ class BillingNotificationTemplateForm(forms.Form):
             raise forms.ValidationError(_("Select only supported languages."))
         active_locales.add(settings.LANGUAGE_CODE)
         return active_locales
+
+    def clean_selected_locale(self):
+        selected_locale = self.cleaned_data["selected_locale"].strip()
+        valid_locales = {code for code, _label in settings.LANGUAGES}
+        if selected_locale not in valid_locales:
+            return settings.LANGUAGE_CODE
+        return selected_locale
 
 
 class InvoicePresentationSettingsForm(SettingsForm):

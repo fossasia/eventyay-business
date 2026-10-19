@@ -2417,6 +2417,9 @@ class AdminBillingNotificationTemplateView(
             messages_by_locale[locale] = body
             if is_custom:
                 active_locales.add(locale)
+        selected_locale = (self.request.GET.get("locale") or "").strip()
+        if selected_locale not in active_locales:
+            selected_locale = settings.LANGUAGE_CODE
         initial.update(
             {
                 "active_locales": ",".join(
@@ -2424,6 +2427,7 @@ class AdminBillingNotificationTemplateView(
                     for locale, _label in settings.LANGUAGES
                     if locale in active_locales
                 ),
+                "selected_locale": selected_locale,
                 "subject": subjects,
                 "message": messages_by_locale,
             }
@@ -2479,12 +2483,11 @@ class AdminBillingNotificationTemplateView(
             else:
                 reset_notification_template(event_type, locale)
         messages.success(self.request, _("The notification template was saved."))
-        return redirect(
-            reverse(
-                "plugins:eventyay_business:notifications.template",
-                kwargs={"event_type": event_type},
-            )
+        template_url = reverse(
+            "plugins:eventyay_business:notifications.template",
+            kwargs={"event_type": event_type},
         )
+        return redirect(f"{template_url}?locale={form.cleaned_data['selected_locale']}")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
