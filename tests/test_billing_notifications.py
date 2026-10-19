@@ -1,6 +1,7 @@
 import pytest
 from datetime import datetime
 from decimal import Decimal
+from django.conf import settings
 from django.db import transaction
 from django.template.loader import render_to_string
 from django.test import override_settings
@@ -31,15 +32,26 @@ from eventyay_business.notifications import (
     BillingNotificationRecipient,
     deliver_billing_notification,
     invoice_billing_recipient,
+    notification_template_sources,
     preview_notification_context,
     queue_billing_notification,
     queue_invoice_notification,
+    render_notification_content,
     save_notification_template,
 )
 from eventyay_business.signals import (
     platform_mail_templates,
     register_business_mail_templates,
 )
+
+
+def notification_template_form_data(subject, message, locale="en"):
+    locale_index = [code for code, _label in settings.LANGUAGES].index(locale)
+    return {
+        "active_locales": locale,
+        f"subject_{locale_index}": subject,
+        f"message_{locale_index}": message,
+    }
 
 
 @pytest.fixture
@@ -343,22 +355,21 @@ def test_all_billing_notification_templates_render(event_type):
 
 def test_notification_template_form_rejects_unknown_placeholders():
     form = BillingNotificationTemplateForm(
-        data={
-            "locale": "en",
-            "subject": "Invoice {invoice_number}",
-            "body": "Hello {unknown_value}",
-        }
+        data=notification_template_form_data(
+            "Invoice {invoice_number}", "Hello {unknown_value}"
+        )
     )
 
     assert not form.is_valid()
-    assert "Invalid placeholder" in str(form.errors["body"])
+    assert "Invalid placeholder" in str(form.errors["message"])
 
 
 def test_notification_template_form_uses_shared_email_editor():
     form = BillingNotificationTemplateForm()
 
-    assert form.fields["body"].widget.attrs["data-tiptap-profile"] == "email"
-    assert "invoice_number" in form.fields["body"].widget.placeholders
+    message_widget = form.fields["message"].widget.widgets[0]
+    assert message_widget.attrs["data-tiptap-profile"] == "email"
+    assert "invoice_number" in message_widget.attrs["data-tiptap-placeholders"]
 
 
 @pytest.mark.django_db
@@ -419,11 +430,10 @@ def test_custom_notification_template_is_previewed_and_snapshotted(
 
     response = business_admin_client.post(
         edit_url,
-        {
-            "locale": "en",
-            "subject": "Invoice {invoice_number} is ready",
-            "body": "Hello {organizer_name}, view {invoice_number} at {action_url}",
-        },
+        notification_template_form_data(
+            "Invoice {invoice_number} is ready",
+            "Hello {organizer_name}, view {invoice_number} at {action_url}",
+        ),
     )
 
     assert response.status_code == 302
@@ -463,15 +473,12 @@ def test_notification_template_reset_restores_default(
     )
     business_admin_client.post(
         edit_url,
-        {"locale": "en", "subject": "Custom subject", "body": "Custom body"},
+        notification_template_form_data("Custom subject", "Custom body"),
     )
 
     response = business_admin_client.post(
         edit_url,
         {
-            "locale": "en",
-            "subject": "Custom subject",
-            "body": "Custom body",
             "action": "reset",
         },
     )
@@ -483,7 +490,7 @@ def test_notification_template_reset_restores_default(
 
 
 @pytest.mark.django_db
-def test_notification_template_language_is_loaded_before_editing(
+def test_notification_template_uses_core_multilingual_editor(
     business_admin_client, notification_setup
 ):
     event_type = BillingNotificationEventType.ADMIN_TEST
@@ -491,22 +498,51 @@ def test_notification_template_language_is_loaded_before_editing(
         "plugins:eventyay_business:notifications.template",
         kwargs={"event_type": event_type},
     )
-    business_admin_client.post(
-        edit_url,
-        {"locale": "en", "subject": "English custom", "body": "English body"},
+    form_data = notification_template_form_data("English custom", "English body")
+    form_data.update(
+        notification_template_form_data("Deutscher Betreff", "Deutscher Text", "de")
     )
+    form_data["active_locales"] = "en,de"
+    business_admin_client.post(edit_url, form_data)
 
-    response = business_admin_client.get(edit_url, {"locale": "de"})
+    response = business_admin_client.get(edit_url)
 
     assert response.status_code == 200
-    assert response.context["current_locale"] == "de"
-    assert response.context["form"].fields["locale"].widget.is_hidden
-    assert response.context["form"].initial["locale"] == "de"
-    assert b"English custom" not in response.content
-    assert b'method="get"' in response.content
-    assert b'id="template-language"' in response.content
-    assert b'type="hidden" name="locale" value="de"' in response.content
+    assert response.context["form"].initial["subject"]["en"] == "English custom"
+    assert response.context["form"].initial["subject"]["de"] == "Deutscher Betreff"
+    assert b'id="mail-language-tabs"' in response.content
+    assert b'id="add-language-btn"' in response.content
+    assert b'lang="en"' in response.content
+    assert b'lang="de"' in response.content
+    assert b"pretixcontrol/js/admin-mail-language-manager.js" in response.content
     assert b'data-tiptap-profile="email"' in response.content
+    subject, body, is_custom = render_notification_content(event_type, {}, "de")
+    assert subject == "Deutscher Betreff"
+    assert body == "Deutscher Text"
+    assert is_custom is True
+
+
+@pytest.mark.django_db
+def test_notification_template_prefills_inactive_language_defaults(
+    business_admin_client, notification_setup
+):
+    event_type = BillingNotificationEventType.ADDON_ACTIVATED
+    edit_url = reverse(
+        "plugins:eventyay_business:notifications.template",
+        kwargs={"event_type": event_type},
+    )
+
+    response = business_admin_client.get(edit_url)
+    default_subject, default_body, _is_custom = notification_template_sources(
+        event_type, "de"
+    )
+
+    assert response.status_code == 200
+    assert response.context["form"].initial["active_locales"] == "en"
+    assert response.context["form"].initial["subject"]["de"] == default_subject
+    assert response.context["form"].initial["message"]["de"] == default_body
+    assert default_subject.strip()
+    assert default_body.strip()
 
 
 @pytest.mark.django_db
