@@ -7,6 +7,7 @@ from django.conf import settings
 from django.db import transaction
 from django.db.models import Q
 from django.template import TemplateDoesNotExist
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.formats import date_format
 from django.utils.timezone import now
@@ -30,6 +31,25 @@ from .models import (
 )
 
 logger = logging.getLogger(__name__)
+
+CUSTOM_NOTIFICATION_TEMPLATE = "eventyay_business/email/custom_notification.txt"
+NOTIFICATION_PLACEHOLDERS = {
+    "organizer_name": _("Organizer name"),
+    "object_name": _("Plan or add-on name"),
+    "event_name": _("Event name"),
+    "invoice_number": _("Invoice number"),
+    "amount": _("Amount"),
+    "currency": _("Currency"),
+    "issue_date": _("Invoice issue date"),
+    "effective_date": _("Effective or renewal date"),
+    "deadline": _("Payment or cancellation deadline"),
+    "next_retry_at": _("Next payment retry date"),
+    "days_remaining": _("Days remaining"),
+    "current_state": _("Current billing state"),
+    "failure_code": _("Platform failure code"),
+    "action_url": _("Relevant Eventyay page"),
+    "support_email": _("Configured billing support address"),
+}
 
 
 @dataclass(frozen=True)
@@ -261,11 +281,92 @@ def invoice_notification_context(invoice: BusinessInvoice) -> dict:
     }
 
 
-def render_notification_subject(
-    spec: BillingNotificationSpec, context: dict, locale: str
+class NotificationFormatContext(dict):
+    def __missing__(self, key):
+        return ""
+
+
+def format_notification_template(template: str, context: dict) -> str:
+    return template.format_map(NotificationFormatContext(context))
+
+
+def notification_template_setting_key(
+    event_type: BillingNotificationEventType | str, locale: str, field: str
 ) -> str:
+    return f"business_notification_template_{event_type}_{locale}_{field}"
+
+
+def notification_template_sources(
+    event_type: BillingNotificationEventType | str, locale: str
+) -> tuple[str, str, bool]:
+    event_type = BillingNotificationEventType(event_type)
+    spec = NOTIFICATION_SPECS[event_type]
+    global_settings = GlobalSettingsObject().settings
+    subject_key = notification_template_setting_key(event_type, locale, "subject")
+    body_key = notification_template_setting_key(event_type, locale, "body")
+    custom_subject = global_settings.get(subject_key, as_type=str, default="")
+    custom_body = global_settings.get(body_key, as_type=str, default="")
+    placeholder_context = {name: "{" + name + "}" for name in NOTIFICATION_PLACEHOLDERS}
+    placeholder_context["event_type"] = event_type
     with language(locale):
-        return str(spec.subject).format_map(context)
+        default_subject = str(spec.subject)
+        default_body = render_to_string(spec.template_name, placeholder_context)
+    return (
+        custom_subject or default_subject,
+        custom_body or default_body,
+        bool(custom_subject or custom_body),
+    )
+
+
+def render_notification_content(
+    event_type: BillingNotificationEventType | str, context: dict, locale: str
+) -> tuple[str, str | None, bool]:
+    event_type = BillingNotificationEventType(event_type)
+    spec = NOTIFICATION_SPECS[event_type]
+    global_settings = GlobalSettingsObject().settings
+    custom_subject = global_settings.get(
+        notification_template_setting_key(event_type, locale, "subject"),
+        as_type=str,
+        default="",
+    )
+    custom_body = global_settings.get(
+        notification_template_setting_key(event_type, locale, "body"),
+        as_type=str,
+        default="",
+    )
+    with language(locale):
+        subject = format_notification_template(
+            custom_subject or str(spec.subject), context
+        )
+        body = (
+            format_notification_template(custom_body, context) if custom_body else None
+        )
+    return subject, body, bool(custom_subject or custom_body)
+
+
+def save_notification_template(
+    event_type: BillingNotificationEventType | str,
+    locale: str,
+    subject: str,
+    body: str,
+) -> None:
+    global_settings = GlobalSettingsObject().settings
+    global_settings.set(
+        notification_template_setting_key(event_type, locale, "subject"), subject
+    )
+    global_settings.set(
+        notification_template_setting_key(event_type, locale, "body"), body
+    )
+
+
+def reset_notification_template(
+    event_type: BillingNotificationEventType | str, locale: str
+) -> None:
+    global_settings = GlobalSettingsObject().settings
+    for field in ("subject", "body"):
+        key = notification_template_setting_key(event_type, locale, field)
+        if global_settings.get(key, as_type=str, default=""):
+            del global_settings[key]
 
 
 def schedule_billing_notification(delivery_id: int) -> None:
@@ -291,7 +392,16 @@ def queue_billing_notification(
     related_object_type: str = "",
     related_object_id: str = "",
 ) -> BillingNotificationDelivery:
-    spec = NOTIFICATION_SPECS[BillingNotificationEventType(event_type)]
+    event_type = BillingNotificationEventType(event_type)
+    spec = NOTIFICATION_SPECS[event_type]
+    subject, custom_body, _is_custom = render_notification_content(
+        event_type, context, recipient.locale
+    )
+    delivery_context = context
+    template_name = spec.template_name
+    if custom_body is not None:
+        delivery_context = {**context, "notification_body": custom_body}
+        template_name = CUSTOM_NOTIFICATION_TEMPLATE
     defaults = {
         "event_type": event_type,
         "organizer": organizer,
@@ -299,9 +409,9 @@ def queue_billing_notification(
         "related_object_id": str(related_object_id),
         "recipient_source": recipient.source,
         "locale": recipient.locale,
-        "template_name": spec.template_name,
-        "subject": render_notification_subject(spec, context, recipient.locale),
-        "context": context,
+        "template_name": template_name,
+        "subject": subject,
+        "context": delivery_context,
     }
     with transaction.atomic():
         delivery, created = BillingNotificationDelivery.objects.get_or_create(

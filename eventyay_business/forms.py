@@ -4,6 +4,7 @@ from django.conf import settings
 from django.forms import inlineformset_factory
 from django.utils.translation import gettext_lazy as _
 from eventyay.base.forms import SecretKeySettingsField, SettingsForm
+from eventyay.base.forms.validators import PlaceholderValidator
 from eventyay.base.models import Organizer
 from eventyay.base.settings import GlobalSettingsObject
 from eventyay.control.forms import ExtFileField
@@ -24,6 +25,7 @@ from .models import (
     TierPrice,
     TierVersion,
 )
+from .notifications import NOTIFICATION_PLACEHOLDERS
 from .services import normalize_collection_retry_days, normalize_grace_reminder_days
 
 try:
@@ -1099,6 +1101,50 @@ class BillingNotificationTestForm(forms.Form):
         initial=settings.LANGUAGE_CODE,
         label=_("Language"),
     )
+
+
+class BillingNotificationTemplateForm(forms.Form):
+    locale = forms.ChoiceField(
+        choices=settings.LANGUAGES,
+        label=_("Language"),
+        help_text=_("This customization applies only to the selected language."),
+    )
+    subject = forms.CharField(label=_("Subject"), max_length=255)
+    body = forms.CharField(
+        label=_("Message"),
+        max_length=20000,
+        widget=forms.Textarea(attrs={"rows": 16}),
+        help_text=_("Plain text with optional placeholders such as {organizer_name}."),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        allowed = [f"{{{name}}}" for name in NOTIFICATION_PLACEHOLDERS]
+        validator = PlaceholderValidator(allowed)
+        self.fields["subject"].validators.append(validator)
+        self.fields["body"].validators.append(validator)
+
+    def clean(self):
+        cleaned_data = super().clean()
+        sample_context = {name: name for name in NOTIFICATION_PLACEHOLDERS}
+        for field_name in ("subject", "body"):
+            value = cleaned_data.get(field_name)
+            if not value:
+                continue
+            try:
+                value.format_map(sample_context)
+            except (KeyError, ValueError) as exc:
+                self.add_error(
+                    field_name,
+                    _("Invalid placeholder syntax: %(error)s") % {"error": str(exc)},
+                )
+        return cleaned_data
+
+    def clean_subject(self):
+        subject = self.cleaned_data["subject"]
+        if "\r" in subject or "\n" in subject:
+            raise forms.ValidationError(_("The subject must be a single line."))
+        return subject
 
 
 class InvoicePresentationSettingsForm(SettingsForm):

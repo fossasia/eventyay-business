@@ -1,0 +1,57 @@
+{% extends 'pretixcontrol/admin/base.html' %}
+{% load i18n %}
+{% load bootstrap3 %}
+
+{% block title %}{% blocktranslate with notification=event_label %}Edit {{ notification }} email{% endblocktranslate %}{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <h1>{% blocktranslate with notification=event_label %}Edit {{ notification }} email{% endblocktranslate %}</h1>
+  </div>
+
+  <div class="row">
+    <div class="col-md-8">
+      <div class="panel panel-default">
+        <div class="panel-heading"><strong>{% translate 'Email template' %}</strong></div>
+        <div class="panel-body">
+          <form method="post" class="form-horizontal">
+            {% csrf_token %}
+            {% bootstrap_form form layout='horizontal' %}
+            <div class="form-group">
+              <div class="col-md-9 col-md-offset-3">
+                <button type="submit" class="btn btn-primary">
+                  <i class="fa fa-save" aria-hidden="true"></i>
+                  {% translate 'Save template' %}
+                </button>
+                {% if is_custom %}
+                  <button type="submit" name="action" value="reset" class="btn btn-danger">
+                    {% translate 'Reset to default' %}
+                  </button>
+                {% endif %}
+                <a class="btn btn-default" href="{% url 'plugins:eventyay_business:notifications.preview' %}?locale={{ form.locale.value|urlencode }}">
+                  {% translate 'Back to previews' %}
+                </a>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="panel panel-info">
+        <div class="panel-heading"><strong>{% translate 'Available placeholders' %}</strong></div>
+        <div class="panel-body">
+          <p class="text-muted">
+            {% translate 'Insert these values in the subject or message. Keep the braces exactly as shown.' %}
+          </p>
+          <dl>
+            {% for name, description in placeholders %}
+              <dt><code>{% templatetag openbrace %}{{ name }}{% templatetag closebrace %}</code></dt>
+              <dd>{{ description }}</dd>
+            {% endfor %}
+          </dl>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}

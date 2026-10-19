@@ -4,11 +4,12 @@ import stripe
 from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
+from django.conf import settings
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Prefetch, Q, Sum
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -52,6 +53,7 @@ from .billing_overview import (
 from .capabilities import CapabilityValueType, get_all_capabilities, get_capability
 from .forms import (
     AddonDefinitionForm,
+    BillingNotificationTemplateForm,
     BillingNotificationTestForm,
     CountryFeeSettingForm,
     EventAddonForm,
@@ -97,12 +99,16 @@ from .models import (
     UsageRecord,
 )
 from .notifications import (
+    NOTIFICATION_PLACEHOLDERS,
     NOTIFICATION_SPECS,
     BillingNotificationRecipient,
+    notification_template_sources,
     preview_notification_context,
     queue_billing_notification,
-    render_notification_subject,
+    render_notification_content,
+    reset_notification_template,
     retry_billing_notification,
+    save_notification_template,
 )
 from .platform_fee_ledger import (
     organizer_billing_cutover_at,
@@ -2321,22 +2327,33 @@ class AdminBillingNotificationPreviewView(
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         locale = self.request.GET.get("locale") or "en"
+        valid_locales = {code for code, _label in settings.LANGUAGES}
+        if locale not in valid_locales:
+            locale = settings.LANGUAGE_CODE
         previews = []
         for event_type, spec in NOTIFICATION_SPECS.items():
             preview_context = preview_notification_context(event_type)
-            with language(locale):
-                body = render_to_string(spec.template_name, preview_context)
+            subject, custom_body, is_custom = render_notification_content(
+                event_type, preview_context, locale
+            )
+            if custom_body is None:
+                with language(locale):
+                    body = render_to_string(spec.template_name, preview_context)
+            else:
+                body = custom_body
             previews.append(
                 {
                     "event_type": event_type,
                     "label": BillingNotificationEventType(event_type).label,
-                    "subject": render_notification_subject(
-                        spec, preview_context, locale
-                    ),
+                    "subject": subject,
                     "body": body,
+                    "is_custom": is_custom,
+                    "locale": locale,
                 }
             )
         context["previews"] = previews
+        context["preview_locale"] = locale
+        context["language_choices"] = settings.LANGUAGES
         return context
 
     def form_valid(self, form):
@@ -2360,6 +2377,77 @@ class AdminBillingNotificationPreviewView(
             _("The test notification was queued without changing billing state."),
         )
         return redirect("plugins:eventyay_business:notifications.preview")
+
+
+class AdminBillingNotificationTemplateView(
+    AdministratorPermissionRequiredMixin, FormView
+):
+    template_name = "eventyay_business/notifications/template_form.html"
+    form_class = BillingNotificationTemplateForm
+
+    def get_event_type(self):
+        try:
+            return BillingNotificationEventType(self.kwargs["event_type"])
+        except ValueError as exc:
+            raise Http404 from exc
+
+    def get_locale(self):
+        locale = self.request.POST.get("locale") or self.request.GET.get("locale")
+        valid_locales = {code for code, _label in settings.LANGUAGES}
+        return locale if locale in valid_locales else settings.LANGUAGE_CODE
+
+    def get_initial(self):
+        initial = super().get_initial()
+        subject, body, _is_custom = notification_template_sources(
+            self.get_event_type(), self.get_locale()
+        )
+        initial.update({"locale": self.get_locale(), "subject": subject, "body": body})
+        return initial
+
+    def post(self, request, *args, **kwargs):
+        if request.POST.get("action") == "reset":
+            event_type = self.get_event_type()
+            locale = self.get_locale()
+            reset_notification_template(event_type, locale)
+            messages.success(
+                request,
+                _("The %(language)s template was reset to its translated default.")
+                % {"language": dict(settings.LANGUAGES).get(locale, locale)},
+            )
+            return redirect(
+                f"{reverse('plugins:eventyay_business:notifications.template', kwargs={'event_type': event_type})}?locale={locale}"
+            )
+        return super().post(request, *args, **kwargs)
+
+    def form_valid(self, form):
+        event_type = self.get_event_type()
+        locale = form.cleaned_data["locale"]
+        save_notification_template(
+            event_type,
+            locale,
+            form.cleaned_data["subject"],
+            form.cleaned_data["body"],
+        )
+        messages.success(self.request, _("The notification template was saved."))
+        return redirect(
+            f"{reverse('plugins:eventyay_business:notifications.template', kwargs={'event_type': event_type})}?locale={locale}"
+        )
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        event_type = self.get_event_type()
+        _subject, _body, is_custom = notification_template_sources(
+            event_type, self.get_locale()
+        )
+        context.update(
+            {
+                "event_type": event_type,
+                "event_label": event_type.label,
+                "is_custom": is_custom,
+                "placeholders": NOTIFICATION_PLACEHOLDERS.items(),
+            }
+        )
+        return context
 
 
 class AdminInvoiceListView(AdministratorPermissionRequiredMixin, ListView):

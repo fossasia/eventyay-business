@@ -12,6 +12,7 @@ from eventyay.base.models.organizer import OrganizerBillingModel
 from eventyay.base.services.mail import SendMailException
 from unittest.mock import patch
 
+from eventyay_business.forms import BillingNotificationTemplateForm
 from eventyay_business.models import (
     BillingNotificationDelivery,
     BillingNotificationEventType,
@@ -23,6 +24,7 @@ from eventyay_business.models import (
     Subscription,
 )
 from eventyay_business.notifications import (
+    CUSTOM_NOTIFICATION_TEMPLATE,
     NOTIFICATION_SPECS,
     BillingNotificationRecipient,
     deliver_billing_notification,
@@ -316,3 +318,92 @@ def test_all_billing_notification_templates_render(event_type):
     )
 
     assert body.strip()
+
+
+def test_notification_template_form_rejects_unknown_placeholders():
+    form = BillingNotificationTemplateForm(
+        data={
+            "locale": "en",
+            "subject": "Invoice {invoice_number}",
+            "body": "Hello {unknown_value}",
+        }
+    )
+
+    assert not form.is_valid()
+    assert "Invalid placeholder" in str(form.errors["body"])
+
+
+@pytest.mark.django_db
+def test_custom_notification_template_is_previewed_and_snapshotted(
+    business_admin_client, notification_setup
+):
+    organizer, _, _invoice = notification_setup
+    event_type = BillingNotificationEventType.INVOICE_ISSUED
+    edit_url = reverse(
+        "plugins:eventyay_business:notifications.template",
+        kwargs={"event_type": event_type},
+    )
+
+    response = business_admin_client.post(
+        edit_url,
+        {
+            "locale": "en",
+            "subject": "Invoice {invoice_number} is ready",
+            "body": "Hello {organizer_name}, view {invoice_number} at {action_url}",
+        },
+    )
+
+    assert response.status_code == 302
+    preview = business_admin_client.get(
+        reverse("plugins:eventyay_business:notifications.preview"), {"locale": "en"}
+    )
+    assert b"Invoice INV-EXAMPLE-001 is ready" in preview.content
+    assert b"Hello Example Organizer" in preview.content
+
+    recipient = BillingNotificationRecipient(
+        email="billing@example.com",
+        locale="en",
+        source=BillingNotificationRecipientSource.BILLING_CONTACT,
+    )
+    with patch("eventyay_business.notifications.schedule_billing_notification"):
+        delivery = queue_billing_notification(
+            logical_event_key="invoice:custom-template",
+            event_type=event_type,
+            organizer=organizer,
+            recipient=recipient,
+            context=preview_notification_context(event_type),
+        )
+
+    assert delivery.subject == "Invoice INV-EXAMPLE-001 is ready"
+    assert delivery.template_name == CUSTOM_NOTIFICATION_TEMPLATE
+    assert delivery.context["notification_body"].startswith("Hello Example Organizer")
+
+
+@pytest.mark.django_db
+def test_notification_template_reset_restores_default(
+    business_admin_client, notification_setup
+):
+    event_type = BillingNotificationEventType.ADMIN_TEST
+    edit_url = reverse(
+        "plugins:eventyay_business:notifications.template",
+        kwargs={"event_type": event_type},
+    )
+    business_admin_client.post(
+        edit_url,
+        {"locale": "en", "subject": "Custom subject", "body": "Custom body"},
+    )
+
+    response = business_admin_client.post(
+        edit_url,
+        {
+            "locale": "en",
+            "subject": "Custom subject",
+            "body": "Custom body",
+            "action": "reset",
+        },
+    )
+
+    assert response.status_code == 302
+    edit_page = business_admin_client.get(edit_url, {"locale": "en"})
+    assert b"Custom subject" not in edit_page.content
+    assert b"Eventyay Business notification test" in edit_page.content

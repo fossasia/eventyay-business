@@ -78,6 +78,11 @@ urlpatterns = [
         name="notifications.preview",
     ),
     path(
+        "admin/global/business/notifications/templates/<str:event_type>/",
+        views.AdminBillingNotificationTemplateView.as_view(),
+        name="notifications.template",
+    ),
+    path(
         "admin/global/business/notifications/<int:pk>/retry/",
         views.AdminBillingNotificationRetryView.as_view(),
         name="notifications.retry",
