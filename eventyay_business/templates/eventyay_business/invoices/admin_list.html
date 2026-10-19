@@ -4,7 +4,15 @@
 {% block title %}{% trans "Invoices" %}{% endblock %}
 
 {% block content %}
-    <h1>{% trans "Business Invoices" %}</h1>
+    <div class="page-header">
+        <div class="pull-right">
+            <a class="btn btn-default" href="{% url 'plugins:eventyay_business:notifications.preview' %}">
+                <i class="fa fa-envelope" aria-hidden="true"></i>
+                {% trans "Customize email templates" %}
+            </a>
+        </div>
+        <h1>{% trans "Business Invoices" %}</h1>
+    </div>
 
     <div class="row filter-form">
         <form method="get" class="form-inline col-md-12">

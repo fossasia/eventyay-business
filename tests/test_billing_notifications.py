@@ -311,6 +311,20 @@ def test_delivery_history_uses_trimmed_organizer_filter(
 
 
 @pytest.mark.django_db
+def test_invoice_list_links_to_notification_template_editor(business_admin_client):
+    response = business_admin_client.get(
+        reverse("plugins:eventyay_business:invoices.list")
+    )
+
+    assert response.status_code == 200
+    assert (
+        reverse("plugins:eventyay_business:notifications.preview").encode()
+        in response.content
+    )
+    assert b"Customize email templates" in response.content
+
+
+@pytest.mark.django_db
 @pytest.mark.parametrize("event_type", NOTIFICATION_SPECS)
 def test_all_billing_notification_templates_render(event_type):
     spec = NOTIFICATION_SPECS[event_type]
