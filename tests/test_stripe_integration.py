@@ -237,9 +237,7 @@ def test_create_addon_checkout_session(setup_data):
                 assert kwargs["metadata"]["type"] == "addon_purchase"
                 assert kwargs["metadata"]["scope"] == "organizer"
                 assert kwargs["metadata"]["organizer_slug"] == organizer.slug
-                assert kwargs["subscription_data"]["payment_settings"] == {
-                    "save_default_payment_method": "on_subscription"
-                }
+                assert kwargs["subscription_data"] == {"metadata": kwargs["metadata"]}
                 assert "payment_method_types" not in kwargs
 
                 # One-time event addon
@@ -296,9 +294,7 @@ def test_create_subscription_checkout_session(setup_data):
                 assert kwargs["metadata"]["type"] == "subscription"
                 assert kwargs["metadata"]["scope"] == "organizer"
                 assert kwargs["metadata"]["tier_price_id"] == str(tier_price.pk)
-                assert kwargs["subscription_data"]["payment_settings"] == {
-                    "save_default_payment_method": "on_subscription"
-                }
+                assert kwargs["subscription_data"] == {"metadata": kwargs["metadata"]}
                 assert "payment_method_types" not in kwargs
 
 
@@ -1034,7 +1030,25 @@ def test_organizer_plan_upgrade_view_flow(setup_data, admin_user, admin_client):
             assert resp.url == "https://checkout.stripe.com/c/pay/cs_tier_upgrade_123"
             mock_checkout.assert_called_once()
 
+    with patch(
+        "eventyay_business.views.is_stripe_configured", return_value=True
+    ), patch(
+        "eventyay_business.views.create_subscription_checkout_session",
+        side_effect=ValidationError("provider-internal-detail"),
+    ):
+        resp = admin_client.post(
+            upgrade_url,
+            {"tier_price_id": tier_price.id},
+            follow=True,
+        )
+
+    content = resp.content.decode("utf-8")
+    assert "We could not start the secure payment setup" in content
+    assert "provider-internal-detail" not in content
+
     organizer.settings.set(BILLING_CUTOVER_SETTING, now().isoformat())
+
+    # Consolidated billing requires a saved and authorized payment method.
     with patch(
         "eventyay_business.views.is_stripe_configured", return_value=True
     ), patch(
@@ -1043,9 +1057,54 @@ def test_organizer_plan_upgrade_view_flow(setup_data, admin_user, admin_client):
         resp = admin_client.post(upgrade_url, {"tier_price_id": tier_price.id})
 
     assert resp.status_code == 302
+    assert resp.url == reverse(
+        "eventyay_common:organizer.billing",
+        kwargs={"organizer": organizer.slug},
+    )
     mock_checkout.assert_not_called()
+
+    billing = OrganizerBillingModel.objects.create(
+        organizer=organizer,
+        stripe_customer_id="cus_ready",
+        stripe_payment_method_id="pm_ready",
+    )
+    BillingCollectionAuthorization.objects.create(
+        organizer=organizer,
+        stripe_customer_id=billing.stripe_customer_id,
+        authorized_at=now(),
+        authorized_by=admin_user,
+    )
+    resp = admin_client.post(upgrade_url, {"tier_price_id": tier_price.id})
+
+    assert resp.status_code == 302
     active_sub.refresh_from_db()
     assert active_sub.tier_version == tier_version
+
+
+@pytest.mark.django_db
+def test_subscription_cancellation_applies_scheduled_free_plan(setup_data):
+    organizer, _, _, _, paid_version, _, _, _, _ = setup_data
+    free_tier = Tier.objects.get(slug="free")
+    free_version = free_tier.versions.first()
+    subscription = Subscription.objects.get(organizer=organizer)
+    subscription.tier_version = paid_version
+    subscription.stripe_subscription_id = "sub_cancel_to_free"
+    subscription.pending_tier_version = free_version
+    subscription.pending_billing_interval = BillingInterval.MONTHLY
+    subscription.pending_change_at = now()
+    subscription.save()
+
+    process_subscription_change(
+        "customer.subscription.deleted",
+        {"id": "sub_cancel_to_free", "status": "canceled"},
+    )
+
+    subscription.refresh_from_db()
+    assert subscription.status == SubscriptionStatus.ACTIVE
+    assert subscription.tier_version == free_version
+    assert subscription.ends_at is None
+    assert subscription.stripe_subscription_id is None
+    assert subscription.pending_tier_version is None
 
 
 @pytest.mark.django_db

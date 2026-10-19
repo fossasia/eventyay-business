@@ -315,7 +315,6 @@ def create_addon_checkout_session(
     if mode == "subscription":
         session_kwargs["subscription_data"] = {
             "metadata": metadata,
-            "payment_settings": {"save_default_payment_method": "on_subscription"},
         }
     else:
         session_kwargs["payment_intent_data"] = {
@@ -493,7 +492,6 @@ def create_subscription_checkout_session(
         "metadata": metadata,
         "subscription_data": {
             "metadata": metadata,
-            "payment_settings": {"save_default_payment_method": "on_subscription"},
         },
     }
     if customer_id:
@@ -1305,8 +1303,33 @@ def process_subscription_change(event_type: str, sub_data: dict):
                     event_type == "customer.subscription.deleted"
                     or stripe_status == "canceled"
                 ):
-                    sub.status = SubscriptionStatus.CANCELED
-                    sub.cancel_at = now()
+                    pending_version = sub.pending_tier_version
+                    pending_is_free = bool(
+                        pending_version
+                        and (
+                            pending_version.tier.slug.lower() == "free"
+                            or not pending_version.prices.filter(
+                                active=True,
+                                amount__gt=0,
+                            ).exists()
+                        )
+                    )
+                    if pending_is_free:
+                        sub.tier_version = pending_version
+                        if sub.pending_billing_interval:
+                            sub.billing_interval = sub.pending_billing_interval
+                        sub.status = SubscriptionStatus.ACTIVE
+                        sub.starts_at = sub.pending_change_at or now()
+                        sub.ends_at = None
+                        sub.cancel_at = None
+                        sub.stripe_subscription_id = None
+                        sub.pending_tier_version = None
+                        sub.pending_billing_interval = None
+                        sub.pending_change_at = None
+                        is_downgrading = True
+                    else:
+                        sub.status = SubscriptionStatus.CANCELED
+                        sub.cancel_at = now()
                 elif stripe_status in ("past_due", "unpaid"):
                     sub.status = SubscriptionStatus.PAST_DUE
                     if not sub.past_due_since:

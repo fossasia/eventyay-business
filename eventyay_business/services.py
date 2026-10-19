@@ -113,6 +113,65 @@ def get_renewal_reminder_days() -> int:
     return 7
 
 
+def apply_due_subscription_change(subscription_id, reference=None):
+    """Apply one due scheduled plan change and return the updated subscription."""
+    from .models import Subscription, SubscriptionStatus
+    from .signals import subscription_downgraded
+
+    current_time = reference or now()
+    with transaction.atomic():
+        subscription = (
+            Subscription.objects.select_for_update().filter(pk=subscription_id).first()
+        )
+        if (
+            not subscription
+            or not subscription.pending_tier_version
+            or (
+                subscription.pending_change_at
+                and subscription.pending_change_at > current_time
+            )
+        ):
+            return None
+
+        target_version = subscription.pending_tier_version
+        target_is_free = (
+            target_version.tier.slug.lower() == "free"
+            or not target_version.prices.filter(active=True, amount__gt=0).exists()
+        )
+        if subscription.status != SubscriptionStatus.ACTIVE and not (
+            subscription.status == SubscriptionStatus.CANCELED and target_is_free
+        ):
+            return None
+
+        effective_at = subscription.pending_change_at or current_time
+        subscription.tier_version = target_version
+        if subscription.pending_billing_interval:
+            subscription.billing_interval = subscription.pending_billing_interval
+        subscription.status = SubscriptionStatus.ACTIVE
+        subscription.starts_at = effective_at
+        subscription.ends_at = None
+        subscription.cancel_at = None
+        if target_is_free:
+            subscription.stripe_subscription_id = None
+        subscription.pending_tier_version = None
+        subscription.pending_billing_interval = None
+        subscription.pending_change_at = None
+        subscription.save()
+
+        organizer = subscription.organizer
+        transaction.on_commit(
+            lambda: (
+                invalidate_entitlement_cache(organizer=organizer),
+                subscription_downgraded.send(
+                    sender=Subscription,
+                    instance=subscription,
+                ),
+            ),
+            robust=True,
+        )
+        return subscription
+
+
 def record_usage(
     organizer,
     capability,

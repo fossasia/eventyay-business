@@ -1,5 +1,6 @@
 import csv
 import logging
+import stripe
 from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
@@ -112,6 +113,7 @@ from .reconciliation import (
     run_billing_reconciliation,
 )
 from .services import (
+    apply_due_subscription_change,
     invalidate_entitlement_cache,
     log_addon_lifecycle_action,
     migrate_addon_assignments,
@@ -489,6 +491,14 @@ class OrganizerPlanView(
         organizer = self.request.organizer
 
         current_time = now()
+        due_change_ids = Subscription.objects.filter(
+            organizer=organizer,
+            pending_tier_version__isnull=False,
+            pending_change_at__lte=current_time,
+        ).values_list("pk", flat=True)
+        for subscription_id in due_change_ids:
+            apply_due_subscription_change(subscription_id, reference=current_time)
+
         sub = (
             Subscription.objects.filter(
                 organizer=organizer,
@@ -737,6 +747,21 @@ class OrganizerPlanUpgradeView(
 
         organizer = request.organizer
 
+        if amount > 0 and organizer_consolidated_billing_enabled(organizer):
+            billing_overview = build_organizer_billing_overview(organizer)
+            if not billing_overview["billing_profile_ready"]:
+                messages.warning(
+                    request,
+                    _(
+                        "Save a payment method in billing settings before changing "
+                        "to a paid plan."
+                    ),
+                )
+                return redirect(
+                    "eventyay_common:organizer.billing",
+                    organizer=organizer.slug,
+                )
+
         active_sub = (
             Subscription.objects.filter(
                 organizer=organizer, status=SubscriptionStatus.ACTIVE
@@ -845,8 +870,6 @@ class OrganizerPlanUpgradeView(
             # If Stripe subscription is linked, reconcile with Stripe before committing local state
             if active_sub.stripe_subscription_id and is_stripe_configured():
                 try:
-                    import stripe
-
                     secret_key = get_stripe_secret_key_safe()
                     if secret_key:
                         stripe.api_key = secret_key
@@ -1000,14 +1023,16 @@ class OrganizerPlanUpgradeView(
                     request,
                     _("Could not initiate payment session. Please try again later."),
                 )
-            except Exception as exc:
+            except (ValidationError, stripe.error.StripeError):
                 logger.exception(
-                    "Failed to create Stripe checkout session for tier upgrade: %s",
-                    exc,
+                    "Failed to create Stripe checkout session for tier upgrade"
                 )
                 messages.error(
                     request,
-                    _("Payment provider error: %(error)s") % {"error": str(exc)},
+                    _(
+                        "We could not start the secure payment setup. Check your "
+                        "billing details and try again."
+                    ),
                 )
             return redirect(
                 "plugins:eventyay_business:organizer.plan.upgrade",
@@ -1080,8 +1105,6 @@ class OrganizerPlanCancelDowngradeView(
 
         if active_sub.stripe_subscription_id and is_stripe_configured():
             try:
-                import stripe
-
                 secret_key = get_stripe_secret_key_safe()
                 if secret_key:
                     stripe.api_key = secret_key
@@ -1234,8 +1257,6 @@ class OrganizerPlanCancelView(
         # Reconcile with Stripe: cancel at period end
         if active_sub.stripe_subscription_id and is_stripe_configured():
             try:
-                import stripe
-
                 secret_key = get_stripe_secret_key_safe()
                 if secret_key:
                     stripe.api_key = secret_key

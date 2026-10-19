@@ -510,6 +510,8 @@ def test_manage_subscription_lifecycles_task(
 
         sub1.refresh_from_db()
         assert sub1.tier_version == free_version
+        assert sub1.status == SubscriptionStatus.ACTIVE
+        assert sub1.ends_at is None
         assert sub1.pending_tier_version is None
         assert sub1.pending_change_at is None
         assert len(downgraded_signals) == 1
@@ -613,6 +615,46 @@ def test_plan_view_banners(client, lifecycle_data):
     content_pd = res_pd.content.decode("utf-8")
     assert "Payment Past Due:" in content_pd
     assert "7-day grace period" in content_pd
+
+
+@pytest.mark.django_db
+@override_settings(SITE_URL="https://testserver")
+def test_plan_view_repairs_overdue_free_downgrade(client, lifecycle_data):
+    (
+        organizer,
+        free_tier,
+        free_version,
+        free_price,
+        pro_tier,
+        pro_version,
+        pro_price,
+        user,
+    ) = lifecycle_data
+    client.force_login(user)
+    subscription = Subscription.objects.get(organizer=organizer)
+    subscription.tier_version = pro_version
+    subscription.status = SubscriptionStatus.CANCELED
+    subscription.ends_at = now() - timedelta(days=1)
+    subscription.stripe_subscription_id = "sub_ended"
+    subscription.pending_tier_version = free_version
+    subscription.pending_billing_interval = BillingInterval.MONTHLY
+    subscription.pending_change_at = now() - timedelta(days=1)
+    subscription.save()
+
+    response = client.get(
+        reverse(
+            "plugins:eventyay_business:organizer.plan",
+            kwargs={"organizer": organizer.slug},
+        )
+    )
+
+    assert response.status_code == 200
+    subscription.refresh_from_db()
+    assert response.context["subscription"].pk == subscription.pk
+    assert subscription.status == SubscriptionStatus.ACTIVE
+    assert subscription.tier_version == free_version
+    assert subscription.ends_at is None
+    assert subscription.stripe_subscription_id is None
 
 
 @pytest.mark.django_db

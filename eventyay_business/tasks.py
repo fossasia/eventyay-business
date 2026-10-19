@@ -207,11 +207,12 @@ def manage_subscription_lifecycles():
         queue_subscription_notification,
     )
     from .services import (
+        apply_due_subscription_change,
         get_grace_reminder_days,
         get_renewal_reminder_days,
         invalidate_entitlement_cache,
     )
-    from .signals import subscription_downgraded, subscription_expired
+    from .signals import subscription_expired
 
     current_time = now()
     downgraded_count = 0
@@ -223,8 +224,14 @@ def manage_subscription_lifecycles():
         # 1. Apply scheduled downgrades
         scheduled = list(
             Subscription.objects.filter(
-                status=SubscriptionStatus.ACTIVE,
                 pending_tier_version__isnull=False,
+            )
+            .filter(
+                Q(status=SubscriptionStatus.ACTIVE)
+                | Q(
+                    status=SubscriptionStatus.CANCELED,
+                    pending_tier_version__tier__slug="free",
+                )
             )
             .filter(
                 Q(pending_change_at__isnull=True)
@@ -233,39 +240,8 @@ def manage_subscription_lifecycles():
             .select_related("organizer", "pending_tier_version")
         )
         for item in scheduled:
-            with transaction.atomic():
-                locked_sub = (
-                    Subscription.objects.select_for_update()
-                    .filter(pk=item.pk, status=SubscriptionStatus.ACTIVE)
-                    .first()
-                )
-                if not locked_sub or not locked_sub.pending_tier_version:
-                    continue
-                if (
-                    locked_sub.pending_change_at
-                    and locked_sub.pending_change_at > current_time
-                ):
-                    continue
-
-                locked_sub.tier_version = locked_sub.pending_tier_version
-                if locked_sub.pending_billing_interval:
-                    locked_sub.billing_interval = locked_sub.pending_billing_interval
-                locked_sub.pending_tier_version = None
-                locked_sub.pending_billing_interval = None
-                locked_sub.pending_change_at = None
-                locked_sub.save()
-
+            if apply_due_subscription_change(item.pk, reference=current_time):
                 downgraded_count += 1
-                organizer = locked_sub.organizer
-                sub_instance = locked_sub
-                transaction.on_commit(
-                    lambda org=organizer, inst=sub_instance: (
-                        invalidate_entitlement_cache(organizer=org),
-                        subscription_downgraded.send(
-                            sender=Subscription, instance=inst
-                        ),
-                    )
-                )
 
         # 2. Expire past-due subscriptions whose grace period has ended
         past_due_subs = list(
