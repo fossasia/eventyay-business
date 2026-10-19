@@ -1,4 +1,5 @@
 import pytest
+import stripe
 from datetime import timedelta
 from decimal import Decimal
 from django.core.exceptions import ValidationError
@@ -299,7 +300,18 @@ def test_create_subscription_checkout_session(setup_data):
 
 
 @pytest.mark.django_db
-def test_subscription_checkout_makes_saved_payment_method_available(setup_data):
+@pytest.mark.parametrize(
+    ("setup_intent_data", "modify_fails", "expected_modify"),
+    [
+        ({"status": "succeeded", "payment_method": "pm_saved"}, False, True),
+        (None, False, False),
+        ({"status": "succeeded", "payment_method": "pm_checkout"}, False, False),
+        ({"status": "succeeded", "payment_method": "pm_saved"}, True, True),
+    ],
+)
+def test_subscription_checkout_handles_saved_payment_method_redisplay(
+    setup_data, setup_intent_data, modify_fails, expected_modify
+):
     organizer, _, user, _, _, tier_price, _, _, _ = setup_data
     OrganizerBillingModel.objects.create(
         organizer=organizer,
@@ -315,8 +327,14 @@ def test_subscription_checkout_makes_saved_payment_method_available(setup_data):
         tax_id="",
         stripe_customer_id="cus_123",
         stripe_payment_method_id="pm_saved",
+        stripe_setup_intent_id="seti_saved" if setup_intent_data else "",
     )
 
+    modify_error = (
+        stripe.error.APIError("Stripe is temporarily unavailable")
+        if modify_fails
+        else None
+    )
     with (
         patch(
             "eventyay_business.stripe_service.get_stripe_secret_key_safe",
@@ -326,7 +344,12 @@ def test_subscription_checkout_makes_saved_payment_method_available(setup_data):
             "eventyay_business.stripe_service.get_or_create_stripe_customer",
             return_value="cus_123",
         ),
-        patch("stripe.PaymentMethod.modify") as modify_payment_method,
+        patch(
+            "stripe.SetupIntent.retrieve", return_value=setup_intent_data
+        ) as retrieve_setup_intent,
+        patch(
+            "stripe.PaymentMethod.modify", side_effect=modify_error
+        ) as modify_payment_method,
         patch(
             "stripe.checkout.Session.create",
             return_value=MagicMock(
@@ -341,11 +364,19 @@ def test_subscription_checkout_makes_saved_payment_method_available(setup_data):
         )
 
     assert url == "https://checkout.stripe.com/c/pay/cs_saved_card"
-    modify_payment_method.assert_called_once_with(
-        "pm_saved",
-        allow_redisplay="always",
-    )
+    if setup_intent_data:
+        retrieve_setup_intent.assert_called_once_with("seti_saved")
+    else:
+        retrieve_setup_intent.assert_not_called()
+    if expected_modify:
+        modify_payment_method.assert_called_once_with(
+            "pm_saved",
+            allow_redisplay="always",
+        )
+    else:
+        modify_payment_method.assert_not_called()
     assert create_session.call_args.kwargs["customer"] == "cus_123"
+    create_session.assert_called_once()
 
 
 @pytest.mark.django_db

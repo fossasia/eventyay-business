@@ -445,15 +445,30 @@ def create_subscription_checkout_session(
     stripe.api_key = secret_key
     customer_id = get_or_create_stripe_customer(organizer, user=user)
     billing = OrganizerBillingModel.objects.filter(organizer=organizer).first()
-    if billing and billing.stripe_payment_method_id:
+    if billing and billing.stripe_payment_method_id and billing.stripe_setup_intent_id:
         # SetupIntents save this method for off-session use, but Stripe Checkout
         # only displays saved methods marked as reusable in checkout flows.
-        # The organizer explicitly saved this method in billing settings, so
-        # make it available to prefill when they change plans.
-        stripe.PaymentMethod.modify(
-            billing.stripe_payment_method_id,
-            allow_redisplay="always",
-        )
+        # Match the current method to the completed SetupIntent to distinguish
+        # billing-settings consent from methods collected by Checkout.
+        try:
+            setup_intent = stripe.SetupIntent.retrieve(billing.stripe_setup_intent_id)
+            setup_intent_payment_method_id = _stripe_object_id(
+                _stripe_object_value(setup_intent, "payment_method")
+            )
+            if (
+                _stripe_object_value(setup_intent, "status") == "succeeded"
+                and setup_intent_payment_method_id == billing.stripe_payment_method_id
+            ):
+                stripe.PaymentMethod.modify(
+                    billing.stripe_payment_method_id,
+                    allow_redisplay="always",
+                )
+        except stripe.StripeError as exc:
+            logger.warning(
+                "Could not prepare the saved payment method for Checkout for organizer %s: %s",
+                organizer.pk,
+                exc,
+            )
 
     amount_val = getattr(tier_price, "amount", None)
     if amount_val is None:
