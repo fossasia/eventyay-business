@@ -1,5 +1,11 @@
 {% extends "pretixcontrol/organizers/base.html" %}
 {% load i18n %}
+{% load static %}
+
+{% block custom_header %}
+    {{ block.super }}
+    <link rel="stylesheet" href="{% static 'eventyay_business/organizer_plan.css' %}">
+{% endblock %}
 
 {% block title %}{% trans "Plan & Usage" %}{% endblock %}
 
@@ -407,7 +413,7 @@
     </details>
 
     {% if subscription and subscription.tier_version.tier.slug != "free" and not subscription.has_scheduled_downgrade %}
-        <div class="modal fade" id="cancelSubscriptionModal" tabindex="-1" role="dialog" aria-labelledby="cancelSubscriptionModalLabel">
+        <div class="modal fade subscription-cancel-modal" id="cancelSubscriptionModal" tabindex="-1" role="dialog" aria-labelledby="cancelSubscriptionModalLabel">
             <div class="modal-dialog" role="document">
                 <div class="modal-content">
                     <form method="post" action="{% url 'plugins:eventyay_business:organizer.plan.cancel' organizer=request.organizer.slug %}">

@@ -1,0 +1,7 @@
+.subscription-cancel-modal {
+  z-index: 2050;
+}
+
+.modal-backdrop {
+  z-index: 2040;
+}

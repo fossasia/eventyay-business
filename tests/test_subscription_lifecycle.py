@@ -811,6 +811,8 @@ def test_plan_view_renders_cancel_button_only_for_paid_tier(client, lifecycle_da
     assert res.status_code == 200
     content = res.content.decode("utf-8")
     assert "Cancel Subscription" in content
+    assert "eventyay_business/organizer_plan.css" in content
+    assert "subscription-cancel-modal" in content
     assert "cancelSubscriptionModal" in content
 
 
