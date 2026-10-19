@@ -299,6 +299,56 @@ def test_create_subscription_checkout_session(setup_data):
 
 
 @pytest.mark.django_db
+def test_subscription_checkout_makes_saved_payment_method_available(setup_data):
+    organizer, _, user, _, _, tier_price, _, _, _ = setup_data
+    OrganizerBillingModel.objects.create(
+        organizer=organizer,
+        primary_contact_name="Stripe Organizer",
+        primary_contact_email="billing@example.com",
+        company_or_organization_name="Stripe Org",
+        address_line_1="Example Street 1",
+        address_line_2="",
+        city="Berlin",
+        zip_code="10115",
+        country="DE",
+        preferred_language="en",
+        tax_id="",
+        stripe_customer_id="cus_123",
+        stripe_payment_method_id="pm_saved",
+    )
+
+    with (
+        patch(
+            "eventyay_business.stripe_service.get_stripe_secret_key_safe",
+            return_value="sk_test_123",
+        ),
+        patch(
+            "eventyay_business.stripe_service.get_or_create_stripe_customer",
+            return_value="cus_123",
+        ),
+        patch("stripe.PaymentMethod.modify") as modify_payment_method,
+        patch(
+            "stripe.checkout.Session.create",
+            return_value=MagicMock(
+                url="https://checkout.stripe.com/c/pay/cs_saved_card"
+            ),
+        ) as create_session,
+    ):
+        url = create_subscription_checkout_session(
+            organizer=organizer,
+            tier_price=tier_price,
+            user=user,
+        )
+
+    assert url == "https://checkout.stripe.com/c/pay/cs_saved_card"
+    modify_payment_method.assert_called_once_with(
+        "pm_saved",
+        allow_redisplay="always",
+    )
+    assert create_session.call_args.kwargs["customer"] == "cus_123"
+
+
+@pytest.mark.django_db
 def test_legacy_checkout_sessions_are_blocked_after_cutover(setup_data):
     organizer, _, user, _, _, tier_price, recurring_addon, _, _ = setup_data
     organizer.settings.set(BILLING_CUTOVER_SETTING, now().isoformat())

@@ -444,6 +444,16 @@ def create_subscription_checkout_session(
 
     stripe.api_key = secret_key
     customer_id = get_or_create_stripe_customer(organizer, user=user)
+    billing = OrganizerBillingModel.objects.filter(organizer=organizer).first()
+    if billing and billing.stripe_payment_method_id:
+        # SetupIntents save this method for off-session use, but Stripe Checkout
+        # only displays saved methods marked as reusable in checkout flows.
+        # The organizer explicitly saved this method in billing settings, so
+        # make it available to prefill when they change plans.
+        stripe.PaymentMethod.modify(
+            billing.stripe_payment_method_id,
+            allow_redisplay="always",
+        )
 
     amount_val = getattr(tier_price, "amount", None)
     if amount_val is None:
