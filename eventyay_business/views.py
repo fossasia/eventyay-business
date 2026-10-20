@@ -2978,10 +2978,8 @@ class AdminBillingActivationAutoUnblockView(AdministratorPermissionRequiredMixin
 
             try:
                 with transaction.atomic():
-                    billing, _created = (
-                        OrganizerBillingModel.objects.get_or_create(
-                            organizer=organizer
-                        )
+                    billing, _created = OrganizerBillingModel.objects.get_or_create(
+                        organizer=organizer
                     )
                     updated_fields = []
                     if not billing.stripe_customer_id:
@@ -2998,9 +2996,9 @@ class AdminBillingActivationAutoUnblockView(AdministratorPermissionRequiredMixin
                         defaults={
                             "stripe_customer_id": billing.stripe_customer_id,
                             "authorized_at": now(),
-                            "authorized_by": request.user
-                            if request.user.is_authenticated
-                            else None,
+                            "authorized_by": (
+                                request.user if request.user.is_authenticated else None
+                            ),
                             "revoked_at": None,
                             "terms_version": AUTOMATIC_COLLECTION_TERMS_VERSION,
                         },
@@ -3048,9 +3046,7 @@ class AdminBillingActivationAutoUnblockView(AdministratorPermissionRequiredMixin
                 enable_consolidated_billing(organizer)
                 activated += 1
             except Exception as exc:
-                logger.exception(
-                    "Failed to auto-prepare organizer %s", organizer.slug
-                )
+                logger.exception("Failed to auto-prepare organizer %s", organizer.slug)
                 errors.append(f"{organizer.name} ({exc})")
 
         if activated:
