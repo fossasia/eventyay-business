@@ -224,8 +224,9 @@ def redemption_key(line: dict) -> tuple[str, int] | None:
 def build_voucher_credit_lines(organizer, lines_data: list[dict]) -> list[dict]:
     """Return credit lines for the plan and add-on lines that a redeemed voucher discounts.
 
-    Each invoice counts as one billing period for a redemption, however many lines it
-    discounts. Must run inside the invoice generation transaction.
+    Each discounted line counts as one billing period. Lines for service periods that ended
+    before the day the voucher was redeemed are not discounted. Must run inside the invoice
+    generation transaction.
     """
     redemptions = list(
         VoucherRedemption.objects.filter(
@@ -246,10 +247,28 @@ def build_voucher_credit_lines(organizer, lines_data: list[dict]) -> list[dict]:
     vouchers = {}
     applied = {}
     credits = []
-    for line in lines_data:
+    ordered_lines = sorted(
+        lines_data,
+        key=lambda line: line.get("service_period_start") or redemptions[0].created_at,
+    )
+    for line in ordered_lines:
         key = redemption_key(line)
         redemption = latest.get(key) if key else None
-        if redemption is None or not redemption.has_periods_left:
+        if redemption is None:
+            continue
+        if (
+            redemption.period_limit is not None
+            and redemption.periods_applied + applied.get(redemption.pk, 0)
+            >= redemption.period_limit
+        ):
+            continue
+        # Compare by day: a one-time add-on's line ends the moment it was bought, just
+        # before its redemption is saved.
+        redeemed_on = redemption.created_at.replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        service_period_end = line.get("service_period_end")
+        if service_period_end and service_period_end < redeemed_on:
             continue
         tier_version = line.get("tier_version")
         if key[0] == "subscription" and (
@@ -273,7 +292,7 @@ def build_voucher_credit_lines(organizer, lines_data: list[dict]) -> list[dict]:
             continue
 
         voucher.budget_used += discount
-        applied[redemption.pk] = redemption
+        applied[redemption.pk] = applied.get(redemption.pk, 0) + 1
         credits.append(
             {
                 "line_type": InvoiceLineType.CREDIT,
@@ -299,9 +318,10 @@ def build_voucher_credit_lines(organizer, lines_data: list[dict]) -> list[dict]:
 
     for voucher in vouchers.values():
         voucher.save(update_fields=["budget_used", "updated_at"])
-    for redemption in applied.values():
-        redemption.periods_applied += 1
-        redemption.save(update_fields=["periods_applied"])
+    for redemption in redemptions:
+        if redemption.pk in applied:
+            redemption.periods_applied += applied[redemption.pk]
+            redemption.save(update_fields=["periods_applied"])
     return credits
 
 

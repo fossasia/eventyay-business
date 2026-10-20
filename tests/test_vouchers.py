@@ -15,6 +15,7 @@ from eventyay_business.models import (
     AddonAssignmentScope,
     AddonDefinition,
     AddonPricingMode,
+    AddonStatus,
     BillingInterval,
     InvoiceLineType,
     OrganizerAddon,
@@ -33,6 +34,7 @@ from eventyay_business.stripe_service import (
 )
 from eventyay_business.vouchers import (
     get_voucher_quote,
+    redeem_addon_voucher,
     record_checkout_redemption,
     redeem_voucher,
     voucher_discount,
@@ -226,6 +228,10 @@ def test_addon_purchase_shows_voucher_error(business_admin_client, plan_setup):
     assert not OrganizerAddon.objects.filter(organizer=organizer, addon=addon).exists()
 
 
+def redeemed_at(redemption, moment):
+    VoucherRedemption.objects.filter(pk=redemption.pk).update(created_at=make_aware(moment))
+
+
 def generate_august_invoice(organizer):
     return generate_business_invoice_for_organizer(
         organizer,
@@ -251,19 +257,21 @@ def test_invoice_credits_redeemed_plan_voucher_once(plan_setup):
     voucher = make_voucher(tiers=[tier])
     quote = get_voucher_quote("PLAN25", organizer, amount=price.amount, tier=tier)
     redemption = redeem_voucher(quote, organizer, subscription=subscription, tier=tier)
+    redeemed_at(redemption, datetime(2026, 7, 15))
 
     invoice = generate_august_invoice(organizer)
 
-    subscription_lines = invoice.lines.filter(line_type=InvoiceLineType.SUBSCRIPTION)
-    credits = invoice.lines.filter(line_type=InvoiceLineType.CREDIT)
-    assert subscription_lines.count() == credits.count() == 2
-    assert all(line.amount == Decimal("-12.25") for line in credits)
-    assert invoice.total == Decimal("73.50")
+    # The invoice bills August and September in advance; only the first period is discounted.
+    assert invoice.lines.filter(line_type=InvoiceLineType.SUBSCRIPTION).count() == 2
+    credits = list(invoice.lines.filter(line_type=InvoiceLineType.CREDIT))
+    assert [line.amount for line in credits] == [Decimal("-12.25")]
+    assert credits[0].service_period_start == make_aware(datetime(2026, 8, 1))
+    assert invoice.total == Decimal("85.75")
     redemption.refresh_from_db()
     voucher.refresh_from_db()
     assert redemption.periods_applied == 1
     assert redemption.has_periods_left is False
-    assert voucher.budget_used == Decimal("24.50")
+    assert voucher.budget_used == Decimal("12.25")
 
     september = generate_business_invoice_for_organizer(
         organizer,
@@ -284,7 +292,8 @@ def test_invoice_credit_respects_budget_and_plan_changes(plan_setup):
         budget=Decimal("60.00"),
     )
     quote = get_voucher_quote("PLAN25", organizer, amount=price.amount, tier=tier)
-    redeem_voucher(quote, organizer, subscription=subscription, tier=tier)
+    redemption = redeem_voucher(quote, organizer, subscription=subscription, tier=tier)
+    redeemed_at(redemption, datetime(2026, 7, 15))
 
     invoice = generate_august_invoice(organizer)
 
@@ -463,3 +472,51 @@ def test_admin_voucher_form_requires_periods_for_repeating(business_admin_client
     assert response.status_code == 200
     assert "Enter how many billing periods the discount lasts." in response.content.decode()
     assert not InvoiceVoucher.objects.filter(code="ADMINPLAN2").exists()
+
+
+@pytest.mark.django_db
+def test_invoice_credit_skips_periods_that_ended_before_redemption(plan_setup):
+    organizer, tier, version, price, _ = plan_setup
+    subscription = subscribe(organizer, version)
+    make_voucher(tiers=[tier], value=Decimal("100.00"))
+    quote = get_voucher_quote("PLAN25", organizer, amount=price.amount, tier=tier)
+    redemption = redeem_voucher(quote, organizer, subscription=subscription, tier=tier)
+    redeemed_at(redemption, datetime(2026, 9, 10))
+
+    invoice = generate_august_invoice(organizer)
+
+    credits = list(invoice.lines.filter(line_type=InvoiceLineType.CREDIT))
+    assert [line.amount for line in credits] == [Decimal("-49.00")]
+    assert credits[0].service_period_start == make_aware(datetime(2026, 9, 1))
+
+
+@pytest.mark.django_db
+def test_invoice_credits_one_time_addon_bought_with_voucher(plan_setup):
+    organizer, _, version, _, _ = plan_setup
+    subscribe(organizer, version)
+    onboarding = AddonDefinition.objects.create(
+        name="VIP Onboarding",
+        slug="vip-onboarding",
+        capability="support.onboarding",
+        entitlement_value="true",
+        assignment_scope=AddonAssignmentScope.ORGANIZER,
+        price=Decimal("250.00"),
+        currency="EUR",
+        pricing_mode=AddonPricingMode.ONE_TIME,
+        active=True,
+        public=True,
+    )
+    make_voucher("ONBOARD20", addons=[onboarding], price_mode="subtract", value=Decimal("20.00"))
+    bought_at = make_aware(datetime(2026, 8, 10, 12, 0))
+    assignment = OrganizerAddon.objects.create(
+        organizer=organizer, addon=onboarding, quantity=1, status=AddonStatus.ACTIVE, starts_at=bought_at
+    )
+    quote = get_voucher_quote("ONBOARD20", organizer, amount=onboarding.price, addon=onboarding)
+    redemption = redeem_addon_voucher(quote, assignment)
+    # The redemption is saved just after the add-on line's zero-length service period.
+    redeemed_at(redemption, datetime(2026, 8, 10, 12, 0, 1))
+
+    invoice = generate_august_invoice(organizer)
+
+    credits = [line.amount for line in invoice.lines.filter(line_type=InvoiceLineType.CREDIT)]
+    assert credits == [Decimal("-20.00")]
