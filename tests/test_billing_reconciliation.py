@@ -14,6 +14,7 @@ from eventyay_business.models import (
     BillingReconciliationResult,
     BillingReconciliationResultStatus,
     BillingReconciliationRun,
+    BillingReconciliationRunStatus,
     BusinessInvoice,
     BusinessInvoiceLine,
     Subscription,
@@ -327,3 +328,35 @@ def test_regular_user_cannot_access_reconciliation(client):
     response = client.get(reverse("plugins:eventyay_business:reconciliation.list"))
 
     assert response.status_code in (302, 403)
+
+
+@pytest.mark.django_db
+def test_admin_billing_reconciliation_run_view_post_without_period(
+    reconciliation_admin_client, reconciliation_setup
+):
+    Organizer.objects.create(name="Bare Organizer", slug="bare-organizer")
+    response = reconciliation_admin_client.post(
+        reverse("plugins:eventyay_business:reconciliation.run"),
+        {"period": ""},
+    )
+    assert response.status_code == 302
+    assert response.url == reverse("plugins:eventyay_business:reconciliation.list")
+    assert BillingReconciliationRun.objects.filter(
+        status=BillingReconciliationRunStatus.COMPLETED
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_admin_billing_reconciliation_run_view_post_with_period(
+    reconciliation_admin_client, reconciliation_setup
+):
+    response = reconciliation_admin_client.post(
+        reverse("plugins:eventyay_business:reconciliation.run"),
+        {"period": "2026-09"},
+    )
+    assert response.status_code == 302
+    assert response.url == reverse("plugins:eventyay_business:reconciliation.list")
+    assert BillingReconciliationRun.objects.filter(
+        period_start=make_aware(datetime(2026, 9, 1)),
+        status=BillingReconciliationRunStatus.COMPLETED,
+    ).exists()

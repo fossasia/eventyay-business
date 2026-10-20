@@ -3041,7 +3041,7 @@ class AdminBillingReconciliationListView(
         if status in BillingReconciliationResultStatus.values:
             queryset = queryset.filter(status=status)
         if period:
-            period_start, period_end, _ = parse_month(period)
+            period_start, period_end, _next_period_start = parse_month(period)
             queryset = queryset.filter(
                 run__period_start=period_start,
                 run__period_end=period_end,
@@ -3077,11 +3077,20 @@ class AdminBillingReconciliationDetailView(
 class AdminBillingReconciliationRunView(AdministratorPermissionRequiredMixin, View):
     def post(self, request, *args, **kwargs):
         period = (request.POST.get("period") or "").strip()
-        if period:
-            period_start, period_end, _ = parse_month(period)
-            run = run_billing_reconciliation(period_start, period_end)
-        else:
-            run = run_billing_reconciliation()
+        try:
+            if period:
+                period_start, period_end, _next_period_start = parse_month(period)
+                run = run_billing_reconciliation(period_start, period_end)
+            else:
+                run = run_billing_reconciliation()
+        except Exception as exc:
+            logger.exception("Billing reconciliation failed: %s", exc)
+            messages.error(
+                request,
+                _("Billing reconciliation failed: %(error)s") % {"error": str(exc)},
+            )
+            return redirect("plugins:eventyay_business:reconciliation.list")
+
         messages.success(
             request,
             _("Billing reconciliation completed for %(count)s result(s).")
