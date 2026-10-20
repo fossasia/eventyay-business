@@ -158,11 +158,6 @@ urlpatterns = [
         name="billing_activation.batch",
     ),
     path(
-        "admin/global/business/activation-auto-unblock/",
-        views.AdminBillingActivationAutoUnblockView.as_view(),
-        name="billing_activation.auto_unblock",
-    ),
-    path(
         "admin/global/business/rollout-monitor/",
         views.AdminBillingRolloutMonitorView.as_view(),
         name="billing_rollout.monitor",

@@ -37,20 +37,10 @@
   </div>
   <form id="batch-activation-form" method="post" action="{% url 'plugins:eventyay_business:billing_activation.batch' %}">
     {% csrf_token %}
+    <p class="text-right">
+      <button class="btn btn-primary" type="submit">{% trans 'Activate selected ready organizers' %}</button>
+    </p>
   </form>
-  <div class="row" style="margin-bottom: 15px;">
-    <div class="col-sm-6">
-      <form method="post" action="{% url 'plugins:eventyay_business:billing_activation.auto_unblock' %}">
-        {% csrf_token %}
-        <button class="btn btn-warning" type="submit" onclick="return confirm('{% trans 'This will prepare and activate consolidated billing for all organizers without changing their existing plans or add-ons. Continue?' %}');">
-          <i class="fa fa-magic" aria-hidden="true"></i> {% trans 'Auto-prepare & activate all organizers' %}
-        </button>
-      </form>
-    </div>
-    <div class="col-sm-6 text-right">
-      <button class="btn btn-primary" type="submit" form="batch-activation-form">{% trans 'Activate selected ready organizers' %}</button>
-    </div>
-  </div>
   <div class="table-responsive">
     <table class="table table-striped">
       <thead>
