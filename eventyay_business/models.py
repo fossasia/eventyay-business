@@ -1676,8 +1676,18 @@ class VoucherBusinessTargets(models.Model):
         return None
 
 
+class VoucherRedemptionStatus(models.TextChoices):
+    PENDING = "pending", _("Reserved for checkout")
+    REDEEMED = "redeemed", _("Redeemed")
+    RELEASED = "released", _("Released")
+
+
 class VoucherRedemption(models.Model):
-    """A voucher redeemed by an organizer for one plan or add-on purchase."""
+    """A voucher redeemed by an organizer for one plan or add-on purchase.
+
+    Stripe Checkout purchases reserve the voucher with a pending redemption while the
+    organiser pays, so concurrent checkouts cannot use it more often than allowed.
+    """
 
     voucher = models.ForeignKey(
         "base.InvoiceVoucher",
@@ -1738,7 +1748,17 @@ class VoucherRedemption(models.Model):
         default=0, verbose_name=_("Billing periods already discounted")
     )
     stripe_checkout_session_id = models.CharField(
-        max_length=255, blank=True, default="", verbose_name=_("Stripe checkout session")
+        max_length=255,
+        blank=True,
+        default="",
+        verbose_name=_("Stripe checkout session"),
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=VoucherRedemptionStatus.choices,
+        default=VoucherRedemptionStatus.REDEEMED,
+        db_index=True,
+        verbose_name=_("Status"),
     )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("Created at"))
 

@@ -1,11 +1,12 @@
 import pytest
+import stripe
 from datetime import datetime, timedelta
 from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.test import override_settings
 from django.urls import reverse
 from django.utils.timezone import make_aware, now
-from eventyay.base.models import Event, Organizer
+from eventyay.base.models import Organizer
 from eventyay.base.models.auth import StaffSession
 from eventyay.base.models.vouchers import InvoiceVoucher
 from unittest.mock import MagicMock, patch
@@ -27,15 +28,17 @@ from eventyay_business.models import (
     VoucherBusinessTargets,
     VoucherDiscountDuration,
     VoucherRedemption,
+    VoucherRedemptionStatus,
 )
 from eventyay_business.stripe_service import (
     create_subscription_checkout_session,
     process_checkout_session_completed,
+    process_webhook_event,
 )
 from eventyay_business.vouchers import (
     get_voucher_quote,
-    redeem_addon_voucher,
     record_checkout_redemption,
+    redeem_addon_voucher,
     redeem_voucher,
     voucher_discount,
 )
@@ -83,7 +86,15 @@ def plan_setup(db):
     return organizer, tier, version, price, addon
 
 
-def make_voucher(code="PLAN25", *, tiers=(), addons=(), duration=VoucherDiscountDuration.ONCE, periods=None, **kwargs):
+def make_voucher(
+    code="PLAN25",
+    *,
+    tiers=(),
+    addons=(),
+    duration=VoucherDiscountDuration.ONCE,
+    periods=None,
+    **kwargs,
+):
     defaults = {
         "price_mode": "percent",
         "value": Decimal("25.00"),
@@ -187,7 +198,9 @@ def test_plan_upgrade_rejects_invalid_voucher(business_admin_client, plan_setup)
         )
 
     assert "This voucher code is not valid." in response.content.decode()
-    assert Subscription.objects.get(organizer=organizer).tier_version == previous_version
+    assert (
+        Subscription.objects.get(organizer=organizer).tier_version == previous_version
+    )
     assert not VoucherRedemption.objects.exists()
 
 
@@ -229,7 +242,9 @@ def test_addon_purchase_shows_voucher_error(business_admin_client, plan_setup):
 
 
 def redeemed_at(redemption, moment):
-    VoucherRedemption.objects.filter(pk=redemption.pk).update(created_at=make_aware(moment))
+    VoucherRedemption.objects.filter(pk=redemption.pk).update(
+        created_at=make_aware(moment)
+    )
 
 
 def generate_august_invoice(organizer):
@@ -305,7 +320,9 @@ def test_invoice_credit_respects_budget_and_plan_changes(plan_setup):
     assert voucher.budget_used == Decimal("60.00")
 
     other_tier = Tier.objects.create(slug="business", name="Business Tier")
-    other_version = TierVersion.objects.create(tier=other_tier, version=1, published_at=now())
+    other_version = TierVersion.objects.create(
+        tier=other_tier, version=1, published_at=now()
+    )
     TierPrice.objects.create(
         tier_version=other_version,
         billing_interval=BillingInterval.MONTHLY,
@@ -344,10 +361,14 @@ def test_subscription_checkout_attaches_voucher_coupon(plan_setup):
             "eventyay_business.stripe_service.sync_tier_price_to_stripe",
             return_value=None,
         ),
-        patch("stripe.Coupon.create", return_value=MagicMock(id="coupon_123")) as coupon,
+        patch(
+            "stripe.Coupon.create", return_value=MagicMock(id="coupon_123")
+        ) as coupon,
         patch("stripe.checkout.Session.create") as session,
     ):
-        session.return_value = MagicMock(url="https://checkout.stripe.com/c/pay/cs_1")
+        session.return_value = MagicMock(
+            id="cs_1", url="https://checkout.stripe.com/c/pay/cs_1"
+        )
         create_subscription_checkout_session(
             organizer=organizer,
             tier_price=price,
@@ -404,7 +425,9 @@ def test_voucher_quote_endpoint(business_admin_client, plan_setup):
         kwargs={"organizer": organizer.slug},
     )
 
-    data = business_admin_client.get(url, {"code": "PLAN25", "tier_price": price.pk}).json()
+    data = business_admin_client.get(
+        url, {"code": "PLAN25", "tier_price": price.pk}
+    ).json()
 
     assert data["valid"] is True
     item = data["items"][f"tier_price-{price.pk}"]
@@ -442,7 +465,10 @@ def test_admin_voucher_form_saves_targets(business_admin_client, plan_setup):
     assert targets.period_limit == 6
 
     detail = business_admin_client.get(
-        reverse("eventyay_admin:admin.voucher.detail", kwargs={"voucher": targets.voucher.pk})
+        reverse(
+            "eventyay_admin:admin.voucher.detail",
+            kwargs={"voucher": targets.voucher.pk},
+        )
     )
     content = detail.content.decode()
     assert "Plans: Pro Tier" in content
@@ -450,7 +476,9 @@ def test_admin_voucher_form_saves_targets(business_admin_client, plan_setup):
 
 
 @pytest.mark.django_db
-def test_admin_voucher_form_requires_periods_for_repeating(business_admin_client, plan_setup):
+def test_admin_voucher_form_requires_periods_for_repeating(
+    business_admin_client, plan_setup
+):
     _, tier, _, _, _ = plan_setup
     valid_until = now() + timedelta(days=30)
     response = business_admin_client.post(
@@ -470,7 +498,10 @@ def test_admin_voucher_form_requires_periods_for_repeating(business_admin_client
     )
 
     assert response.status_code == 200
-    assert "Enter how many billing periods the discount lasts." in response.content.decode()
+    assert (
+        "Enter how many billing periods the discount lasts."
+        in response.content.decode()
+    )
     assert not InvoiceVoucher.objects.filter(code="ADMINPLAN2").exists()
 
 
@@ -506,17 +537,172 @@ def test_invoice_credits_one_time_addon_bought_with_voucher(plan_setup):
         active=True,
         public=True,
     )
-    make_voucher("ONBOARD20", addons=[onboarding], price_mode="subtract", value=Decimal("20.00"))
+    make_voucher(
+        "ONBOARD20", addons=[onboarding], price_mode="subtract", value=Decimal("20.00")
+    )
     bought_at = make_aware(datetime(2026, 8, 10, 12, 0))
     assignment = OrganizerAddon.objects.create(
-        organizer=organizer, addon=onboarding, quantity=1, status=AddonStatus.ACTIVE, starts_at=bought_at
+        organizer=organizer,
+        addon=onboarding,
+        quantity=1,
+        status=AddonStatus.ACTIVE,
+        starts_at=bought_at,
     )
-    quote = get_voucher_quote("ONBOARD20", organizer, amount=onboarding.price, addon=onboarding)
+    quote = get_voucher_quote(
+        "ONBOARD20", organizer, amount=onboarding.price, addon=onboarding
+    )
     redemption = redeem_addon_voucher(quote, assignment)
     # The redemption is saved just after the add-on line's zero-length service period.
     redeemed_at(redemption, datetime(2026, 8, 10, 12, 0, 1))
 
     invoice = generate_august_invoice(organizer)
 
-    credits = [line.amount for line in invoice.lines.filter(line_type=InvoiceLineType.CREDIT)]
+    credits = [
+        line.amount for line in invoice.lines.filter(line_type=InvoiceLineType.CREDIT)
+    ]
     assert credits == [Decimal("-20.00")]
+
+
+def start_voucher_checkout(organizer, price, quote, session_id="cs_reserved"):
+    with (
+        patch(
+            "eventyay_business.stripe_service.get_stripe_secret_key_safe",
+            return_value="sk_test_123",
+        ),
+        patch(
+            "eventyay_business.stripe_service.get_or_create_stripe_customer",
+            return_value="cus_123",
+        ),
+        patch(
+            "eventyay_business.stripe_service.sync_tier_price_to_stripe",
+            return_value=None,
+        ),
+        patch(
+            "stripe.Coupon.create", return_value=MagicMock(id="coupon_123")
+        ) as coupon,
+        patch("stripe.checkout.Session.create") as session,
+    ):
+        session.return_value = MagicMock(
+            id=session_id, url="https://checkout.stripe.com/c/pay/1"
+        )
+        create_subscription_checkout_session(
+            organizer=organizer,
+            tier_price=price,
+            user=None,
+            success_url="https://example.com/success",
+            cancel_url="https://example.com/cancel",
+            voucher_quote=quote,
+        )
+    return coupon, session
+
+
+@pytest.mark.django_db
+def test_budgeted_voucher_coupon_only_discounts_first_period(plan_setup):
+    organizer, tier, _, price, _ = plan_setup
+    make_voucher(
+        tiers=[tier], duration=VoucherDiscountDuration.FOREVER, budget=Decimal("500.00")
+    )
+    quote = get_voucher_quote("PLAN25", organizer, amount=price.amount, tier=tier)
+
+    coupon, _session = start_voucher_checkout(organizer, price, quote)
+
+    assert coupon.call_args.kwargs["duration"] == "once"
+
+
+@pytest.mark.django_db
+def test_checkout_reserves_voucher_against_concurrent_use(plan_setup):
+    organizer, tier, _, price, _ = plan_setup
+    other = Organizer.objects.create(name="Other Corp", slug="other-corp")
+    voucher = make_voucher(tiers=[tier], max_usages=1)
+    first_quote = get_voucher_quote("PLAN25", organizer, amount=price.amount, tier=tier)
+    second_quote = get_voucher_quote("PLAN25", other, amount=price.amount, tier=tier)
+
+    _coupon, session = start_voucher_checkout(organizer, price, first_quote)
+
+    reservation = VoucherRedemption.objects.get(voucher=voucher)
+    assert reservation.status == VoucherRedemptionStatus.PENDING
+    assert reservation.stripe_checkout_session_id == "cs_reserved"
+    session_kwargs = session.call_args.kwargs
+    assert session_kwargs["metadata"]["voucher_reservation_id"] == str(reservation.pk)
+    assert "expires_at" in session_kwargs
+    with pytest.raises(ValidationError, match="used up"):
+        get_voucher_quote("PLAN25", other, amount=price.amount, tier=tier)
+    with pytest.raises(ValidationError, match="used up"):
+        start_voucher_checkout(other, price, second_quote, session_id="cs_second")
+    assert VoucherRedemption.objects.filter(voucher=voucher).count() == 1
+
+
+@pytest.mark.django_db
+def test_checkout_completion_redeems_reservation_once(plan_setup):
+    organizer, tier, version, price, _ = plan_setup
+    subscription = subscribe(organizer, version)
+    voucher = make_voucher(tiers=[tier], max_usages=1)
+    quote = get_voucher_quote("PLAN25", organizer, amount=price.amount, tier=tier)
+    _coupon, session = start_voucher_checkout(organizer, price, quote)
+    session_data = {
+        "id": "cs_reserved",
+        "metadata": session.call_args.kwargs["metadata"],
+        "total_details": {"amount_discount": 1225},
+    }
+
+    first = record_checkout_redemption(session_data, subscription)
+    second = record_checkout_redemption(session_data, subscription)
+
+    assert first.pk == second.pk
+    assert first.status == VoucherRedemptionStatus.REDEEMED
+    assert first.subscription == subscription
+    voucher.refresh_from_db()
+    assert voucher.redeemed == 1
+    assert voucher.budget_used == Decimal("12.25")
+    assert VoucherRedemption.objects.count() == 1
+
+
+@pytest.mark.django_db
+def test_expired_checkout_releases_voucher(plan_setup):
+    organizer, tier, _, price, _ = plan_setup
+    make_voucher(tiers=[tier], max_usages=1)
+    quote = get_voucher_quote("PLAN25", organizer, amount=price.amount, tier=tier)
+    _coupon, session = start_voucher_checkout(organizer, price, quote)
+
+    process_webhook_event(
+        "checkout.session.expired",
+        {"id": "cs_reserved", "metadata": session.call_args.kwargs["metadata"]},
+    )
+
+    assert VoucherRedemption.objects.get().status == VoucherRedemptionStatus.RELEASED
+    get_voucher_quote("PLAN25", organizer, amount=price.amount, tier=tier)
+
+
+@pytest.mark.django_db
+def test_failed_checkout_session_releases_voucher(plan_setup):
+    organizer, tier, _, price, _ = plan_setup
+    make_voucher(tiers=[tier], max_usages=1)
+    quote = get_voucher_quote("PLAN25", organizer, amount=price.amount, tier=tier)
+
+    with (
+        patch(
+            "eventyay_business.stripe_service.get_stripe_secret_key_safe",
+            return_value="sk_test_123",
+        ),
+        patch(
+            "eventyay_business.stripe_service.get_or_create_stripe_customer",
+            return_value="cus_123",
+        ),
+        patch(
+            "eventyay_business.stripe_service.sync_tier_price_to_stripe",
+            return_value=None,
+        ),
+        patch("stripe.Coupon.create", return_value=MagicMock(id="coupon_123")),
+        patch("stripe.checkout.Session.create", side_effect=stripe.StripeError("down")),
+        pytest.raises(stripe.StripeError),
+    ):
+        create_subscription_checkout_session(
+            organizer=organizer,
+            tier_price=price,
+            user=None,
+            success_url="https://example.com/success",
+            cancel_url="https://example.com/cancel",
+            voucher_quote=quote,
+        )
+
+    assert VoucherRedemption.objects.get().status == VoucherRedemptionStatus.RELEASED

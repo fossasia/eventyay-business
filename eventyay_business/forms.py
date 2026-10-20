@@ -1,8 +1,8 @@
 from collections import OrderedDict
 from decimal import Decimal
 from django import forms
-from django.core.exceptions import ValidationError
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.forms import inlineformset_factory
 from django.utils.translation import gettext_lazy as _
 from eventyay.base.forms import SecretKeySettingsField, SettingsForm
@@ -632,14 +632,18 @@ class VoucherBusinessTargetsForm(forms.Form):
         queryset=Tier.objects.none(),
         required=False,
         label=_("Plans"),
-        help_text=_("Organisers can enter the voucher when switching to one of these plans."),
+        help_text=_(
+            "Organisers can enter the voucher when switching to one of these plans."
+        ),
         widget=forms.CheckboxSelectMultiple,
     )
     addons = forms.ModelMultipleChoiceField(
         queryset=AddonDefinition.objects.none(),
         required=False,
         label=_("Add-ons"),
-        help_text=_("Organisers can enter the voucher when buying one of these add-ons."),
+        help_text=_(
+            "Organisers can enter the voucher when buying one of these add-ons."
+        ),
         widget=forms.CheckboxSelectMultiple,
     )
     duration = forms.ChoiceField(
@@ -688,9 +692,10 @@ class VoucherBusinessTargetsForm(forms.Form):
         cleaned_data["duration"] = (
             cleaned_data.get("duration") or VoucherDiscountDuration.ONCE
         )
-        if (
-            cleaned_data.get("duration") == VoucherDiscountDuration.REPEATING
-            and not cleaned_data.get("duration_periods")
+        if cleaned_data.get(
+            "duration"
+        ) == VoucherDiscountDuration.REPEATING and not cleaned_data.get(
+            "duration_periods"
         ):
             self.add_error(
                 "duration_periods",

@@ -29,7 +29,6 @@ from .models import (
     VoucherDiscountDuration,
 )
 from .platform_fee_ledger import organizer_consolidated_billing_enabled
-from .vouchers import VoucherQuote, record_checkout_redemption
 from .services import invalidate_entitlement_cache, log_addon_lifecycle_action
 from .signals import (
     addon_canceled,
@@ -39,6 +38,15 @@ from .signals import (
     subscription_past_due,
     subscription_purchased,
     subscription_recovered,
+)
+from .vouchers import (
+    CHECKOUT_SESSION_EXPIRY,
+    VoucherQuote,
+    attach_checkout_session,
+    record_checkout_redemption,
+    release_checkout_reservation,
+    release_reservation,
+    reserve_checkout_voucher,
 )
 
 logger = logging.getLogger(__name__)
@@ -268,13 +276,12 @@ def create_voucher_coupon(
         params["currency"] = currency.lower()
 
     duration = quote.targets.duration
-    remaining_budget = voucher.remaining_budget()
-    # A budget only Stripe could overspend on renewals is limited to the first period.
-    budget_left_after_first = remaining_budget is None or remaining_budget > quote.discount
+    # Stripe renews coupons without knowing the voucher budget, so a budgeted voucher only
+    # discounts the first period.
     if (
         interval_months is None
         or duration == VoucherDiscountDuration.ONCE
-        or not budget_left_after_first
+        or voucher.budget is not None
     ):
         params["duration"] = "once"
     elif duration == VoucherDiscountDuration.REPEATING:
@@ -283,6 +290,36 @@ def create_voucher_coupon(
     else:
         params["duration"] = "forever"
     return stripe.Coupon.create(**params).id
+
+
+def create_checkout_session(
+    session_kwargs: dict,
+    organizer,
+    voucher_quote: VoucherQuote | None,
+    currency: str,
+    interval_months: int | None,
+):
+    """Create a Stripe Checkout session, reserving the voucher it is discounted with."""
+    if voucher_quote is None:
+        return stripe.checkout.Session.create(**session_kwargs)
+
+    # Reserving locks the voucher and re-checks it, so concurrent checkouts cannot use it
+    # more often than its redemption limit allows.
+    reservation = reserve_checkout_voucher(voucher_quote, organizer)
+    # The metadata dict is shared with subscription_data and payment_intent_data.
+    session_kwargs["metadata"]["invoice_voucher_id"] = str(voucher_quote.voucher.pk)
+    session_kwargs["metadata"]["voucher_reservation_id"] = str(reservation.pk)
+    session_kwargs["expires_at"] = int((now() + CHECKOUT_SESSION_EXPIRY).timestamp())
+    try:
+        session_kwargs["discounts"] = [
+            {"coupon": create_voucher_coupon(voucher_quote, currency, interval_months)}
+        ]
+        session = stripe.checkout.Session.create(**session_kwargs)
+    except stripe.StripeError:
+        release_reservation(reservation.pk)
+        raise
+    attach_checkout_session(reservation, session.id)
+    return session
 
 
 def create_addon_checkout_session(
@@ -357,17 +394,6 @@ def create_addon_checkout_session(
     }
     if customer_id:
         session_kwargs["customer"] = customer_id
-    if voucher_quote:
-        metadata["invoice_voucher_id"] = str(voucher_quote.voucher.pk)
-        session_kwargs["discounts"] = [
-            {
-                "coupon": create_voucher_coupon(
-                    voucher_quote,
-                    currency,
-                    interval_months=1 if mode == "subscription" else None,
-                )
-            }
-        ]
 
     if mode == "subscription":
         session_kwargs["subscription_data"] = {
@@ -379,7 +405,13 @@ def create_addon_checkout_session(
             "setup_future_usage": "off_session",
         }
 
-    session = stripe.checkout.Session.create(**session_kwargs)
+    session = create_checkout_session(
+        session_kwargs,
+        organizer,
+        voucher_quote,
+        currency,
+        interval_months=1 if mode == "subscription" else None,
+    )
     return session.url
 
 
@@ -579,19 +611,14 @@ def create_subscription_checkout_session(
     }
     if customer_id:
         session_kwargs["customer"] = customer_id
-    if voucher_quote:
-        metadata["invoice_voucher_id"] = str(voucher_quote.voucher.pk)
-        session_kwargs["discounts"] = [
-            {
-                "coupon": create_voucher_coupon(
-                    voucher_quote,
-                    currency,
-                    interval_months=1 if interval == "month" else 12,
-                )
-            }
-        ]
 
-    session = stripe.checkout.Session.create(**session_kwargs)
+    session = create_checkout_session(
+        session_kwargs,
+        organizer,
+        voucher_quote,
+        currency,
+        interval_months=1 if interval == "month" else 12,
+    )
     return session.url
 
 
@@ -601,6 +628,8 @@ def process_webhook_event(event_type: str, data_object: dict):
     """
     if event_type == "checkout.session.completed":
         return process_checkout_session_completed(data_object)
+    elif event_type == "checkout.session.expired":
+        return release_checkout_reservation(data_object)
     elif event_type in (
         "payment_intent.succeeded",
         "payment_intent.processing",

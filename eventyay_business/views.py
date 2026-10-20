@@ -144,7 +144,6 @@ from .stripe_service import (
     sync_organizer_from_stripe,
     sync_tier_price_to_stripe,
 )
-
 from .vouchers import (
     VoucherQuote,
     get_voucher_quote,
@@ -1601,7 +1600,9 @@ def voucher_quote_response(request, organizer, event=None) -> JsonResponse:
     """Price a voucher code against the plans or add-on shown on a checkout page."""
     code = request.GET.get("code", "").strip()
     if not code:
-        return JsonResponse({"valid": False, "message": str(_("Enter a voucher code.")), "items": {}})
+        return JsonResponse(
+            {"valid": False, "message": str(_("Enter a voucher code.")), "items": {}}
+        )
 
     items = {}
     tier_price_ids = [pk for pk in request.GET.getlist("tier_price") if pk.isdigit()]
