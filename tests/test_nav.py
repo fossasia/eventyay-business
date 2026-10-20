@@ -257,6 +257,60 @@ def test_business_tiers_nav_staff_on_billing_activation():
     assert items[8]["active"] is True
 
 
+def test_business_tiers_nav_staff_on_rollout_monitor():
+    factory = RequestFactory()
+    request = factory.get("/admin/global/business/rollout-monitor/")
+    request.user = Mock(is_authenticated=True, is_staff=True, is_superuser=False)
+    request.resolver_match = ResolverMatch(
+        func=lambda r: None,
+        args=(),
+        kwargs={},
+        url_name="billing_rollout.monitor",
+        app_names=["plugins:eventyay_business"],
+        namespaces=["plugins:eventyay_business"],
+    )
+
+    items = business_tiers_nav(sender=None, request=request)
+    assert len(items) == 9
+    assert items[8]["active"] is True
+
+
+def test_business_tiers_nav_staff_on_fees_settings():
+    factory = RequestFactory()
+    request = factory.get("/admin/global/business/fees/")
+    request.user = Mock(is_authenticated=True, is_staff=True, is_superuser=False)
+    request.resolver_match = ResolverMatch(
+        func=lambda r: None,
+        args=(),
+        kwargs={},
+        url_name="fees.list",
+        app_names=["plugins:eventyay_business"],
+        namespaces=["plugins:eventyay_business"],
+    )
+
+    items = business_tiers_nav(sender=None, request=request)
+    assert len(items) == 9
+    assert items[0]["active"] is True
+
+
+def test_business_tiers_nav_staff_on_invoice_settings():
+    factory = RequestFactory()
+    request = factory.get("/admin/global/business/invoice-settings/")
+    request.user = Mock(is_authenticated=True, is_staff=True, is_superuser=False)
+    request.resolver_match = ResolverMatch(
+        func=lambda r: None,
+        args=(),
+        kwargs={},
+        url_name="invoice_settings",
+        app_names=["plugins:eventyay_business"],
+        namespaces=["plugins:eventyay_business"],
+    )
+
+    items = business_tiers_nav(sender=None, request=request)
+    assert len(items) == 9
+    assert items[5]["active"] is True
+
+
 def test_business_event_addons_nav_anonymous():
     factory = RequestFactory()
     request = factory.get("/control/event/test-org/test-event/settings/")

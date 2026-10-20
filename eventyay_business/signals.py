@@ -549,7 +549,7 @@ if nav_global:
                 "url": reverse("plugins:eventyay_business:settings"),
                 "active": (
                     url.namespace == "plugins:eventyay_business"
-                    and url.url_name == "settings"
+                    and (url.url_name == "settings" or url.url_name.startswith("fees."))
                 ),
                 "parent": reverse("eventyay_admin:admin.global.business"),
             },
@@ -594,7 +594,10 @@ if nav_global:
                 "url": reverse("plugins:eventyay_business:invoices.list"),
                 "active": (
                     url.namespace == "plugins:eventyay_business"
-                    and url.url_name.startswith("invoices.")
+                    and (
+                        url.url_name.startswith("invoices.")
+                        or url.url_name.startswith("invoice_settings")
+                    )
                 ),
                 "parent": reverse("eventyay_admin:admin.global.business"),
             },
@@ -621,7 +624,10 @@ if nav_global:
                 "url": reverse("plugins:eventyay_business:billing_activation"),
                 "active": (
                     url.namespace == "plugins:eventyay_business"
-                    and url.url_name.startswith("billing_activation")
+                    and (
+                        url.url_name.startswith("billing_activation")
+                        or url.url_name.startswith("billing_rollout")
+                    )
                 ),
                 "parent": reverse("eventyay_admin:admin.global.business"),
             },
