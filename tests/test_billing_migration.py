@@ -217,3 +217,56 @@ def test_batch_activation_rechecks_and_skips_blocked_organizers(
     blocked = Organizer.objects.get(pk=blocked.pk)
     assert ready.settings.get(BILLING_CUTOVER_SETTING, as_type=str)
     assert not blocked.settings.get(BILLING_CUTOVER_SETTING, as_type=str)
+
+
+@pytest.mark.django_db
+def test_auto_unblock_activation_unblocks_all_organizers(admin_client, admin_user):
+    from eventyay_business.models import Tier, TierVersion
+
+    session = admin_client.session
+    session.save()
+    StaffSession.objects.create(
+        user=admin_user,
+        session_key=session.session_key,
+        comment="test",
+    )
+    admin_user.is_staff = True
+    admin_user.save(update_fields=["is_staff"])
+
+    org = Organizer.objects.create(name="Blocked Org", slug="blocked-org")
+    tier = Tier.objects.create(name="Pro Tier", slug="pro-tier")
+    tier_version = TierVersion.objects.create(tier=tier, version=1)
+    sub = Subscription.objects.get(organizer=org)
+    sub.tier_version = tier_version
+    sub.status = SubscriptionStatus.ACTIVE
+    sub.stripe_subscription_id = "sub_legacy123"
+    sub.configuration_snapshot = {
+        "uncanceled_stripe_subscription_ids": ["sub_legacy123"]
+    }
+    sub.save()
+
+    preflight = consolidated_billing_preflight(org)
+    assert not preflight.ready
+    assert preflight.active_stripe_subscription_ids == ("sub_legacy123",)
+
+    response = admin_client.post(
+        reverse("plugins:eventyay_business:billing_activation.auto_unblock"),
+    )
+    assert response.status_code == 302
+
+    org = Organizer.objects.get(pk=org.pk)
+    assert org.settings.get(BILLING_CUTOVER_SETTING, as_type=str)
+
+    sub.refresh_from_db()
+    assert sub.status == SubscriptionStatus.ACTIVE
+    assert sub.tier_version == tier_version
+    assert sub.stripe_subscription_id == ""
+    assert (
+        sub.configuration_snapshot.get("legacy_stripe_subscription_id")
+        == "sub_legacy123"
+    )
+    assert "uncanceled_stripe_subscription_ids" not in sub.configuration_snapshot
+
+    preflight = consolidated_billing_preflight(org)
+    assert preflight.ready
+    assert preflight.activated_at is not None

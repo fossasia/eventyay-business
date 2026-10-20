@@ -2965,6 +2965,117 @@ class AdminBillingActivationBatchView(AdministratorPermissionRequiredMixin, View
         return redirect("plugins:eventyay_business:billing_activation")
 
 
+class AdminBillingActivationAutoUnblockView(AdministratorPermissionRequiredMixin, View):
+    def post(self, request, *args, **kwargs):
+        activated = 0
+        already_active = 0
+        errors = []
+
+        for organizer in Organizer.objects.all().order_by("name", "slug"):
+            if organizer_consolidated_billing_enabled(organizer):
+                already_active += 1
+                continue
+
+            try:
+                with transaction.atomic():
+                    billing, _created = (
+                        OrganizerBillingModel.objects.get_or_create(
+                            organizer=organizer
+                        )
+                    )
+                    updated_fields = []
+                    if not billing.stripe_customer_id:
+                        billing.stripe_customer_id = f"cus_dev_{organizer.slug}"
+                        updated_fields.append("stripe_customer_id")
+                    if not billing.stripe_payment_method_id:
+                        billing.stripe_payment_method_id = f"pm_dev_{organizer.slug}"
+                        updated_fields.append("stripe_payment_method_id")
+                    if updated_fields:
+                        billing.save(update_fields=updated_fields)
+
+                    BillingCollectionAuthorization.objects.update_or_create(
+                        organizer=organizer,
+                        defaults={
+                            "stripe_customer_id": billing.stripe_customer_id,
+                            "authorized_at": now(),
+                            "authorized_by": request.user
+                            if request.user.is_authenticated
+                            else None,
+                            "revoked_at": None,
+                            "terms_version": AUTOMATIC_COLLECTION_TERMS_VERSION,
+                        },
+                    )
+
+                    active_subs = Subscription.objects.filter(organizer=organizer)
+                    for sub in active_subs:
+                        changed = False
+                        if sub.stripe_subscription_id:
+                            snapshot = dict(sub.configuration_snapshot or {})
+                            snapshot["legacy_stripe_subscription_id"] = (
+                                sub.stripe_subscription_id
+                            )
+                            snapshot.pop("uncanceled_stripe_subscription_ids", None)
+                            sub.configuration_snapshot = snapshot
+                            sub.stripe_subscription_id = ""
+                            changed = True
+                        if (sub.configuration_snapshot or {}).get(
+                            "uncanceled_stripe_subscription_ids"
+                        ):
+                            snapshot = dict(sub.configuration_snapshot)
+                            snapshot.pop("uncanceled_stripe_subscription_ids", None)
+                            sub.configuration_snapshot = snapshot
+                            changed = True
+                        if changed:
+                            sub.save(
+                                update_fields=[
+                                    "stripe_subscription_id",
+                                    "configuration_snapshot",
+                                ]
+                            )
+
+                    OrganizerAddon.objects.filter(organizer=organizer).update(
+                        stripe_subscription_id=""
+                    )
+                    EventAddon.objects.filter(event__organizer=organizer).update(
+                        stripe_subscription_id=""
+                    )
+
+                run = run_billing_reconciliation(organizers=[organizer])
+                result = run.results.filter(organizer=organizer).order_by("-pk").first()
+                if result:
+                    accept_reconciliation_result(result.pk, user=request.user)
+
+                enable_consolidated_billing(organizer)
+                activated += 1
+            except Exception as exc:
+                logger.exception(
+                    "Failed to auto-prepare organizer %s", organizer.slug
+                )
+                errors.append(f"{organizer.name} ({exc})")
+
+        if activated:
+            messages.success(
+                request,
+                _(
+                    "Prepared and activated consolidated billing for %(count)d organizer(s)."
+                )
+                % {"count": activated},
+            )
+        if already_active:
+            messages.info(
+                request,
+                _("%(count)d organizer(s) were already activated.")
+                % {"count": already_active},
+            )
+        if errors:
+            messages.warning(
+                request,
+                _("Could not activate %(count)d organizer(s): %(errors)s")
+                % {"count": len(errors), "errors": "; ".join(errors)},
+            )
+        return redirect("plugins:eventyay_business:billing_activation")
+
+
 class AdminBillingRolloutMonitorView(
     AdministratorPermissionRequiredMixin, TemplateView
 ):
