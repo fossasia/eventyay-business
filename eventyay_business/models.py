@@ -1619,3 +1619,144 @@ class CountryFeeSetting(models.Model):
 
     def __str__(self):
         return f"{self.country} ({self.currency}): {self.service_fee_percent}% (max: {self.maximum_fee})"
+
+
+class VoucherDiscountDuration(models.TextChoices):
+    ONCE = "once", _("First billing period only")
+    REPEATING = "repeating", _("A set number of billing periods")
+    FOREVER = "forever", _("Every billing period while the voucher is valid")
+
+
+class VoucherBusinessTargets(models.Model):
+    """The plans and add-ons a platform fee voucher discounts, and for how long."""
+
+    voucher = models.OneToOneField(
+        "base.InvoiceVoucher",
+        on_delete=models.CASCADE,
+        related_name="business_targets",
+        verbose_name=_("Voucher"),
+    )
+    tiers = models.ManyToManyField(
+        Tier,
+        blank=True,
+        related_name="voucher_targets",
+        verbose_name=_("Plans"),
+    )
+    addons = models.ManyToManyField(
+        AddonDefinition,
+        blank=True,
+        related_name="voucher_targets",
+        verbose_name=_("Add-ons"),
+    )
+    duration = models.CharField(
+        max_length=20,
+        choices=VoucherDiscountDuration.choices,
+        default=VoucherDiscountDuration.ONCE,
+        verbose_name=_("Discount duration"),
+    )
+    duration_periods = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        verbose_name=_("Number of billing periods"),
+    )
+
+    class Meta:
+        verbose_name = _("Voucher plan and add-on targets")
+        verbose_name_plural = _("Voucher plan and add-on targets")
+
+    def __str__(self):
+        return f"{self.voucher}"
+
+    @property
+    def period_limit(self) -> int | None:
+        if self.duration == VoucherDiscountDuration.ONCE:
+            return 1
+        if self.duration == VoucherDiscountDuration.REPEATING:
+            return self.duration_periods or 1
+        return None
+
+
+class VoucherRedemption(models.Model):
+    """A voucher redeemed by an organizer for one plan or add-on purchase."""
+
+    voucher = models.ForeignKey(
+        "base.InvoiceVoucher",
+        on_delete=models.PROTECT,
+        related_name="business_redemptions",
+        verbose_name=_("Voucher"),
+    )
+    organizer = models.ForeignKey(
+        "base.Organizer",
+        on_delete=models.CASCADE,
+        related_name="voucher_redemptions",
+        verbose_name=_("Organizer"),
+    )
+    subscription = models.ForeignKey(
+        Subscription,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="voucher_redemptions",
+        verbose_name=_("Subscription"),
+    )
+    tier = models.ForeignKey(
+        Tier,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="voucher_redemptions",
+        verbose_name=_("Plan"),
+    )
+    organizer_addon = models.ForeignKey(
+        OrganizerAddon,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="voucher_redemptions",
+        verbose_name=_("Organizer add-on"),
+    )
+    event_addon = models.ForeignKey(
+        EventAddon,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="voucher_redemptions",
+        verbose_name=_("Event add-on"),
+    )
+    duration = models.CharField(
+        max_length=20,
+        choices=VoucherDiscountDuration.choices,
+        verbose_name=_("Discount duration"),
+    )
+    period_limit = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        verbose_name=_("Billing periods discounted"),
+        help_text=_("Empty when every billing period is discounted."),
+    )
+    periods_applied = models.PositiveIntegerField(
+        default=0, verbose_name=_("Billing periods already discounted")
+    )
+    stripe_checkout_session_id = models.CharField(
+        max_length=255, blank=True, default="", verbose_name=_("Stripe checkout session")
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("Created at"))
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        verbose_name = _("Voucher redemption")
+        verbose_name_plural = _("Voucher redemptions")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["stripe_checkout_session_id"],
+                condition=~models.Q(stripe_checkout_session_id=""),
+                name="unique_voucher_redemption_checkout_session",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.voucher} ({self.organizer})"
+
+    @property
+    def has_periods_left(self) -> bool:
+        return self.period_limit is None or self.periods_applied < self.period_limit

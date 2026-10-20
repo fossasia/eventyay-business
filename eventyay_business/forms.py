@@ -1,5 +1,7 @@
 from collections import OrderedDict
+from decimal import Decimal
 from django import forms
+from django.core.exceptions import ValidationError
 from django.conf import settings
 from django.forms import inlineformset_factory
 from django.utils.translation import gettext_lazy as _
@@ -23,10 +25,14 @@ from .models import (
     Tier,
     TierEntitlement,
     TierPrice,
+    TierStatus,
     TierVersion,
+    VoucherBusinessTargets,
+    VoucherDiscountDuration,
 )
 from .notifications import NOTIFICATION_PLACEHOLDERS
 from .services import normalize_collection_retry_days, normalize_grace_reminder_days
+from .vouchers import get_voucher_quote
 
 try:
     from eventyay.base.forms.widgets import SplitDateTimePickerWidget
@@ -600,6 +606,122 @@ class EventAddonForm(forms.ModelForm):
         self.fields["addon"].queryset = qs.distinct()
 
 
+def clean_addon_voucher(form, organizer, event):
+    """Validate the voucher code on an add-on purchase form and return its quote."""
+    code = form.cleaned_data.get("voucher_code")
+    if not code or organizer is None:
+        return None
+    quantity = form.cleaned_data.get("quantity") or 1
+    try:
+        return get_voucher_quote(
+            code,
+            organizer,
+            amount=(form.addon.price * quantity).quantize(Decimal("0.01")),
+            addon=form.addon,
+            event=event,
+        )
+    except ValidationError as exc:
+        form.add_error("voucher_code", exc)
+        return None
+
+
+class VoucherBusinessTargetsForm(forms.Form):
+    """Plans and add-ons a platform fee voucher discounts, shown on the admin voucher form."""
+
+    tiers = forms.ModelMultipleChoiceField(
+        queryset=Tier.objects.none(),
+        required=False,
+        label=_("Plans"),
+        help_text=_("Organisers can enter the voucher when switching to one of these plans."),
+        widget=forms.CheckboxSelectMultiple,
+    )
+    addons = forms.ModelMultipleChoiceField(
+        queryset=AddonDefinition.objects.none(),
+        required=False,
+        label=_("Add-ons"),
+        help_text=_("Organisers can enter the voucher when buying one of these add-ons."),
+        widget=forms.CheckboxSelectMultiple,
+    )
+    duration = forms.ChoiceField(
+        choices=VoucherDiscountDuration.choices,
+        initial=VoucherDiscountDuration.ONCE,
+        required=False,
+        label=_("Discount duration"),
+        help_text=_(
+            "How long a recurring plan or add-on stays discounted after the voucher is "
+            "redeemed. One-time add-ons are discounted once."
+        ),
+    )
+    duration_periods = forms.IntegerField(
+        min_value=1,
+        required=False,
+        label=_("Number of billing periods"),
+        help_text=_("Used when the discount lasts a set number of billing periods."),
+    )
+
+    def __init__(self, *args, voucher=None, **kwargs):
+        kwargs.setdefault("prefix", "business")
+        super().__init__(*args, **kwargs)
+        self.fields["tiers"].queryset = Tier.objects.exclude(
+            status=TierStatus.ARCHIVED
+        ).order_by("display_order", "name")
+        self.fields["addons"].queryset = AddonDefinition.objects.filter(
+            active=True
+        ).order_by("name")
+        targets = (
+            VoucherBusinessTargets.objects.filter(voucher=voucher).first()
+            if voucher
+            else None
+        )
+        if targets and not self.is_bound:
+            self.initial.update(
+                {
+                    "tiers": list(targets.tiers.all()),
+                    "addons": list(targets.addons.all()),
+                    "duration": targets.duration,
+                    "duration_periods": targets.duration_periods,
+                }
+            )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        cleaned_data["duration"] = (
+            cleaned_data.get("duration") or VoucherDiscountDuration.ONCE
+        )
+        if (
+            cleaned_data.get("duration") == VoucherDiscountDuration.REPEATING
+            and not cleaned_data.get("duration_periods")
+        ):
+            self.add_error(
+                "duration_periods",
+                _("Enter how many billing periods the discount lasts."),
+            )
+        return cleaned_data
+
+    def has_targets(self) -> bool:
+        return bool(self.cleaned_data.get("tiers") or self.cleaned_data.get("addons"))
+
+    def save(self, voucher) -> VoucherBusinessTargets | None:
+        targets = VoucherBusinessTargets.objects.filter(voucher=voucher).first()
+        if targets is None and not self.has_targets():
+            return None
+        duration = self.cleaned_data["duration"]
+        targets, _created = VoucherBusinessTargets.objects.update_or_create(
+            voucher=voucher,
+            defaults={
+                "duration": duration,
+                "duration_periods": (
+                    self.cleaned_data.get("duration_periods")
+                    if duration == VoucherDiscountDuration.REPEATING
+                    else None
+                ),
+            },
+        )
+        targets.tiers.set(self.cleaned_data["tiers"])
+        targets.addons.set(self.cleaned_data["addons"])
+        return targets
+
+
 class OrganizerAddonPurchaseForm(forms.Form):
     quantity = forms.IntegerField(
         min_value=1,
@@ -613,11 +735,21 @@ class OrganizerAddonPurchaseForm(forms.Form):
         label=_("Target Event"),
         help_text=_("Select which event this add-on applies to."),
     )
+    voucher_code = forms.CharField(
+        required=False,
+        max_length=255,
+        label=_("Voucher code"),
+        help_text=_("If you have a voucher for this add-on, enter it here."),
+        widget=forms.TextInput(attrs={"autocomplete": "off"}),
+    )
 
     def __init__(self, *args, organizer=None, addon=None, **kwargs):
         self.organizer = organizer
         self.addon = addon
+        self.voucher_quote = None
         super().__init__(*args, **kwargs)
+        if not self.addon or not self.addon.price:
+            del self.fields["voucher_code"]
 
         if self.addon:
             if self.addon.quantity:
@@ -703,6 +835,9 @@ class OrganizerAddonPurchaseForm(forms.Form):
                         )
                     )
 
+        self.voucher_quote = clean_addon_voucher(
+            self, self.organizer, cleaned_data.get("event")
+        )
         return cleaned_data
 
     def save(self, commit=True, status=None):
@@ -748,11 +883,21 @@ class EventAddonPurchaseForm(forms.Form):
         label=_("Quantity"),
         widget=forms.NumberInput(attrs={"class": "form-control", "min": 1}),
     )
+    voucher_code = forms.CharField(
+        required=False,
+        max_length=255,
+        label=_("Voucher code"),
+        help_text=_("If you have a voucher for this add-on, enter it here."),
+        widget=forms.TextInput(attrs={"autocomplete": "off"}),
+    )
 
     def __init__(self, *args, event=None, addon=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.event = event
         self.addon = addon
+        self.voucher_quote = None
+        if not self.addon or not self.addon.price:
+            del self.fields["voucher_code"]
 
         if self.addon:
             if self.addon.quantity:
@@ -796,6 +941,9 @@ class EventAddonPurchaseForm(forms.Form):
                     % {"event": self.event.name}
                 )
 
+        self.voucher_quote = clean_addon_voucher(
+            self, self.event.organizer if self.event else None, self.event
+        )
         return cleaned_data
 
     def save(self, commit=True, status=None):

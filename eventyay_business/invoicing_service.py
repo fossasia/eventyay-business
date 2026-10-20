@@ -27,6 +27,7 @@ from .models import (
     UsageRecord,
 )
 from .notifications import queue_invoice_notification
+from .vouchers import build_voucher_credit_lines
 
 logger = logging.getLogger(__name__)
 
@@ -1141,6 +1142,9 @@ def generate_business_invoice_for_organizer(
                         },
                     }
                 )
+
+            # Discount plan and add-on lines covered by a redeemed voucher.
+            lines_data.extend(build_voucher_credit_lines(organizer, lines_data))
 
             # 7. If no lines and empty invoices not permitted, return None
             if not lines_data and not allow_empty:

@@ -99,6 +99,17 @@ except ImportError:
     organizer_billing_payment_method_saved = None
 
 try:
+    from eventyay.control.signals import (
+        platform_fee_voucher_copied,
+        platform_fee_voucher_forms,
+        platform_fee_voucher_targets,
+    )
+except ImportError:
+    platform_fee_voucher_copied = None
+    platform_fee_voucher_forms = None
+    platform_fee_voucher_targets = None
+
+try:
     from eventyay.base.signals import (
         entitlement_check,
         entitlement_usage_recorded,
@@ -893,3 +904,58 @@ def record_platform_fee_on_refund(sender, instance, **kwargs):
     from .platform_fee_ledger import record_platform_fee_refund
 
     return record_platform_fee_refund(instance)
+
+
+if platform_fee_voucher_forms:
+
+    @receiver(platform_fee_voucher_forms, dispatch_uid="business_voucher_targets_form")
+    def business_voucher_targets_form(sender, request, voucher, **kwargs):
+        from .forms import VoucherBusinessTargetsForm
+
+        return VoucherBusinessTargetsForm(
+            data=request.POST if request.method == "POST" else None,
+            voucher=voucher,
+        )
+
+    @receiver(platform_fee_voucher_targets, dispatch_uid="business_voucher_targets")
+    def business_voucher_targets(sender, voucher, **kwargs):
+        from .models import VoucherBusinessTargets, VoucherDiscountDuration
+
+        targets = (
+            VoucherBusinessTargets.objects.filter(voucher=voucher)
+            .prefetch_related("tiers", "addons")
+            .first()
+        )
+        if not targets:
+            return []
+        descriptions = []
+        tiers = [tier.name for tier in targets.tiers.all()]
+        addons = [addon.name for addon in targets.addons.all()]
+        if tiers:
+            descriptions.append(_("Plans: %(names)s") % {"names": ", ".join(tiers)})
+        if addons:
+            descriptions.append(_("Add-ons: %(names)s") % {"names": ", ".join(addons)})
+        if descriptions:
+            if targets.duration == VoucherDiscountDuration.REPEATING:
+                duration = _("Discount lasts %(count)s billing periods") % {
+                    "count": targets.duration_periods
+                }
+            else:
+                duration = targets.get_duration_display()
+            descriptions.append(duration)
+        return descriptions
+
+    @receiver(platform_fee_voucher_copied, dispatch_uid="business_voucher_copied")
+    def business_voucher_copied(sender, source, voucher, **kwargs):
+        from .models import VoucherBusinessTargets
+
+        targets = VoucherBusinessTargets.objects.filter(voucher=source).first()
+        if not targets:
+            return
+        copy = VoucherBusinessTargets.objects.create(
+            voucher=voucher,
+            duration=targets.duration,
+            duration_periods=targets.duration_periods,
+        )
+        copy.tiers.set(targets.tiers.all())
+        copy.addons.set(targets.addons.all())

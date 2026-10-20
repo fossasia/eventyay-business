@@ -41,6 +41,10 @@
                         <strong>{% trans "Price:" %}</strong>
                         {% if addon.price %}
                             <span id="addon-pricing-display"
+                                  data-addon-id="{{ addon.pk }}"
+                                  data-quote-url="{% url 'plugins:eventyay_business:organizer.voucher.quote' organizer=request.organizer.slug %}"
+                                  data-error-message="{% trans 'The voucher could not be checked. Please try again.' %}"
+                                  data-discount-label="{% trans 'With voucher:' %}"
                                   data-unit-price="{{ addon.price }}"
                                   data-currency="{{ addon.currency }}"
                                   data-pricing-mode="{{ addon.get_pricing_mode_display }}">
@@ -51,6 +55,8 @@
                                     <strong>{% trans "Selected Quantity:" %}</strong> <span id="addon-selected-quantity">1</span><br>
                                     <strong>{% trans "Total Cost:" %}</strong> <strong id="addon-calculated-total">{{ addon.price }} {{ addon.currency }}</strong>
                                     <span class="text-muted">({% if addon.pricing_mode == "recurring" %}{% trans "Recurring fee" %}{% else %}{% trans "One-time payment" %}{% endif %})</span>
+                                    <br>
+                                    <span id="addon-voucher-result" role="status" aria-live="polite" hidden></span>
                                 </span>
                             </span>
                         {% else %}
@@ -87,4 +93,5 @@
         </div>
     </form>
     <script type="module" src="{% static 'eventyay_business/addon_purchase.js' %}"></script>
+    <script type="module" src="{% static 'eventyay_business/voucher_quote.js' %}"></script>
 {% endblock %}

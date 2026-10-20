@@ -296,6 +296,11 @@ urlpatterns = [
         name="organizer.invoices.download",
     ),
     path(
+        "control/organizer/<str:organizer>/business/voucher/quote/",
+        views.OrganizerVoucherQuoteView.as_view(),
+        name="organizer.voucher.quote",
+    ),
+    path(
         "control/organizer/<str:organizer>/business/addons/<int:pk>/purchase/",
         views.OrganizerAddonPurchaseView.as_view(),
         name="organizer.addon.purchase",
@@ -310,6 +315,11 @@ urlpatterns = [
         "control/event/<str:organizer>/<str:event>/business/addons/",
         views.EventDashboardAddonsView.as_view(),
         name="event.addons",
+    ),
+    path(
+        "control/event/<str:organizer>/<str:event>/business/voucher/quote/",
+        views.EventVoucherQuoteView.as_view(),
+        name="event.voucher.quote",
     ),
     path(
         "control/event/<str:organizer>/<str:event>/business/addons/<int:pk>/purchase/",

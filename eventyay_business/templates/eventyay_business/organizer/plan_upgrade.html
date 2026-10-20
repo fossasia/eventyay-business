@@ -1,5 +1,6 @@
 {% extends "pretixcontrol/organizers/base.html" %}
 {% load i18n %}
+{% load static %}
 
 {% block title %}{% trans "Change / Upgrade Plan" %}{% endblock %}
 
@@ -28,6 +29,21 @@
             adjustments and applicable taxes. You can turn off automatic payments
             later without canceling the plan.
         {% endblocktrans %}
+    </div>
+
+    <div class="panel panel-default" id="plan-voucher"
+         data-quote-url="{% url 'plugins:eventyay_business:organizer.voucher.quote' organizer=request.organizer.slug %}"
+         data-error-message="{% trans 'The voucher could not be checked. Please try again.' %}">
+        <div class="panel-body">
+            <label for="plan-voucher-code">{% trans "Have a voucher code?" %}</label>
+            <div class="input-group" style="max-width: 420px;">
+                <input type="text" id="plan-voucher-code" class="form-control" autocomplete="off" aria-describedby="plan-voucher-message">
+                <span class="input-group-btn">
+                    <button type="button" class="btn btn-default" id="plan-voucher-apply">{% trans "Apply" %}</button>
+                </span>
+            </div>
+            <p id="plan-voucher-message" class="help-block" role="status" aria-live="polite"></p>
+        </div>
     </div>
 
     <div class="row">
@@ -146,15 +162,17 @@
                     <div class="panel-footer" style="background: #fafafa;">
                         {% if item.prices %}
                             {% for price in item.prices %}
-                                <form method="post" action="{% url 'plugins:eventyay_business:organizer.plan.upgrade' organizer=request.organizer.slug %}" style="margin-bottom: 8px;">
+                                <form method="post" action="{% url 'plugins:eventyay_business:organizer.plan.upgrade' organizer=request.organizer.slug %}" style="margin-bottom: 8px;"{% if price.amount > 0 and not item.is_current %} data-tier-price-id="{{ price.id }}"{% endif %}>
                                     {% csrf_token %}
                                     <input type="hidden" name="tier_price_id" value="{{ price.id }}">
+                                    <input type="hidden" name="voucher_code" value="" data-voucher-code>
                                     <div class="row" style="align-items: center; display: flex;">
                                         <div class="col-xs-7">
-                                            <strong>{{ price.amount }} {{ price.currency }}</strong>
+                                            <strong data-voucher-price>{{ price.amount }} {{ price.currency }}</strong>
                                             <div class="text-muted" style="font-size: 11px;">
                                                 / {{ price.get_billing_interval_display }}
                                             </div>
+                                            <div class="text-success" style="font-size: 12px;" data-voucher-result hidden></div>
                                         </div>
                                         <div class="col-xs-5 text-right">
                                             {% if item.is_current %}
@@ -210,4 +228,5 @@
             </div>
         {% endfor %}
     </div>
+    <script type="module" src="{% static 'eventyay_business/voucher_quote.js' %}"></script>
 {% endblock %}

@@ -9,7 +9,7 @@ from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Prefetch, Q, Sum
-from django.http import Http404, HttpResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -97,6 +97,7 @@ from .models import (
     TierStatus,
     TierVersion,
     UsageRecord,
+    VoucherDiscountDuration,
 )
 from .notifications import (
     NOTIFICATION_PLACEHOLDERS,
@@ -142,6 +143,13 @@ from .stripe_service import (
     is_stripe_configured,
     sync_organizer_from_stripe,
     sync_tier_price_to_stripe,
+)
+
+from .vouchers import (
+    VoucherQuote,
+    get_voucher_quote,
+    redeem_addon_voucher,
+    redeem_voucher,
 )
 
 logger = logging.getLogger(__name__)
@@ -753,6 +761,22 @@ class OrganizerPlanUpgradeView(
 
         organizer = request.organizer
 
+        voucher_code = request.POST.get("voucher_code", "").strip()
+        voucher_quote = None
+        if voucher_code:
+            try:
+                if amount <= 0:
+                    raise ValidationError(_("Vouchers can only be used on paid plans."))
+                voucher_quote = get_voucher_quote(
+                    voucher_code, organizer, amount=amount, tier=target_version.tier
+                )
+            except ValidationError as exc:
+                messages.error(request, exc.messages[0])
+                return redirect(
+                    "plugins:eventyay_business:organizer.plan.upgrade",
+                    organizer=organizer.slug,
+                )
+
         if amount > 0 and organizer_consolidated_billing_enabled(organizer):
             billing_overview = build_organizer_billing_overview(organizer)
             if not billing_overview["billing_profile_ready"]:
@@ -823,6 +847,16 @@ class OrganizerPlanUpgradeView(
                         is_downgrade = True
                     else:
                         is_downgrade = False
+
+        if is_downgrade and voucher_quote:
+            messages.error(
+                request,
+                _("Vouchers cannot be used when moving to a cheaper plan."),
+            )
+            return redirect(
+                "plugins:eventyay_business:organizer.plan.upgrade",
+                organizer=organizer.slug,
+            )
 
         if is_downgrade and active_sub:
             # Check resource usage against new limits to warn without deleting data
@@ -1022,6 +1056,7 @@ class OrganizerPlanUpgradeView(
                     user=request.user,
                     success_url=success_url,
                     cancel_url=cancel_url,
+                    voucher_quote=voucher_quote,
                 )
                 if checkout_url:
                     return redirect(checkout_url)
@@ -1047,39 +1082,53 @@ class OrganizerPlanUpgradeView(
 
         # Free tier or offline switch
         target_currency = tier_price.currency if tier_price else None
-        with transaction.atomic():
-            Organizer.objects.select_for_update().get(pk=organizer.pk)
-            active_sub = (
-                Subscription.objects.select_for_update()
-                .filter(organizer=organizer, status=SubscriptionStatus.ACTIVE)
-                .first()
-            )
-            if active_sub:
-                active_sub.tier_version = target_version
-                active_sub.billing_interval = target_interval
-                if target_currency:
-                    active_sub.currency = target_currency
-                active_sub.save(
-                    update_fields=[
-                        "tier_version",
-                        "billing_interval",
-                        "currency",
-                        "updated_at",
-                    ]
+        try:
+            with transaction.atomic():
+                Organizer.objects.select_for_update().get(pk=organizer.pk)
+                active_sub = (
+                    Subscription.objects.select_for_update()
+                    .filter(organizer=organizer, status=SubscriptionStatus.ACTIVE)
+                    .first()
                 )
-                sub = active_sub
-            else:
-                sub = Subscription.objects.create(
-                    organizer=organizer,
-                    tier_version=target_version,
-                    status=SubscriptionStatus.ACTIVE,
-                    billing_interval=target_interval,
-                    currency=target_currency or "EUR",
-                    starts_at=now(),
+                if active_sub:
+                    active_sub.tier_version = target_version
+                    active_sub.billing_interval = target_interval
+                    if target_currency:
+                        active_sub.currency = target_currency
+                    active_sub.save(
+                        update_fields=[
+                            "tier_version",
+                            "billing_interval",
+                            "currency",
+                            "updated_at",
+                        ]
+                    )
+                    sub = active_sub
+                else:
+                    sub = Subscription.objects.create(
+                        organizer=organizer,
+                        tier_version=target_version,
+                        status=SubscriptionStatus.ACTIVE,
+                        billing_interval=target_interval,
+                        currency=target_currency or "EUR",
+                        starts_at=now(),
+                    )
+                if voucher_quote:
+                    redeem_voucher(
+                        voucher_quote,
+                        organizer,
+                        subscription=sub,
+                        tier=target_version.tier,
+                    )
+                invalidate_entitlement_cache(organizer=organizer)
+                subscription_purchased.send(
+                    sender=Subscription, instance=sub, user=request.user
                 )
-            invalidate_entitlement_cache(organizer=organizer)
-            subscription_purchased.send(
-                sender=Subscription, instance=sub, user=request.user
+        except ValidationError as exc:
+            messages.error(request, exc.messages[0])
+            return redirect(
+                "plugins:eventyay_business:organizer.plan.upgrade",
+                organizer=organizer.slug,
             )
 
         messages.success(
@@ -1455,7 +1504,14 @@ class OrganizerAddonPurchaseView(
                 assignment.status = AddonStatus.PENDING
                 assignment.save()
             else:
-                form.save()
+                try:
+                    with transaction.atomic():
+                        assignment = form.save()
+                        if form.voucher_quote:
+                            redeem_addon_voucher(form.voucher_quote, assignment)
+                except ValidationError as exc:
+                    form.add_error("voucher_code", exc)
+                    return self.form_invalid(form)
                 messages.success(
                     self.request,
                     _("The %(addon)s add-on has been added to your organisation.")
@@ -1490,6 +1546,7 @@ class OrganizerAddonPurchaseView(
                 success_url=success_url,
                 cancel_url=cancel_url,
                 assignment=assignment,
+                voucher_quote=form.voucher_quote,
             )
             if checkout_url:
                 return redirect(checkout_url)
@@ -1512,6 +1569,98 @@ class OrganizerAddonPurchaseView(
             "plugins:eventyay_business:organizer.plan",
             organizer=self.request.organizer.slug,
         )
+
+
+def describe_voucher_duration(quote: VoucherQuote) -> str:
+    targets = quote.targets
+    if targets.duration == VoucherDiscountDuration.REPEATING:
+        return _("Discount applies to the first %(count)s billing periods.") % {
+            "count": targets.period_limit
+        }
+    if targets.duration == VoucherDiscountDuration.FOREVER:
+        return _("Discount applies to every billing period while the voucher is valid.")
+    return _("Discount applies to the first billing period.")
+
+
+def quote_item(code, organizer, amount, currency, **target) -> dict:
+    try:
+        quote = get_voucher_quote(code, organizer, amount=amount, **target)
+    except ValidationError as exc:
+        return {"valid": False, "message": exc.messages[0]}
+    return {
+        "valid": True,
+        "message": describe_voucher_duration(quote),
+        "amount": f"{quote.amount:.2f}",
+        "discount": f"{quote.discount:.2f}",
+        "total": f"{quote.total:.2f}",
+        "currency": currency,
+    }
+
+
+def voucher_quote_response(request, organizer, event=None) -> JsonResponse:
+    """Price a voucher code against the plans or add-on shown on a checkout page."""
+    code = request.GET.get("code", "").strip()
+    if not code:
+        return JsonResponse({"valid": False, "message": str(_("Enter a voucher code.")), "items": {}})
+
+    items = {}
+    tier_price_ids = [pk for pk in request.GET.getlist("tier_price") if pk.isdigit()]
+    tier_prices = TierPrice.objects.filter(
+        pk__in=tier_price_ids,
+        active=True,
+        tier_version__tier__status=TierStatus.PUBLISHED,
+    ).select_related("tier_version__tier")
+    for tier_price in tier_prices:
+        items[f"tier_price-{tier_price.pk}"] = quote_item(
+            code,
+            organizer,
+            tier_price.amount,
+            tier_price.currency,
+            tier=tier_price.tier_version.tier,
+        )
+
+    addon_id = request.GET.get("addon", "")
+    addon = (
+        AddonDefinition.objects.filter(pk=addon_id, active=True, public=True).first()
+        if addon_id.isdigit()
+        else None
+    )
+    if addon and addon.price:
+        quantity = request.GET.get("quantity", "1")
+        quantity = max(int(quantity), 1) if quantity.isdigit() else 1
+        if event is None and request.GET.get("event", "").isdigit():
+            event = organizer.events.filter(pk=request.GET["event"]).first()
+        items[f"addon-{addon.pk}"] = quote_item(
+            code,
+            organizer,
+            (addon.price * quantity).quantize(Decimal("0.01")),
+            addon.currency,
+            addon=addon,
+            event=event,
+        )
+
+    valid = any(item["valid"] for item in items.values())
+    if valid:
+        message = _("Voucher applied.")
+    elif len(items) == 1:
+        message = next(iter(items.values()))["message"]
+    else:
+        message = _("This voucher cannot be used for any of these plans.")
+    return JsonResponse({"valid": valid, "message": str(message), "items": items})
+
+
+class OrganizerVoucherQuoteView(OrganizerPermissionRequiredMixin, View):
+    permission = "can_change_organizer_settings"
+
+    def get(self, request, *args, **kwargs):
+        return voucher_quote_response(request, request.organizer)
+
+
+class EventVoucherQuoteView(EventPermissionRequiredMixin, View):
+    permission = "can_change_event_settings"
+
+    def get(self, request, *args, **kwargs):
+        return voucher_quote_response(request, request.organizer, event=request.event)
 
 
 class OrganizerAddonCancelView(OrganizerPermissionRequiredMixin, TemplateView):
@@ -1709,7 +1858,14 @@ class EventDashboardAddonPurchaseView(EventPermissionRequiredMixin, FormView):
                 assignment.status = AddonStatus.PENDING
                 assignment.save()
             else:
-                form.save()
+                try:
+                    with transaction.atomic():
+                        assignment = form.save()
+                        if form.voucher_quote:
+                            redeem_addon_voucher(form.voucher_quote, assignment)
+                except ValidationError as exc:
+                    form.add_error("voucher_code", exc)
+                    return self.form_invalid(form)
                 messages.success(
                     self.request,
                     _("The %(addon)s add-on has been added to %(event)s.")
@@ -1751,6 +1907,7 @@ class EventDashboardAddonPurchaseView(EventPermissionRequiredMixin, FormView):
                 success_url=success_url,
                 cancel_url=cancel_url,
                 assignment=assignment,
+                voucher_quote=form.voucher_quote,
             )
             if checkout_url:
                 return redirect(checkout_url)
