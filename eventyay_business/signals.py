@@ -4,6 +4,7 @@ from django.db import DatabaseError, transaction
 from django.db.models import Q, Sum
 from django.db.models.signals import post_save
 from django.dispatch import Signal, receiver
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
@@ -75,6 +76,11 @@ except ImportError:
     nav_global = None
     nav_organizer = None
     nav_event_settings = None
+
+try:
+    from eventyay.control.signals import platform_mail_templates
+except ImportError:
+    platform_mail_templates = None
 
 try:
     from eventyay.base.entitlements import EntitlementDecision
@@ -158,6 +164,68 @@ if platform_fee_policy and PlatformFeePolicy:
             is_override=is_override,
             source="eventyay-business",
         )
+
+
+def business_notification_template_loader(event_type):
+    def load():
+        from .notifications import NOTIFICATION_PLACEHOLDERS, NOTIFICATION_SPECS
+
+        spec = NOTIFICATION_SPECS[event_type]
+        context = {name: "{" + name + "}" for name in NOTIFICATION_PLACEHOLDERS}
+        context["event_type"] = event_type
+        return str(spec.subject), render_to_string(spec.template_name, context)
+
+    return load
+
+
+def business_notification_preview_context():
+    return {
+        "organizer_name": "Example Organizer",
+        "object_name": "Professional",
+        "event_name": "Example Conference",
+        "invoice_number": "INV-EXAMPLE-001",
+        "amount": "49.00",
+        "currency": "EUR",
+        "issue_date": "2026-10-19",
+        "effective_date": "2026-10-19",
+        "deadline": "2026-10-22",
+        "next_retry_at": "2026-10-20",
+        "days_remaining": "3",
+        "current_state": "Active",
+        "failure_code": "stripe_unavailable",
+        "action_url": "https://eventyay.example/control/",
+        "support_email": "support@eventyay.example",
+    }
+
+
+def register_business_mail_templates(sender, **kwargs):
+    return [
+        {
+            "key": f"business-{event_type}",
+            "name": event_type.label,
+            "category": _("Business"),
+            "trigger": event_type.label,
+            "recipient_type": (
+                _("Platform administrator")
+                if event_type == BillingNotificationEventType.PLATFORM_ALERT
+                else _("Organizer billing contact")
+            ),
+            "load": business_notification_template_loader(event_type),
+            "preview": business_notification_preview_context(),
+            "url": reverse(
+                "plugins:eventyay_business:notifications.template",
+                kwargs={"event_type": event_type},
+            ),
+        }
+        for event_type in BillingNotificationEventType
+    ]
+
+
+if platform_mail_templates:
+    receiver(
+        platform_mail_templates,
+        dispatch_uid="business_platform_mail_templates",
+    )(register_business_mail_templates)
 
 
 if legacy_billing_collection_disabled:

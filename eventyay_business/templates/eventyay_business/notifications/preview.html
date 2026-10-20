@@ -1,5 +1,5 @@
 {% extends 'pretixcontrol/admin/base.html' %}
-{% load i18n %}
+{% load i18n rich_text %}
 {% load bootstrap3 %}
 
 {% block title %}{% translate 'Preview billing notifications' %}{% endblock %}
@@ -65,7 +65,7 @@
               <p><span class="label label-info">{% translate 'Customized' %}</span></p>
             {% endif %}
             <p><strong>{% translate 'Subject' %}:</strong> {{ preview.subject }}</p>
-            <pre class="notification-preview">{{ preview.body }}</pre>
+            <div class="notification-preview">{{ preview.body|rich_text_email }}</div>
           </div>
         </div>
       </div>

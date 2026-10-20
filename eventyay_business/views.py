@@ -103,6 +103,8 @@ from .notifications import (
     NOTIFICATION_PLACEHOLDERS,
     NOTIFICATION_SPECS,
     BillingNotificationRecipient,
+    notification_template_active_locales,
+    notification_template_overrides,
     notification_template_sources,
     preview_notification_context,
     queue_billing_notification,
@@ -110,6 +112,7 @@ from .notifications import (
     reset_notification_template,
     retry_billing_notification,
     save_notification_template,
+    save_notification_template_active_locales,
 )
 from .platform_fee_ledger import (
     organizer_billing_cutover_at,
@@ -2482,6 +2485,13 @@ class AdminBillingNotificationPreviewView(
     template_name = "eventyay_business/notifications/preview.html"
     form_class = BillingNotificationTestForm
 
+    def get_initial(self):
+        initial = super().get_initial()
+        locale = self.request.GET.get("locale")
+        if locale in {code for code, _label in settings.LANGUAGES}:
+            initial["locale"] = locale
+        return initial
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         locale = self.request.GET.get("locale") or "en"
@@ -2534,7 +2544,10 @@ class AdminBillingNotificationPreviewView(
             self.request,
             _("The test notification was queued without changing billing state."),
         )
-        return redirect("plugins:eventyay_business:notifications.preview")
+        return redirect(
+            f"{reverse('plugins:eventyay_business:notifications.preview')}"
+            f"?locale={form.cleaned_data['locale']}"
+        )
 
 
 class AdminBillingNotificationTemplateView(
@@ -2549,61 +2562,104 @@ class AdminBillingNotificationTemplateView(
         except ValueError as exc:
             raise Http404 from exc
 
-    def get_locale(self):
-        locale = self.request.POST.get("locale") or self.request.GET.get("locale")
-        valid_locales = {code for code, _label in settings.LANGUAGES}
-        return locale if locale in valid_locales else settings.LANGUAGE_CODE
-
     def get_initial(self):
         initial = super().get_initial()
-        subject, body, _is_custom = notification_template_sources(
-            self.get_event_type(), self.get_locale()
+        subjects = {}
+        messages_by_locale = {}
+        active_locales = notification_template_active_locales(self.get_event_type())
+        for locale, _label in settings.LANGUAGES:
+            subject, body, is_custom = notification_template_sources(
+                self.get_event_type(), locale
+            )
+            subjects[locale] = subject
+            messages_by_locale[locale] = body
+            if is_custom:
+                active_locales.add(locale)
+        selected_locale = (self.request.GET.get("locale") or "").strip()
+        if selected_locale not in active_locales:
+            selected_locale = settings.LANGUAGE_CODE
+        initial.update(
+            {
+                "active_locales": ",".join(
+                    locale
+                    for locale, _label in settings.LANGUAGES
+                    if locale in active_locales
+                ),
+                "selected_locale": selected_locale,
+                "subject": subjects,
+                "message": messages_by_locale,
+            }
         )
-        initial.update({"locale": self.get_locale(), "subject": subject, "body": body})
         return initial
 
     def post(self, request, *args, **kwargs):
         if request.POST.get("action") == "reset":
             event_type = self.get_event_type()
-            locale = self.get_locale()
-            reset_notification_template(event_type, locale)
+            for locale, _label in settings.LANGUAGES:
+                reset_notification_template(event_type, locale)
+            save_notification_template_active_locales(
+                event_type, {settings.LANGUAGE_CODE}
+            )
             messages.success(
                 request,
-                _("The %(language)s template was reset to its translated default.")
-                % {"language": dict(settings.LANGUAGES).get(locale, locale)},
+                _("The notification template was reset to its translated defaults."),
             )
             return redirect(
-                f"{reverse('plugins:eventyay_business:notifications.template', kwargs={'event_type': event_type})}?locale={locale}"
+                reverse(
+                    "plugins:eventyay_business:notifications.template",
+                    kwargs={"event_type": event_type},
+                )
             )
         return super().post(request, *args, **kwargs)
 
     def form_valid(self, form):
         event_type = self.get_event_type()
-        locale = form.cleaned_data["locale"]
-        save_notification_template(
-            event_type,
-            locale,
-            form.cleaned_data["subject"],
-            form.cleaned_data["body"],
-        )
+        active_locales = form.cleaned_data["active_locales"]
+        save_notification_template_active_locales(event_type, active_locales)
+        subjects = form.cleaned_data["subject"].data
+        messages_by_locale = form.cleaned_data["message"].data
+        initial = form.initial
+        for locale, _label in settings.LANGUAGES:
+            if locale in active_locales:
+                subject_override, body_override = notification_template_overrides(
+                    event_type, locale
+                )
+                submitted_subject = subjects.get(locale, "")
+                submitted_body = messages_by_locale.get(locale, "")
+                initial_subject = initial["subject"].get(locale, "").strip()
+                initial_body = initial["message"].get(locale, "").strip()
+                if submitted_subject != initial_subject:
+                    subject_override = submitted_subject
+                if submitted_body != initial_body:
+                    body_override = submitted_body
+                save_notification_template(
+                    event_type,
+                    locale,
+                    subject_override,
+                    body_override,
+                )
+            else:
+                reset_notification_template(event_type, locale)
         messages.success(self.request, _("The notification template was saved."))
-        return redirect(
-            f"{reverse('plugins:eventyay_business:notifications.template', kwargs={'event_type': event_type})}?locale={locale}"
+        template_url = reverse(
+            "plugins:eventyay_business:notifications.template",
+            kwargs={"event_type": event_type},
         )
+        return redirect(f"{template_url}?locale={form.cleaned_data['selected_locale']}")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         event_type = self.get_event_type()
-        _subject, _body, is_custom = notification_template_sources(
-            event_type, self.get_locale()
+        is_custom = any(
+            notification_template_sources(event_type, locale)[2]
+            for locale, _label in settings.LANGUAGES
         )
         context.update(
             {
                 "event_type": event_type,
                 "event_label": event_type.label,
                 "is_custom": is_custom,
-                "current_locale": self.get_locale(),
-                "language_choices": settings.LANGUAGES,
+                "platform_default_locale": settings.LANGUAGE_CODE,
                 "placeholders": NOTIFICATION_PLACEHOLDERS.items(),
             }
         )

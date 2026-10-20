@@ -9,8 +9,11 @@ from eventyay.base.forms import SecretKeySettingsField, SettingsForm
 from eventyay.base.forms.validators import PlaceholderValidator
 from eventyay.base.models import Organizer
 from eventyay.base.settings import GlobalSettingsObject
+from eventyay.common.forms.fields import I18nEmailBodyFormField
 from eventyay.control.forms import ExtFileField
 from eventyay.control.forms.global_settings import StripeKeyValidator
+from i18nfield.forms import I18nFormField, I18nTextInput
+from i18nfield.strings import LazyI18nString
 
 from .capabilities import get_grouped_capability_choices
 from .invoice_presentation import DEFAULT_SECTION_LABELS, DEFAULT_SECTION_ORDER
@@ -1257,17 +1260,28 @@ class BillingNotificationTestForm(forms.Form):
 
 
 class BillingNotificationTemplateForm(forms.Form):
-    locale = forms.ChoiceField(
-        choices=settings.LANGUAGES,
-        label=_("Language"),
-        widget=forms.HiddenInput,
+    active_locales = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput(attrs={"id": "mail-active-locales"}),
     )
-    subject = forms.CharField(label=_("Subject"), max_length=255)
-    body = forms.CharField(
+    selected_locale = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput(attrs={"id": "mail-selected-locale"}),
+    )
+    subject = I18nFormField(
+        label=_("Subject"),
+        locales=[code for code, _label in settings.LANGUAGES],
+        max_length=255,
+        widget=I18nTextInput,
+    )
+    message = I18nEmailBodyFormField(
         label=_("Message"),
+        locales=[code for code, _label in settings.LANGUAGES],
         max_length=20000,
-        widget=forms.Textarea(attrs={"rows": 16}),
-        help_text=_("Plain text with optional placeholders such as {organizer_name}."),
+        placeholders=tuple(NOTIFICATION_PLACEHOLDERS),
+        help_text=_(
+            "Use the placeholder menu to insert values such as {organizer_name}."
+        ),
     )
 
     def __init__(self, *args, **kwargs):
@@ -1275,29 +1289,53 @@ class BillingNotificationTemplateForm(forms.Form):
         allowed = [f"{{{name}}}" for name in NOTIFICATION_PLACEHOLDERS]
         validator = PlaceholderValidator(allowed)
         self.fields["subject"].validators.append(validator)
-        self.fields["body"].validators.append(validator)
+        self.fields["message"].validators.append(validator)
 
     def clean(self):
         cleaned_data = super().clean()
         sample_context = {name: name for name in NOTIFICATION_PLACEHOLDERS}
-        for field_name in ("subject", "body"):
+        for field_name in ("subject", "message"):
             value = cleaned_data.get(field_name)
             if not value:
                 continue
-            try:
-                value.format_map(sample_context)
-            except (KeyError, ValueError) as exc:
-                self.add_error(
-                    field_name,
-                    _("Invalid placeholder syntax: %(error)s") % {"error": str(exc)},
-                )
+            translations = value.data if isinstance(value, LazyI18nString) else {}
+            for translation in translations.values():
+                try:
+                    translation.format_map(sample_context)
+                except (KeyError, ValueError) as exc:
+                    self.add_error(
+                        field_name,
+                        _("Invalid placeholder syntax: %(error)s")
+                        % {"error": str(exc)},
+                    )
+                    break
         return cleaned_data
 
     def clean_subject(self):
-        subject = self.cleaned_data["subject"]
-        if "\r" in subject or "\n" in subject:
+        subjects = self.cleaned_data["subject"]
+        translations = subjects.data if isinstance(subjects, LazyI18nString) else {}
+        if any("\r" in subject or "\n" in subject for subject in translations.values()):
             raise forms.ValidationError(_("The subject must be a single line."))
-        return subject
+        return subjects
+
+    def clean_active_locales(self):
+        valid_locales = {code for code, _label in settings.LANGUAGES}
+        active_locales = {
+            locale.strip()
+            for locale in self.cleaned_data["active_locales"].split(",")
+            if locale.strip()
+        }
+        if not active_locales.issubset(valid_locales):
+            raise forms.ValidationError(_("Select only supported languages."))
+        active_locales.add(settings.LANGUAGE_CODE)
+        return active_locales
+
+    def clean_selected_locale(self):
+        selected_locale = self.cleaned_data["selected_locale"].strip()
+        valid_locales = {code for code, _label in settings.LANGUAGES}
+        if selected_locale not in valid_locales:
+            return settings.LANGUAGE_CODE
+        return selected_locale
 
 
 class InvoicePresentationSettingsForm(SettingsForm):

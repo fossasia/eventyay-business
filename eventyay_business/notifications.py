@@ -297,16 +297,50 @@ def notification_template_setting_key(
     return f"business_notification_template_{event_type}_{locale}_{field}"
 
 
+def notification_template_active_locales_setting_key(
+    event_type: BillingNotificationEventType | str,
+) -> str:
+    return f"business_notification_template_{event_type}_active_locales"
+
+
+def notification_template_active_locales(
+    event_type: BillingNotificationEventType | str,
+) -> set[str]:
+    configured_locales = {locale for locale, _label in settings.LANGUAGES}
+    stored_locales = GlobalSettingsObject().settings.get(
+        notification_template_active_locales_setting_key(event_type),
+        as_type=str,
+        default="",
+    )
+    active_locales = {
+        locale.strip()
+        for locale in stored_locales.split(",")
+        if locale.strip() in configured_locales
+    }
+    active_locales.add(settings.LANGUAGE_CODE)
+    return active_locales
+
+
+def save_notification_template_active_locales(
+    event_type: BillingNotificationEventType | str, locales: set[str]
+) -> None:
+    active_locales = set(locales)
+    active_locales.add(settings.LANGUAGE_CODE)
+    ordered_locales = [
+        locale for locale, _label in settings.LANGUAGES if locale in active_locales
+    ]
+    GlobalSettingsObject().settings.set(
+        notification_template_active_locales_setting_key(event_type),
+        ",".join(ordered_locales),
+    )
+
+
 def notification_template_sources(
     event_type: BillingNotificationEventType | str, locale: str
 ) -> tuple[str, str, bool]:
     event_type = BillingNotificationEventType(event_type)
     spec = NOTIFICATION_SPECS[event_type]
-    global_settings = GlobalSettingsObject().settings
-    subject_key = notification_template_setting_key(event_type, locale, "subject")
-    body_key = notification_template_setting_key(event_type, locale, "body")
-    custom_subject = global_settings.get(subject_key, as_type=str, default="")
-    custom_body = global_settings.get(body_key, as_type=str, default="")
+    custom_subject, custom_body = notification_template_overrides(event_type, locale)
     placeholder_context = {name: "{" + name + "}" for name in NOTIFICATION_PLACEHOLDERS}
     placeholder_context["event_type"] = event_type
     with language(locale):
@@ -316,6 +350,20 @@ def notification_template_sources(
         custom_subject or default_subject,
         custom_body or default_body,
         bool(custom_subject or custom_body),
+    )
+
+
+def notification_template_overrides(
+    event_type: BillingNotificationEventType | str, locale: str
+) -> tuple[str, str]:
+    global_settings = GlobalSettingsObject().settings
+    return tuple(
+        global_settings.get(
+            notification_template_setting_key(event_type, locale, field),
+            as_type=str,
+            default="",
+        )
+        for field in ("subject", "body")
     )
 
 
@@ -352,12 +400,12 @@ def save_notification_template(
     body: str,
 ) -> None:
     global_settings = GlobalSettingsObject().settings
-    global_settings.set(
-        notification_template_setting_key(event_type, locale, "subject"), subject
-    )
-    global_settings.set(
-        notification_template_setting_key(event_type, locale, "body"), body
-    )
+    for field, value in (("subject", subject), ("body", body)):
+        key = notification_template_setting_key(event_type, locale, field)
+        if value:
+            global_settings.set(key, value)
+        elif global_settings.get(key, as_type=str, default=""):
+            del global_settings[key]
 
 
 def reset_notification_template(

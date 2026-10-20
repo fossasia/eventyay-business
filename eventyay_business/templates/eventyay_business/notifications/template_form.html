@@ -1,34 +1,50 @@
 {% extends 'pretixcontrol/admin/base.html' %}
-{% load i18n %}
+{% load i18n static %}
 {% load bootstrap3 %}
 
 {% block title %}{% blocktranslate with notification=event_label %}Edit {{ notification }} email{% endblocktranslate %}{% endblock %}
+
+{% block custom_header %}
+  {{ block.super }}
+  <link rel='stylesheet' href='{% static "common/css/_fonts.css" %}'>
+  <link rel='stylesheet' href='{% static "common/css/base.css" %}'>
+  <link rel='stylesheet' href='{% static "common/css/_forms.css" %}'>
+  <link rel='stylesheet' href='{% static "common/css/_composer.css" %}'>
+  <link rel='stylesheet' href='{% static "pretixplugins/sendmail/tickets_email.css" %}'>
+  <link rel='stylesheet' href='{% static "pretixcontrol/css/admin-messages.css" %}'>
+  <script type='module' src='{% static "common/js/tiptapLoader.js" %}'
+          data-tiptap-js='{% static "editor/editor.js" %}'
+          data-tiptap-css='{% static "editor/editor.css" %}'></script>
+{% endblock %}
 
 {% block content %}
   <div class="page-header">
     <h1>{% blocktranslate with notification=event_label %}Edit {{ notification }} email{% endblocktranslate %}</h1>
   </div>
 
-  <form method="get" class="form-inline well well-sm">
-    <label for="template-language">{% translate 'Template language' %}</label>
-    <select id="template-language" name="locale" class="form-control">
-      {% for code, label in language_choices %}
-        <option value="{{ code }}"{% if code == current_locale %} selected{% endif %}>{{ label }}</option>
-      {% endfor %}
-    </select>
-    <button type="submit" class="btn btn-default">{% translate 'Load template' %}</button>
-  </form>
-
   <div class="row">
     <div class="col-md-8">
-      <div class="panel panel-default">
+      <div class="panel panel-default mail-composer">
         <div class="panel-heading"><strong>{% translate 'Email template' %}</strong></div>
         <div class="panel-body">
           <form method="post" class="form-horizontal">
             {% csrf_token %}
-            {{ form.locale }}
+            {{ form.active_locales }}
+            {{ form.selected_locale }}
+            <div class="d-flex align-items-center mb-3">
+              <div id="mail-language-tabs" role="tablist" hidden
+                   data-default-locale="{{ platform_default_locale }}"></div>
+              <div class="dropdown ml-2" id="add-language-btn" hidden>
+                <button type="button" class="btn btn-default btn-sm dropdown-toggle"
+                        data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                  <i class="fa fa-plus" aria-hidden="true"></i> {% translate 'Add language' %}
+                  <span class="caret"></span>
+                </button>
+                <ul class="dropdown-menu" id="add-language-dropdown"></ul>
+              </div>
+            </div>
             {% bootstrap_field form.subject layout='horizontal' %}
-            {% bootstrap_field form.body layout='horizontal' %}
+            {% bootstrap_field form.message layout='horizontal' %}
             <div class="form-group">
               <div class="col-md-9 col-md-offset-3">
                 <button type="submit" class="btn btn-primary">
@@ -37,10 +53,10 @@
                 </button>
                 {% if is_custom %}
                   <button type="submit" name="action" value="reset" class="btn btn-danger">
-                    {% translate 'Reset to default' %}
+                    {% translate 'Reset all languages to defaults' %}
                   </button>
                 {% endif %}
-                <a class="btn btn-default" href="{% url 'plugins:eventyay_business:notifications.preview' %}?locale={{ current_locale|urlencode }}">
+                <a class="btn btn-default" href="{% url 'plugins:eventyay_business:notifications.preview' %}">
                   {% translate 'Back to previews' %}
                 </a>
               </div>
@@ -66,4 +82,6 @@
       </div>
     </div>
   </div>
+
+  <script type="module" src="{% static 'pretixcontrol/js/admin-mail-language-manager.js' %}"></script>
 {% endblock %}
