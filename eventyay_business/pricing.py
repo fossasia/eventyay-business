@@ -170,9 +170,11 @@ class BusinessPricingView(TemplateView):
             else []
         )
         context["visibility"] = pricing_page_visibility()
+        # Only in admin mode, so administrators browsing normally see the page as
+        # other signed-in users do.
         context["show_visibility_notice"] = context[
             "visibility"
-        ] != PricingPageVisibility.EVERYONE and is_platform_admin(self.request)
+        ] != PricingPageVisibility.EVERYONE and is_admin_mode_active(self.request)
         context["purchase_links"] = plan_purchase_links(self.request)
         # Same page chrome as core's system pages.
         context["staff_session"] = is_admin_mode_active(self.request)

@@ -4,6 +4,7 @@ from django.test import override_settings
 from django.urls import reverse
 from django.utils.timezone import now
 from eventyay.base.models import Organizer, Team, User
+from eventyay.base.models.auth import StaffSession
 from eventyay.base.models.global_plugin_config import GlobalPluginConfig
 from eventyay.base.settings import GlobalSettingsObject
 
@@ -140,8 +141,22 @@ def test_admins_always_see_pricing_page(
 
     assert response.status_code == 200
     assert PRICING_TEMPLATE in used_templates(response)
-    assert "Only platform administrators can see this page" in response.content.decode()
     assert b"Plus Plan" in response.content
+    # Outside admin mode, administrators see the page as other users do.
+    assert "can see this page" not in response.content.decode()
+
+    session = admin_user_client.session
+    session.save()
+    StaffSession.objects.create(
+        user=User.objects.get(email="pricing-admin@example.com"),
+        session_key=session.session_key,
+    )
+    content = admin_user_client.get(pricing_url).content.decode()
+    assert "Only platform administrators can see this page" in content
+
+    set_visibility(PricingPageVisibility.SIGNED_IN)
+    content = admin_user_client.get(pricing_url).content.decode()
+    assert "Only signed-in users can see this page" in content
 
 
 @pytest.mark.django_db
