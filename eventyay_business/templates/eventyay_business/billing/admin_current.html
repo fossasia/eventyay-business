@@ -52,7 +52,7 @@
           <div class="col-sm-6 col-lg-3">
             <div class="form-group">
               <label for="filter-organizer">{% translate 'Organizer' %}</label>
-              <select id="filter-organizer" name="organizer" class="form-control">
+              <select id="filter-organizer" name="organizer" class="form-control select2-static">
                 <option value="">{% translate 'All organizers' %}</option>
                 {% for organizer in organizers %}
                   <option value="{{ organizer.slug }}" {% if current_organizer == organizer.slug %}selected{% endif %}>{{ organizer.name }}</option>
@@ -69,7 +69,7 @@
           <div class="col-sm-6 col-lg-2">
             <div class="form-group">
               <label for="filter-currency">{% translate 'Currency' %}</label>
-              <select id="filter-currency" name="currency" class="form-control">
+              <select id="filter-currency" name="currency" class="form-control select2-static">
                 <option value="">{% translate 'All currencies' %}</option>
                 {% for currency in currencies %}
                   <option value="{{ currency }}" {% if current_currency == currency %}selected{% endif %}>{{ currency }}</option>

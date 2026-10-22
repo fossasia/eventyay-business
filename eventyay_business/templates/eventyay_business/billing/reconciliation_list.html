@@ -33,7 +33,7 @@
         <div class="row">
           <div class="col-sm-4">
             <label for="filter-organizer">{% trans 'Organizer' %}</label>
-            <select id="filter-organizer" class="form-control" name="organizer">
+            <select id="filter-organizer" class="form-control select2-static" name="organizer">
               <option value="">{% trans 'All organizers' %}</option>
               {% for organizer in organizers %}
                 <option value="{{ organizer.slug }}" {% if current_organizer == organizer.slug %}selected{% endif %}>{{ organizer.name }}</option>

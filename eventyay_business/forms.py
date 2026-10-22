@@ -47,6 +47,16 @@ except ImportError:
     )
 
 
+SEARCHABLE_SELECT_CLASS = "form-control select2-static"
+
+
+def make_searchable(form: forms.BaseForm, *field_names: str) -> None:
+    """Make long dropdowns searchable; core's control JS turns these into select2 boxes."""
+    for name in field_names:
+        if name in form.fields:
+            form.fields[name].widget.attrs["class"] = SEARCHABLE_SELECT_CLASS
+
+
 class TierForm(forms.ModelForm):
     class Meta:
         model = Tier
@@ -351,6 +361,7 @@ class SubscriptionAdminForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        make_searchable(self, "organizer", "tier_version")
         if self.instance and self.instance.pk and self.instance.configuration_snapshot:
             val = self.instance.configuration_snapshot.get("grace_period_days")
             if val is not None:
@@ -584,6 +595,7 @@ class OrganizerAddonForm(forms.ModelForm):
         if self.instance and self.instance.pk and self.instance.addon_id:
             qs = qs | AddonDefinition.objects.filter(pk=self.instance.addon_id)
         self.fields["addon"].queryset = qs.distinct()
+        make_searchable(self, "organizer", "addon")
 
 
 class EventAddonForm(forms.ModelForm):
@@ -607,6 +619,7 @@ class EventAddonForm(forms.ModelForm):
         if self.instance and self.instance.pk and self.instance.addon_id:
             qs = qs | AddonDefinition.objects.filter(pk=self.instance.addon_id)
         self.fields["addon"].queryset = qs.distinct()
+        make_searchable(self, "event", "addon")
 
 
 def clean_addon_voucher(form, organizer, event):
@@ -983,13 +996,13 @@ class CountryFeeSettingForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         from django.conf import settings
 
-        self.fields["country"].widget.attrs.update({"class": "form-control"})
+        self.fields["country"].widget.attrs.update({"class": SEARCHABLE_SELECT_CLASS})
         if hasattr(settings, "CURRENCIES") and settings.CURRENCIES:
             currency_choices = [("", "---------")] + [
                 (c.alpha_3, f"{c.alpha_3} - {c.name}") for c in settings.CURRENCIES
             ]
             self.fields["currency"].widget = forms.Select(
-                choices=currency_choices, attrs={"class": "form-control"}
+                choices=currency_choices, attrs={"class": SEARCHABLE_SELECT_CLASS}
             )
         else:
             self.fields["currency"].widget = forms.TextInput(
@@ -1257,6 +1270,10 @@ class BillingNotificationTestForm(forms.Form):
         initial=settings.LANGUAGE_CODE,
         label=_("Language"),
     )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        make_searchable(self, "organizer", "event_type", "locale")
 
 
 class BillingNotificationTemplateForm(forms.Form):

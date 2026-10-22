@@ -26,7 +26,7 @@
     </div>
     <div class="form-group">
       <label class="sr-only" for="notification-event-type">{% translate 'Event type' %}</label>
-      <select id="notification-event-type" name="event_type" class="form-control">
+      <select id="notification-event-type" name="event_type" class="form-control select2-static">
         <option value="">{% translate 'All notification types' %}</option>
         {% for value, label in event_type_choices %}
           <option value="{{ value }}"{% if current_event_type == value %} selected{% endif %}>{{ label }}</option>
@@ -35,7 +35,7 @@
     </div>
     <div class="form-group">
       <label class="sr-only" for="notification-organizer">{% translate 'Organizer' %}</label>
-      <select id="notification-organizer" name="organizer" class="form-control">
+      <select id="notification-organizer" name="organizer" class="form-control select2-static">
         <option value="">{% translate 'All organizers' %}</option>
         {% for organizer in organizers %}
           <option value="{{ organizer.slug }}"{% if current_organizer == organizer.slug %} selected{% endif %}>{{ organizer.name }}</option>
