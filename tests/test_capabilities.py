@@ -1,4 +1,5 @@
 import pytest
+from django.template.loader import render_to_string
 
 from eventyay_business.capabilities import (
     STANDARD_CAPABILITIES,
@@ -12,6 +13,56 @@ from eventyay_business.capabilities import (
 )
 from eventyay_business.forms import TierEntitlementForm
 from eventyay_business.models import TierEntitlement
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "video.youtube",
+        "video.jitsi",
+        "video.jitsi.concurrent_rooms",
+        "video.loungemesh",
+        "api.read",
+        "api.write",
+        "api.webhooks",
+        "support.priority",
+        "registration.free_allowance_per_event",
+        "registration.free_overage_price",
+    ],
+)
+def test_beta_entitlements_are_marked_in_admin_choices_and_pricing(name):
+    cap = get_capability(name)
+    entitlement = TierEntitlement(
+        capability=name,
+        value="true" if cap.value_type == CapabilityValueType.BOOLEAN else "1",
+    )
+
+    assert "(Beta)" in entitlement.capability_label
+    assert "(Beta)" in cap.to_dict()["label"]
+    form = TierEntitlementForm()
+    choices = {
+        key: label
+        for category, items in form.fields["capability"].widget.choices
+        if isinstance(items, (list, tuple))
+        for key, label in items
+    }
+    assert "(Beta)" in choices[name]
+    html = render_to_string(
+        "eventyay_business/pricing/_tier_features.html",
+        {"item": {"organizer_features": [entitlement], "developer_features": []}},
+    )
+    assert str(cap.label) in html
+    assert "not yet" in str(cap.description) or "Billing is implemented" in str(
+        cap.description
+    )
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["email.bulk.monthly", "organizer.full_admins", "commerce.platform_fee_percent"],
+)
+def test_wired_entitlements_are_not_marked_beta(name):
+    assert "Beta" not in str(get_capability(name).label)
 
 
 def test_standard_capabilities_catalogue():

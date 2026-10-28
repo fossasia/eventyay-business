@@ -124,8 +124,11 @@ STANDARD_CAPABILITIES = [
     # Video & Streaming
     Capability(
         name="video.youtube",
-        label=_("YouTube Streaming"),
-        description=_("Stream your events live on YouTube to reach a wider audience"),
+        label=_("YouTube Streaming (Beta)"),
+        description=_(
+            "Planned yes/no access control for YouTube streaming. This entitlement is not yet enforced; "
+            "YouTube rooms are not metered and do not consume the Jitsi room allowance."
+        ),
         value_type=CapabilityValueType.BOOLEAN,
         category="Video",
         default_value=True,
@@ -133,9 +136,9 @@ STANDARD_CAPABILITIES = [
     ),
     Capability(
         name="video.jitsi",
-        label=_("Jitsi Video Rooms"),
+        label=_("Jitsi Video Rooms (Beta)"),
         description=_(
-            "Host live video sessions and Q&As directly inside your event using Jitsi"
+            "Planned access control for Jitsi video rooms. This entitlement is not yet enforced."
         ),
         value_type=CapabilityValueType.BOOLEAN,
         category="Video",
@@ -144,9 +147,10 @@ STANDARD_CAPABILITIES = [
     ),
     Capability(
         name="video.jitsi.concurrent_rooms",
-        label=_("Simultaneous Video Rooms"),
+        label=_("Simultaneous Video Rooms (Beta)"),
         description=_(
-            "How many Jitsi video rooms can be running at the same time for your event"
+            "Planned limit on simultaneously running Jitsi rooms, excluding YouTube streams. "
+            "Running rooms are not yet counted or limited by this entitlement."
         ),
         value_type=CapabilityValueType.INTEGER,
         category="Video",
@@ -156,9 +160,9 @@ STANDARD_CAPABILITIES = [
     ),
     Capability(
         name="video.loungemesh",
-        label=_("Spatial Networking Lounge"),
+        label=_("Spatial Networking Lounge (Beta)"),
         description=_(
-            "Give attendees an interactive spatial space to network and mingle between sessions"
+            "Planned access control for the spatial networking lounge. This entitlement is not yet enforced."
         ),
         value_type=CapabilityValueType.BOOLEAN,
         category="Video",
@@ -194,9 +198,10 @@ STANDARD_CAPABILITIES = [
     # Developer & API
     Capability(
         name="api.read",
-        label=_("API Read Access"),
+        label=_("API Read Access (Beta)"),
         description=_(
-            "Allows your integrations to read event, order, and attendee data via the REST API"
+            "Planned plan-based access control for REST API reads. This entitlement is not yet enforced; "
+            "normal API authentication and permissions still apply."
         ),
         value_type=CapabilityValueType.BOOLEAN,
         category="Developer & API",
@@ -205,9 +210,10 @@ STANDARD_CAPABILITIES = [
     ),
     Capability(
         name="api.write",
-        label=_("API Write Access"),
+        label=_("API Write Access (Beta)"),
         description=_(
-            "Allows your integrations to create and update data via the REST API"
+            "Planned plan-based access control for REST API writes. This entitlement is not yet enforced; "
+            "normal API authentication and permissions still apply."
         ),
         value_type=CapabilityValueType.BOOLEAN,
         category="Developer & API",
@@ -216,9 +222,10 @@ STANDARD_CAPABILITIES = [
     ),
     Capability(
         name="api.webhooks",
-        label=_("Webhook Delivery"),
+        label=_("Webhook Delivery (Beta)"),
         description=_(
-            "Receive real-time HTTP notifications when orders, tickets, or attendee records change"
+            "Planned plan-based control of webhook delivery. This entitlement is not yet enforced; "
+            "webhooks continue to use their existing configuration and permissions."
         ),
         value_type=CapabilityValueType.BOOLEAN,
         category="Developer & API",
@@ -241,9 +248,11 @@ STANDARD_CAPABILITIES = [
     # Registration & Ticketing
     Capability(
         name="registration.free_allowance_per_event",
-        label=_("Free Ticket Allowance"),
+        label=_("Free Ticket Allowance (Beta)"),
         description=_(
-            "Number of free registrations included per event before any overage charges apply"
+            "Free registrations included for each event within a billing period. Billing is implemented, "
+            "but the allowance is not tracked over the event's lifetime and does not include add-on allowances. "
+            "This is not a checkout limit."
         ),
         value_type=CapabilityValueType.INTEGER,
         category="Registration",
@@ -253,9 +262,11 @@ STANDARD_CAPABILITIES = [
     ),
     Capability(
         name="registration.free_overage_price",
-        label=_("Free Ticket Overage Price"),
+        label=_("Free Ticket Overage Price (Beta)"),
         description=_(
-            "Price charged per free registration once your included allowance is exceeded"
+            "Price per free registration above the tier allowance within a billing period. "
+            "Billing is implemented, but follows the Beta free-ticket allowance calculation; "
+            "add-on allowances are not included."
         ),
         value_type=CapabilityValueType.MONEY,
         category="Registration",
@@ -266,9 +277,10 @@ STANDARD_CAPABILITIES = [
     # Customer Support
     Capability(
         name="support.priority",
-        label=_("Priority Support"),
+        label=_("Priority Support (Beta)"),
         description=_(
-            "Access to a dedicated support queue with faster response times and SLA guarantees"
+            "Planned priority-support benefit. This entitlement does not yet automate support routing "
+            "or enforce response-time guarantees."
         ),
         value_type=CapabilityValueType.BOOLEAN,
         category="Support",

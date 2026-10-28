@@ -11,6 +11,12 @@ adds integer allowance to the selected organizer/event. A **usage record** is
 an observed quantity, not automatically an invoice line or access denial.
 
 Catalogue defaults are fallback values, not proof that a feature is enforced.
+The standard labels mark the eight capabilities without an enforcing consumer
+(video, API, and priority support) as **Beta**, with descriptions explaining the
+missing enforcement. Both free-registration billing capabilities are also Beta:
+their billing consumer works, but the allowance is per event within the invoice
+period and does not incorporate add-on allowances. These labels are shared by
+admin choices, plan details, and pricing; they do not change policy or billing.
 `seed_standard_entitlements_for_version` creates missing rows without replacing
 existing values. New organizers receive the published Free tier through
 `signals.auto_assign_free_tier`; that tier can have administrator-edited values.
