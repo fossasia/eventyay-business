@@ -411,7 +411,7 @@ def test_tier_entitlement_display_properties():
         capability="api.read",
         value="true",
     )
-    assert ent_api.capability_label == "API Read Access"
+    assert ent_api.capability_label == "API Read Access (Beta)"
     assert ent_api.capability_audience == "developer"
     assert ent_api.is_boolean is True
     assert ent_api.is_enabled is True
