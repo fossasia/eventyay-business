@@ -6,3 +6,6 @@ exclude .gitlab-ci.yml
 include CONTRIBUTING.md
 include uv.lock
 
+
+include AGENTS.md CLAUDE.md CODEX.md
+recursive-include .agents *.md
