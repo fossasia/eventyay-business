@@ -5,7 +5,7 @@
 A **capability** is a named, typed definition in
 `eventyay_business/capabilities.py`: label, description, category, unit, default,
 and audience metadata. A **tier entitlement** is a `TierEntitlement` row in
-`models.py`, unique per tier version/capability, storing a value and optional
+`models.py`, unique for each combination of tier version and capability, storing a value and optional
 overage configuration. An **add-on assignment** grants a boolean feature or
 adds integer allowance to the selected organizer/event. A **usage record** is
 an observed quantity, not automatically an invoice line or access denial.
@@ -50,8 +50,10 @@ Business `signals.enforce_entitlements` then:
    arguments. Do not assume all callers supply it.
 2. Returns no decision for unknown capabilities. Registration is needed before
    the generic Business evaluator recognizes a custom key.
-3. Selects an active or past-due subscription that has started, subject to end
-   dates. Past-due subscriptions outside their grace period are discarded.
+3. Selects an active or past-due subscription that has started. Active
+   subscriptions need an absent or unexpired `ends_at`. Past-due subscriptions
+   remain eligible even after `ends_at`, but are discarded if their grace period
+   has expired.
 4. Reads the selected tier's typed value, falling back to the catalogue default
    if missing or blank. Blank does not mean unlimited when the default is finite.
 5. Collects active, started, non-ended, non-canceled organizer add-ons and, when

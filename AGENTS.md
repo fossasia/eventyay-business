@@ -49,4 +49,5 @@ ordering. A plugin PR does not update core's dependency lock automatically.
 
 When code changes invalidate a documented path, command, contract, or flow,
 update the relevant context file in the same PR. Keep detailed knowledge in
-context/references and keep this entry point short.
+`.agents/context/` and `.agents/skills/business-change/references/`;
+keep this entry point short.

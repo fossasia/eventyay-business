@@ -8,4 +8,5 @@ include uv.lock
 
 
 include AGENTS.md CLAUDE.md CODEX.md
+include .github/copilot-instructions.md
 recursive-include .agents *.md
