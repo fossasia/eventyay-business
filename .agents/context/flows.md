@@ -28,6 +28,13 @@ source identity, and repeat-delivery behavior. Relevant tests include
 3. `invoicing_service.py` calculates charges from subscriptions, add-ons, usage,
    and fee ledger sources; it claims sources and finalizes invoice snapshots.
    `tasks.py` provides monthly generation and collection entry points.
+
+   The ticket fee breakdown and CSV distinguish the calculated fee from the
+   amount excluded from monthly billing. Net billable equals calculated fee
+   minus exclusions plus signed refunds/credits; billing totals use net billable.
+   Exclusions explain checkout collection, previous billing records, or payments
+   without an active billing cutover. Display changes do not activate billing or
+   create historical debt.
 4. `invoice_collection.py` validates the core billing customer, payment method,
    and matching unrevoked `BillingCollectionAuthorization`. It tracks collection
    attempts, idempotency, existing PaymentIntents, retry timing, failure codes,

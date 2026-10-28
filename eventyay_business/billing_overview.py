@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from django.db.models import Prefetch, Q
 from django.utils.timezone import is_aware, make_aware, now
+from django.utils.translation import gettext as _
 from eventyay.base.models.organizer import OrganizerBillingModel
 
 from .models import (
@@ -285,6 +286,32 @@ def platform_fee_rows(
 
         selected_ids = {item.pk for item in selected}
         gross = charge.amount if charge.pk in selected_ids else ZERO
+        calculated_fee = charge.calculated_fee if charge.pk in selected_ids else ZERO
+        excluded_amount = calculated_fee - gross
+        exclusion_reasons = []
+        if excluded_amount:
+            if charge.collected_at_checkout:
+                exclusion_reasons.append(
+                    _("Includes fees already collected at checkout.")
+                )
+            collection_path = charge.metadata.get("collection_path", "")
+            if collection_path == "legacy_usage_record":
+                exclusion_reasons.append(
+                    _("Fees were recorded in the previous billing system.")
+                )
+            cutover_relation = charge.metadata.get("cutover_relation", "")
+            if cutover_relation == "not_configured":
+                exclusion_reasons.append(
+                    _("Monthly billing was not activated for this payment.")
+                )
+            elif cutover_relation == "pre_cutover":
+                exclusion_reasons.append(
+                    _("Payment was made before monthly billing activation.")
+                )
+            if not exclusion_reasons:
+                exclusion_reasons.append(
+                    _("This amount was not recorded for monthly billing.")
+                )
         adjustment = sum(
             (
                 item.amount
@@ -309,8 +336,14 @@ def platform_fee_rows(
                 "fee_base": charge.fee_base,
                 "percentage": charge.percentage,
                 "maximum_fee": charge.maximum_fee,
-                "calculated_fee": (
-                    charge.calculated_fee if charge.pk in selected_ids else ZERO
+                "calculated_fee": calculated_fee,
+                "excluded_amount": excluded_amount,
+                "exclusion_reason": " ".join(exclusion_reasons),
+                "not_billed_here": bool(
+                    excluded_amount
+                    and not gross
+                    and len(selected) == 1
+                    and charge.invoice_id is None
                 ),
                 "adjustment": adjustment,
                 "net": gross + adjustment,

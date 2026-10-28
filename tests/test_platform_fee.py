@@ -1,8 +1,10 @@
+import csv
 import pytest
 from datetime import timedelta
 from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.db.models import Sum
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.timezone import now
 from django_scopes import scope
@@ -17,8 +19,12 @@ from eventyay.base.models import (
 )
 from eventyay.base.models.auth import StaffSession
 from eventyay.base.models.organizer import OrganizerBillingModel
+from io import StringIO
 
-from eventyay_business.billing_overview import build_organizer_billing_overview
+from eventyay_business.billing_overview import (
+    build_organizer_billing_overview,
+    platform_fee_rows,
+)
 from eventyay_business.invoicing_service import generate_business_invoice_for_organizer
 from eventyay_business.models import (
     CountryFeeSetting,
@@ -372,10 +378,18 @@ def test_partial_and_full_refunds_create_linked_negative_entries(
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(
-    "collection_path", ["not_enabled", "pre_cutover", "checkout", "partial_checkout"]
+    "collection_path,expected_reason",
+    [
+        ("not_enabled", "Monthly billing was not activated for this payment."),
+        ("pre_cutover", "Payment was made before monthly billing activation."),
+        ("checkout", "Includes fees already collected at checkout."),
+        ("partial_checkout", "Includes fees already collected at checkout."),
+        ("monthly", ""),
+        ("legacy", "Fees were recorded in the previous billing system."),
+    ],
 )
 def test_fee_breakdown_shows_calculated_fee_separately_from_accrual(
-    organizer_with_fee_tier, collection_path
+    organizer_with_fee_tier, collection_path, expected_reason
 ):
     if collection_path == "not_enabled":
         organizer_with_fee_tier.settings.set(BILLING_CUTOVER_SETTING, "")
@@ -390,18 +404,46 @@ def test_fee_breakdown_shows_calculated_fee_separately_from_accrual(
     event, order, _ = create_paid_order(
         organizer_with_fee_tier, application_fees=application_fees
     )
+    if collection_path == "legacy":
+        UsageRecord.objects.create(
+            organizer=organizer_with_fee_tier,
+            event=event,
+            capability="commerce.platform_fee_percent",
+            quantity=Decimal("5.00"),
+            unit="USD",
+            occurred_at=now(),
+            source_type="order",
+            source_id=order.code,
+            idempotency_key=f"order_{order.code}_platform_fee",
+        )
     record_platform_fee_on_order_paid(sender=event, order=order)
 
     overview = build_organizer_billing_overview(organizer_with_fee_tier)
 
-    expected_net = (
-        Decimal("3.00") if collection_path == "partial_checkout" else Decimal("0.00")
-    )
+    expected_net = {
+        "partial_checkout": Decimal("3.00"),
+        "monthly": Decimal("5.00"),
+    }.get(collection_path, Decimal("0.00"))
     assert len(overview["fee_rows"]) == 1
     row = overview["fee_rows"][0]
     assert row["percentage"] == Decimal("5.00")
     assert row["calculated_fee"] == Decimal("5.00")
     assert row["net"] == expected_net
+    assert row["excluded_amount"] == Decimal("5.00") - expected_net
+    assert row["exclusion_reason"] == expected_reason
+    assert row["not_billed_here"] is (expected_net == Decimal("0.00"))
+    assert (
+        row["net"] == row["calculated_fee"] - row["excluded_amount"] + row["adjustment"]
+    )
+    html = render_to_string(
+        "eventyay_business/billing/fee_table.html", {"table_rows": overview["fee_rows"]}
+    )
+    assert "Excluded from this bill" in html
+    assert "Net billable" in html
+    assert expected_reason in html
+    if expected_net == Decimal("0.00"):
+        assert "Not billed here" in html
+        assert ">Open</span>" not in html
     usd_total = next(
         total for total in overview["totals"] if total["currency"] == "USD"
     )
@@ -427,7 +469,7 @@ def test_current_charge_estimate_uses_ledger_refund_adjustments(
             state=OrderRefund.REFUND_STATE_DONE,
             source=OrderRefund.REFUND_SOURCE_ADMIN,
             amount=Decimal("40.00"),
-            execution_date=now(),
+            execution_date=payments[0].payment_date + timedelta(minutes=1),
             provider="stripe",
         )
     record_platform_fee_on_refund(sender=OrderRefund, instance=refund)
@@ -438,16 +480,33 @@ def test_current_charge_estimate_uses_ledger_refund_adjustments(
     assert overview["fee_rows"][0]["calculated_fee"] == Decimal("5.00")
     assert overview["fee_rows"][0]["adjustment"] == Decimal("-2.00")
     assert overview["fee_rows"][0]["net"] == Decimal("3.00")
+    assert overview["fee_rows"][0]["excluded_amount"] == Decimal("0.00")
     usd_total = next(
         total for total in overview["totals"] if total["currency"] == "USD"
     )
     assert usd_total["ticket_fees"] == Decimal("3.00")
 
+    # A later period can contain a refund without the original charge.
+    rows = platform_fee_rows(
+        organizer=organizer_with_fee_tier,
+        period_start=refund.execution_date,
+        period_end=refund.execution_date + timedelta(days=1),
+    )
+    assert len(rows) == 1
+    assert rows[0]["calculated_fee"] == Decimal("0.00")
+    assert rows[0]["excluded_amount"] == Decimal("0.00")
+    assert rows[0]["exclusion_reason"] == ""
+    assert rows[0]["not_billed_here"] is False
+    assert rows[0]["net"] == rows[0]["adjustment"] == Decimal("-2.00")
+
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("billing_enabled", [True, False])
 def test_admin_open_charges_include_carry_forward_and_canonical_customer(
-    organizer_with_fee_tier, admin_client, admin_user
+    organizer_with_fee_tier, admin_client, admin_user, billing_enabled
 ):
+    if not billing_enabled:
+        organizer_with_fee_tier.settings.set(BILLING_CUTOVER_SETTING, "")
     event, order, _payments = create_paid_order(
         organizer_with_fee_tier,
         code="CARRYFORWARD",
@@ -497,6 +556,21 @@ def test_admin_open_charges_include_carry_forward_and_canonical_customer(
     )
     assert export_response.status_code == 200
     assert b"CARRYFORWARD" in export_response.content
+    exported = list(csv.DictReader(StringIO(export_response.content.decode())))
+    assert len(exported) == 1
+    assert Decimal(exported[0]["Calculated fee"]) == Decimal("5.00")
+    assert Decimal(exported[0]["Excluded from this bill"]) == (
+        Decimal("0.00") if billing_enabled else Decimal("5.00")
+    )
+    assert Decimal(exported[0]["Net billable amount"]) == (
+        Decimal("5.00") if billing_enabled else Decimal("0.00")
+    )
+    if not billing_enabled:
+        assert (
+            exported[0]["Exclusion reason"]
+            == "Monthly billing was not activated for this payment."
+        )
+        assert b"Not billed here" in response.content
 
     response = admin_client.get(
         list_url,

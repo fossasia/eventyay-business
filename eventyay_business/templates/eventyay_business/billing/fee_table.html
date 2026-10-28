@@ -1,6 +1,7 @@
 {% load i18n %}
 
 {% if table_rows %}
+    <p class="text-muted">{% trans "Net billable is the fee minus the amount excluded from this bill, plus refunds or credits. Only the net billable amount contributes to billing totals." %}</p>
     <div class="table-responsive">
         <table class="table table-hover table-condensed">
             <thead>
@@ -12,8 +13,9 @@
                     <th class="text-right">{% trans "Eligible amount" %}</th>
                     <th class="text-right">{% trans "Rate / cap" %}</th>
                     <th class="text-right">{% trans "Fee" %}</th>
+                    <th class="text-right">{% trans "Excluded from this bill" %}</th>
                     <th class="text-right">{% trans "Refunds / credits" %}</th>
-                    <th class="text-right">{% trans "Net" %}</th>
+                    <th class="text-right">{% trans "Net billable" %}</th>
                     <th>{% trans "State" %}</th>
                     {% if show_admin_details %}
                         <th>{% trans "Policy" %}</th>
@@ -34,10 +36,16 @@
                             {% if row.maximum_fee %}/ {{ row.maximum_fee|floatformat:2 }} {{ row.currency }}{% else %}/ {% trans "No cap" %}{% endif %}
                         </td>
                         <td class="text-right">{{ row.calculated_fee|floatformat:2 }} {{ row.currency }}</td>
+                        <td class="text-right">
+                            {{ row.excluded_amount|floatformat:2 }} {{ row.currency }}
+                            {% if row.exclusion_reason %}<br><small class="text-muted">{{ row.exclusion_reason }}</small>{% endif %}
+                        </td>
                         <td class="text-right">{{ row.adjustment|floatformat:2 }} {{ row.currency }}</td>
                         <td class="text-right"><strong>{{ row.net|floatformat:2 }} {{ row.currency }}</strong></td>
                         <td>
-                            {% if row.state == "open" %}
+                            {% if row.not_billed_here %}
+                                <span class="label label-default">{% trans "Not billed here" %}</span>
+                            {% elif row.state == "open" %}
                                 <span class="label label-info">{% trans "Open" %}</span>
                             {% elif row.state == "invoiced" %}
                                 <span class="label label-success">{% trans "Invoiced" %}</span>

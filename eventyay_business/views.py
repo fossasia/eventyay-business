@@ -2855,12 +2855,14 @@ class AdminCurrentChargesExportView(
                 "Cap",
                 "Calculated fee",
                 "Adjustments",
-                "Net amount",
+                "Net billable amount",
                 "State",
                 "Policy source",
                 "Collection path",
                 "Cutover relation",
                 "Source key",
+                "Excluded from this bill",
+                "Exclusion reason",
             ]
         )
         for row in self.get_rows():
@@ -2883,6 +2885,8 @@ class AdminCurrentChargesExportView(
                     row["collection_path"],
                     row["cutover_relation"],
                     row["source_key"],
+                    row["excluded_amount"],
+                    row["exclusion_reason"],
                 ]
             )
         return response
