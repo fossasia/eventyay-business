@@ -11,9 +11,11 @@ adds integer allowance to the selected organizer/event. A **usage record** is
 an observed quantity, not automatically an invoice line or access denial.
 
 Catalogue defaults are fallback values, not proof that a feature is enforced.
-The standard labels mark the eight capabilities without an enforcing consumer
-(video, API, and priority support) as **Beta**, with descriptions explaining the
-missing enforcement. Both free-registration billing capabilities are also Beta:
+The standard labels mark the capabilities without a complete enforcing consumer
+(`video.jitsi.concurrent_rooms` and `support.priority`) as **Beta**, with
+descriptions explaining the missing enforcement. Core enforces the video
+module and API/webhook capabilities, so those carry no Beta label. Both
+free-registration billing capabilities are also Beta:
 their billing consumer works, but the allowance is per event within the invoice
 period and does not incorporate add-on allowances. These labels are shared by
 admin choices, plan details, and pricing; they do not change policy or billing.
@@ -25,21 +27,22 @@ Read `tests/test_capabilities.py`, `test_seed_entitlements.py`, and
 
 ## Standard catalogue
 
-The following describes the inspected core and Business `dev` source. “No caller
-found” means no enforcing caller was found in those repositories; another plugin
-could introduce one. Re-run the searches below when branches or plugins change.
+The following describes the inspected core and Business `dev` source (core
+includes fossasia/eventyay#6889). “No caller found” means no enforcing caller
+was found in those repositories; another plugin could introduce one. Re-run the
+searches below when branches or plugins change.
 
 | Capability | Type / catalogue default | Meaning and actual consumer |
 |---|---|---|
-| `video.youtube` | boolean / true | Intended YouTube streaming access. Generic boolean evaluation exists; no enforcing core caller found. |
-| `video.jitsi` | boolean / true | Intended Jitsi room access. No enforcing core caller found. |
+| `video.youtube` | boolean / true | YouTube streaming access. Core `base/services/video_entitlements.py` maps `livestream.youtube` to this capability. Enforced on room config (`check_video_entitlements`/`require_video_entitlements`, API and websocket `config_patch`), stream schedule serializers, and stream data (`filter_stream_by_entitlement`, which strips stream data when denied). |
+| `video.jitsi` | boolean / true | Jitsi room access. `call.jitsi` modules are checked by the same video entitlement helpers on room create/update. |
 | `video.jitsi.concurrent_rooms` | integer / 1 room | Intended simultaneous room limit. Evaluator compares caller-supplied quantity; it does not count running rooms. No core caller found. |
-| `video.loungemesh` | boolean / false | Intended spatial networking access. No enforcing core caller found. |
+| `video.loungemesh` | boolean / false | Spatial networking access. `call.loungemesh` and `channel.loungemesh` modules are checked on room config, and loungemesh token exchange/refresh in `api/views/loungemesh.py` returns 403 `entitlement_denied`. |
 | `email.bulk.monthly` | integer / 1000 emails | Enforced in core `app/eventyay/plugins/sendmail/views.py` and `app/eventyay/orga/views/mails.py`. Adds organizer-wide usage for the current month to requested quantity; counts queued/requested mail, not confirmed SMTP deliveries. |
 | `organizer.full_admins` | integer / 2 admins | Core `app/eventyay/base/services/teams.py:check_full_admin_limit` compares existing full-admin members plus pending invitations plus the proposed addition. This is not a limit on every team member. |
-| `api.read` | boolean / true | Intended REST read entitlement. No commercial entitlement caller found in core API permission paths; ordinary API authentication/permissions still apply. |
-| `api.write` | boolean / false | Intended REST write entitlement. No commercial entitlement caller found; false alone does not disable API writes. |
-| `api.webhooks` | boolean / false | Intended webhook-delivery entitlement. No commercial entitlement caller found; do not confuse the name with core's Python `eventyay.api.webhooks` module. |
+| `api.read` | boolean / true | REST reads (safe methods) made with `Device`, `TeamAPIToken`, `UserApiToken` or OAuth credentials are checked in core `api/auth/permission.py` (also `api/auth/api_auth.py` and the organizer list in `api/views/organizer.py`). Browser sessions are not gated. |
+| `api.write` | boolean / false | REST writes (non-safe methods) with the same credential types. Because `Device` tokens are gated, a check-in device redeeming a check-in (a POST) needs this capability. |
+| `api.webhooks` | boolean / false | Webhook delivery is checked in core `api/webhooks.py` before notifications are queued and sent. Do not confuse the name with core's Python `eventyay.api.webhooks` module. |
 | `commerce.platform_fee_percent` | decimal / 0% | Read by fee policy/ledger logic, not a boolean permission gate. Country/currency overrides take precedence over tier values; no matching policy means zero. |
 | `registration.free_allowance_per_event` | integer / 100 registrations | Core order placement emits usage for zero-price admission positions excluding gift cards. Business invoice generation groups eligible usage by event and subtracts the tier allowance. No checkout hard-block caller found. |
 | `registration.free_overage_price` | money / 0 | Business invoices multiply excess free registrations by this tier price. Zero price creates no positive overage line. Generic entitlement checks do not enforce money values. |
@@ -129,7 +132,8 @@ calculation, and payment collection are separate operations.
 - Two existing full-admin seats under limit 2: a new admin is denied; an existing
   admin joining another admin team is not an extra seat under the helper.
 - A boolean false tier plus a true eligible add-on permits the feature **when a
-  caller actually asks**. Merely listing `api.write=false` is not an API firewall.
+  caller actually asks**. `api.write=false` does block token, device and OAuth
+  writes in core, but not browser-session writes.
 - Invoice-period free registrations 120, tier allowance 100, unit overage 0.20:
   the dedicated registration calculation produces 4.00 before other invoice
   adjustments. This is not a checkout rejection.

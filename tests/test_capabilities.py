@@ -18,13 +18,7 @@ from eventyay_business.models import TierEntitlement
 @pytest.mark.parametrize(
     "name",
     [
-        "video.youtube",
-        "video.jitsi",
         "video.jitsi.concurrent_rooms",
-        "video.loungemesh",
-        "api.read",
-        "api.write",
-        "api.webhooks",
         "support.priority",
         "registration.free_allowance_per_event",
         "registration.free_overage_price",
@@ -59,7 +53,17 @@ def test_beta_entitlements_are_marked_in_admin_choices_and_pricing(name):
 
 @pytest.mark.parametrize(
     "name",
-    ["email.bulk.monthly", "organizer.full_admins", "commerce.platform_fee_percent"],
+    [
+        "email.bulk.monthly",
+        "organizer.full_admins",
+        "commerce.platform_fee_percent",
+        "video.youtube",
+        "video.jitsi",
+        "video.loungemesh",
+        "api.read",
+        "api.write",
+        "api.webhooks",
+    ],
 )
 def test_wired_entitlements_are_not_marked_beta(name):
     assert "Beta" not in str(get_capability(name).label)
