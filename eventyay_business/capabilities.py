@@ -137,9 +137,7 @@ STANDARD_CAPABILITIES = [
     Capability(
         name="video.jitsi",
         label=_("Jitsi Video Rooms"),
-        description=_(
-            "Access to Jitsi video rooms."
-        ),
+        description=_("Access to Jitsi video rooms."),
         value_type=CapabilityValueType.BOOLEAN,
         category="Video",
         default_value=True,
@@ -161,9 +159,7 @@ STANDARD_CAPABILITIES = [
     Capability(
         name="video.loungemesh",
         label=_("Spatial Networking Lounge"),
-        description=_(
-            "Access to the spatial networking lounge."
-        ),
+        description=_("Access to the spatial networking lounge."),
         value_type=CapabilityValueType.BOOLEAN,
         category="Video",
         default_value=False,
