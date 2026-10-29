@@ -124,9 +124,9 @@ STANDARD_CAPABILITIES = [
     # Video & Streaming
     Capability(
         name="video.youtube",
-        label=_("YouTube Streaming (Beta)"),
+        label=_("YouTube Streaming"),
         description=_(
-            "Planned yes/no access control for YouTube streaming. This entitlement is not yet enforced; "
+            "Yes/no access to YouTube streaming rooms and stream schedules. "
             "YouTube rooms are not metered and do not consume the Jitsi room allowance."
         ),
         value_type=CapabilityValueType.BOOLEAN,
@@ -136,10 +136,8 @@ STANDARD_CAPABILITIES = [
     ),
     Capability(
         name="video.jitsi",
-        label=_("Jitsi Video Rooms (Beta)"),
-        description=_(
-            "Planned access control for Jitsi video rooms. This entitlement is not yet enforced."
-        ),
+        label=_("Jitsi Video Rooms"),
+        description=_("Access to Jitsi video rooms."),
         value_type=CapabilityValueType.BOOLEAN,
         category="Video",
         default_value=True,
@@ -160,10 +158,8 @@ STANDARD_CAPABILITIES = [
     ),
     Capability(
         name="video.loungemesh",
-        label=_("Spatial Networking Lounge (Beta)"),
-        description=_(
-            "Planned access control for the spatial networking lounge. This entitlement is not yet enforced."
-        ),
+        label=_("Spatial Networking Lounge"),
+        description=_("Access to the spatial networking lounge."),
         value_type=CapabilityValueType.BOOLEAN,
         category="Video",
         default_value=False,
@@ -198,10 +194,10 @@ STANDARD_CAPABILITIES = [
     # Developer & API
     Capability(
         name="api.read",
-        label=_("API Read Access (Beta)"),
+        label=_("API Read Access"),
         description=_(
-            "Planned plan-based access control for REST API reads. This entitlement is not yet enforced; "
-            "normal API authentication and permissions still apply."
+            "Plan-based access to REST API reads using API tokens, devices and OAuth applications. "
+            "Normal API authentication and permissions still apply."
         ),
         value_type=CapabilityValueType.BOOLEAN,
         category="Developer & API",
@@ -210,10 +206,10 @@ STANDARD_CAPABILITIES = [
     ),
     Capability(
         name="api.write",
-        label=_("API Write Access (Beta)"),
+        label=_("API Write Access"),
         description=_(
-            "Planned plan-based access control for REST API writes. This entitlement is not yet enforced; "
-            "normal API authentication and permissions still apply."
+            "Plan-based access to REST API writes using API tokens, devices and OAuth applications. "
+            "Normal API authentication and permissions still apply."
         ),
         value_type=CapabilityValueType.BOOLEAN,
         category="Developer & API",
@@ -222,10 +218,10 @@ STANDARD_CAPABILITIES = [
     ),
     Capability(
         name="api.webhooks",
-        label=_("Webhook Delivery (Beta)"),
+        label=_("Webhook Delivery"),
         description=_(
-            "Planned plan-based control of webhook delivery. This entitlement is not yet enforced; "
-            "webhooks continue to use their existing configuration and permissions."
+            "Plan-based control of webhook delivery. "
+            "Webhooks otherwise continue to use their existing configuration and permissions."
         ),
         value_type=CapabilityValueType.BOOLEAN,
         category="Developer & API",
