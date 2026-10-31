@@ -13,6 +13,7 @@ maintainers = [
 ]
 
 dependencies = [
+    "unilimit>=0.1.1",
 ]
 
 [project.entry-points."pretix.plugin"]
