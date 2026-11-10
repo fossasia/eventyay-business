@@ -188,6 +188,9 @@ def _usage_estimate(organizer, subscription, period_start, period_end, totals):
         }
 
     tier_version = subscription.tier_version if subscription else None
+    _tier_allowance, free_registration_price = tier_free_registration_terms(
+        tier_version
+    )
     free_registration_usage = free_registration_usage_by_event(
         organizer,
         tier_version,
@@ -219,7 +222,7 @@ def _usage_estimate(organizer, subscription, period_start, period_end, totals):
             event_usage = free_registration_usage[event_id]
             allowance = event_usage.remaining_allowance
             overage = event_usage.overage_quantity
-            _tier_allowance, price = tier_free_registration_terms(tier_version)
+            price = free_registration_price
             if subscription:
                 price_entitlement = entitlements.get("registration.free_overage_price")
                 currency = (

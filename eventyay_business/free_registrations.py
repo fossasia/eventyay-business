@@ -86,6 +86,13 @@ def _addon_period_filter(period_start: datetime, period_end: datetime) -> Q:
         & (Q(ends_at__isnull=True) | Q(ends_at__gte=period_start))
         & (Q(cancel_at__isnull=True) | Q(cancel_at__gte=period_start))
         & (Q(canceled_at__isnull=True) | Q(canceled_at__gte=period_start))
+        # A terminated add-on without any termination date covers no period.
+        & (
+            ~Q(status__in=[AddonStatus.CANCELED, AddonStatus.EXPIRED])
+            | Q(ends_at__isnull=False)
+            | Q(cancel_at__isnull=False)
+            | Q(canceled_at__isnull=False)
+        )
     )
 
 

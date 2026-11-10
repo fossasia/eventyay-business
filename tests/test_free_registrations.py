@@ -225,6 +225,8 @@ def test_event_addon_only_raises_the_allowance_of_its_event(setup):
             "ends_at": make_aware(datetime(2026, 7, 31)),
         },
         {"status": AddonStatus.ACTIVE, "starts_at": make_aware(datetime(2026, 9, 1))},
+        {"status": AddonStatus.CANCELED, "starts_at": make_aware(datetime(2026, 6, 1))},
+        {"status": AddonStatus.EXPIRED, "starts_at": make_aware(datetime(2026, 6, 1))},
     ],
 )
 def test_addon_outside_the_period_grants_no_allowance(setup, fields):
@@ -238,6 +240,25 @@ def test_addon_outside_the_period_grants_no_allowance(setup, fields):
     line = overage_line(invoice)
     assert line.quantity == Decimal("10")
     assert line.calculation_metadata["addon_allowance"] == 0
+
+
+@pytest.mark.django_db
+def test_addon_terminated_during_the_period_still_grants_allowance(setup):
+    org, event = setup
+    OrganizerAddon.objects.create(
+        organizer=org,
+        addon=allowance_addon("org-free", "organizer"),
+        status=AddonStatus.CANCELED,
+        starts_at=make_aware(datetime(2026, 6, 1)),
+        cancel_at=make_aware(datetime(2026, 8, 10)),
+        canceled_at=make_aware(datetime(2026, 8, 10)),
+    )
+    record_usage(org, event, 80, make_aware(datetime(2026, 8, 12, 10, 0)), "AUG")
+
+    invoice = generate_business_invoice_for_organizer(org, *AUGUST)
+    line = overage_line(invoice)
+    assert line.quantity == Decimal("5")
+    assert line.calculation_metadata["addon_allowance"] == 25
 
 
 @pytest.mark.django_db
