@@ -8,6 +8,10 @@ from eventyay.base.models import Organizer
 from eventyay.base.models.organizer import OrganizerBillingModel
 from eventyay.base.settings import GlobalSettingsObject
 
+from .free_registrations import (
+    free_registration_usage_by_event,
+    tier_free_registration_terms,
+)
 from .invoice_presentation import current_invoice_presentation_snapshot
 from .models import (
     AddonPricingMode,
@@ -1084,34 +1088,33 @@ def generate_business_invoice_for_organizer(
                 ev = rec.event
                 events_reg_map.setdefault(ev, []).append(rec)
 
-            allowance = 0
-            overage_price = Decimal("0.00")
-            if active_sub and active_sub.tier_version:
-                allowance_ent = active_sub.tier_version.entitlements.filter(
-                    capability="registration.free_allowance_per_event"
-                ).first()
-                if allowance_ent and allowance_ent.value:
-                    try:
-                        allowance = int(allowance_ent.value)
-                    except (ValueError, TypeError):
-                        allowance = 0
-
-                overage_ent = active_sub.tier_version.entitlements.filter(
-                    capability="registration.free_overage_price"
-                ).first()
-                if overage_ent and overage_ent.value:
-                    try:
-                        overage_price = Decimal(str(overage_ent.value))
-                    except Exception:
-                        overage_price = Decimal("0.00")
+            free_reg_tier_version = active_sub.tier_version if active_sub else None
+            _tier_allowance, overage_price = tier_free_registration_terms(
+                free_reg_tier_version
+            )
+            # The allowance covers the event's lifetime, so registrations from
+            # earlier periods reduce what is still included in this one.
+            free_reg_usage = free_registration_usage_by_event(
+                organizer,
+                free_reg_tier_version,
+                {
+                    (ev.pk if ev else None): sum(r.quantity for r in recs)
+                    for ev, recs in events_reg_map.items()
+                },
+                start_date,
+                end_date,
+            )
 
             for ev, recs in events_reg_map.items():
-                total_free_registrations = sum(r.quantity for r in recs)
+                event_usage = free_reg_usage[ev.pk if ev else None]
+                total_free_registrations = event_usage.period_quantity
+                allowance = event_usage.allowance
                 usage_record_ids_for_invoice.extend(r.pk for r in recs)
-                if total_free_registrations <= allowance:
+
+                overage_quantity = event_usage.overage_quantity
+                if overage_quantity <= 0:
                     continue
 
-                overage_quantity = total_free_registrations - allowance
                 overage_amount = (overage_quantity * overage_price).quantize(
                     Decimal("0.01")
                 )
@@ -1137,6 +1140,12 @@ def generate_business_invoice_for_organizer(
                         "calculation_metadata": {
                             "total_free_registrations": int(total_free_registrations),
                             "included_allowance": allowance,
+                            "tier_allowance": event_usage.tier_allowance,
+                            "addon_allowance": event_usage.addon_allowance,
+                            "previous_free_registrations": int(
+                                event_usage.previous_quantity
+                            ),
+                            "remaining_allowance": int(event_usage.remaining_allowance),
                             "overage_units": int(overage_quantity),
                             "unit_overage_price": str(overage_price),
                         },

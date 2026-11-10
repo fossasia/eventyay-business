@@ -6,6 +6,11 @@ from django.utils.timezone import is_aware, make_aware, now
 from django.utils.translation import gettext as _
 from eventyay.base.models.organizer import OrganizerBillingModel
 
+from .free_registrations import (
+    FREE_REGISTRATION_ALLOWANCE,
+    free_registration_usage_by_event,
+    tier_free_registration_terms,
+)
 from .models import (
     AddonPricingMode,
     AddonStatus,
@@ -167,7 +172,11 @@ def _usage_estimate(organizer, subscription, period_start, period_end, totals):
     )
     grouped = defaultdict(lambda: {"quantity": ZERO, "records": []})
     for record in records:
-        key = (record.capability, record.event_id, record.unit)
+        unit = record.unit
+        if record.capability == FREE_REGISTRATION_ALLOWANCE:
+            # One row per event, whatever unit label the reporter used.
+            unit = "registrations"
+        key = (record.capability, record.event_id, unit)
         grouped[key]["quantity"] += record.quantity
         grouped[key]["records"].append(record)
 
@@ -178,8 +187,24 @@ def _usage_estimate(organizer, subscription, period_start, period_end, totals):
             for entitlement in subscription.tier_version.entitlements.all()
         }
 
+    tier_version = subscription.tier_version if subscription else None
+    _tier_allowance, free_registration_price = tier_free_registration_terms(
+        tier_version
+    )
+    free_registration_usage = free_registration_usage_by_event(
+        organizer,
+        tier_version,
+        {
+            event_id: data["quantity"]
+            for (capability, event_id, _unit), data in grouped.items()
+            if capability == FREE_REGISTRATION_ALLOWANCE
+        },
+        period_start,
+        period_end,
+    )
+
     usage = []
-    for (capability, _event_id, unit), data in grouped.items():
+    for (capability, event_id, unit), data in grouped.items():
         entitlement = entitlements.get(capability)
         allowance = ZERO
         price = ZERO
@@ -191,15 +216,20 @@ def _usage_estimate(organizer, subscription, period_start, period_end, totals):
                 allowance = ZERO
             price = entitlement.overage_price or ZERO
             currency = entitlement.currency or ""
-        if capability == "registration.free_allowance_per_event" and subscription:
-            price_entitlement = entitlements.get("registration.free_overage_price")
-            if price_entitlement:
-                try:
-                    price = Decimal(str(price_entitlement.value or "0"))
-                except InvalidOperation:
-                    price = ZERO
-                currency = price_entitlement.currency or subscription.currency or "EUR"
         overage = max(data["quantity"] - allowance, ZERO)
+        if capability == FREE_REGISTRATION_ALLOWANCE:
+            # Lifetime allowance: show what was still included when the period began.
+            event_usage = free_registration_usage[event_id]
+            allowance = event_usage.remaining_allowance
+            overage = event_usage.overage_quantity
+            price = free_registration_price
+            if subscription:
+                price_entitlement = entitlements.get("registration.free_overage_price")
+                currency = (
+                    (price_entitlement.currency if price_entitlement else "")
+                    or subscription.currency
+                    or "EUR"
+                )
         amount = (overage * price).quantize(Decimal("0.01"))
         event = data["records"][0].event
         usage.append(

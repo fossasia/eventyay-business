@@ -14,7 +14,7 @@ is a separate payment plugin; a common local layout places both under core's
 | Capability definitions and evaluation | `capabilities.py`, `signals.py`, `services.py` |
 | Admin/organizer/event UI | `views.py`, `forms.py`, `pricing.py`, `templates/`, `static/` |
 | Fee policy and history | `services.py`, `platform_fee_ledger.py` |
-| Invoice calculation and presentation | `invoicing_service.py`, `invoice_presentation.py`, `invoice_document.py`, `billing_overview.py` |
+| Invoice calculation and presentation | `invoicing_service.py`, `free_registrations.py`, `invoice_presentation.py`, `invoice_document.py`, `billing_overview.py` |
 | Payment collection and old Stripe Checkout flows | `invoice_collection.py`, `stripe_service.py`, `views_stripe.py` |
 | Cutover and audit | `billing_migration.py`, `reconciliation.py` |
 | Scheduled work and communication | `tasks.py`, `notifications.py` |
