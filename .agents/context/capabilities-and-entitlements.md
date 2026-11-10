@@ -14,10 +14,10 @@ Catalogue defaults are fallback values, not proof that a feature is enforced.
 The standard labels mark the capabilities without a complete enforcing consumer
 (`video.jitsi.concurrent_rooms` and `support.priority`) as **Beta**, with
 descriptions explaining the missing enforcement. Core enforces the video
-module and API/webhook capabilities, so those carry no Beta label. Both
-free-registration billing capabilities are also Beta:
-their billing consumer works, but the allowance is per event within the invoice
-period and does not incorporate add-on allowances. These labels are shared by
+module and API/webhook capabilities, so those carry no Beta label. The
+free-registration billing capabilities are not Beta either: Business invoices
+count the allowance over each event's lifetime and include add-on allowances
+(`eventyay_business/free_registrations.py`). These labels are shared by
 admin choices, plan details, and pricing; they do not change policy or billing.
 `seed_standard_entitlements_for_version` creates missing rows without replacing
 existing values. New organizers receive the published Free tier through
@@ -44,8 +44,8 @@ searches below when branches or plugins change.
 | `api.write` | boolean / false | REST writes (non-safe methods) with the same credential types. Because `Device` tokens are gated, a check-in device redeeming a check-in (a POST) needs this capability. |
 | `api.webhooks` | boolean / false | Webhook delivery is checked in core `api/webhooks.py` before notifications are queued and sent. Do not confuse the name with core's Python `eventyay.api.webhooks` module. |
 | `commerce.platform_fee_percent` | decimal / 0% | Read by fee policy/ledger logic, not a boolean permission gate. Country/currency overrides take precedence over tier values; no matching policy means zero. |
-| `registration.free_allowance_per_event` | integer / 100 registrations | Core order placement emits usage for zero-price admission positions excluding gift cards. Business invoice generation groups eligible usage by event and subtracts the tier allowance. No checkout hard-block caller found. |
-| `registration.free_overage_price` | money / 0 | Business invoices multiply excess free registrations by this tier price. Zero price creates no positive overage line. Generic entitlement checks do not enforce money values. |
+| `registration.free_allowance_per_event` | integer / 100 registrations | Core order placement emits usage for zero-price admission positions excluding gift cards. Business invoice generation groups usage by event and subtracts what is left of the lifetime allowance (tier value plus add-on allowances). Billing only; no checkout hard-block. |
+| `registration.free_overage_price` | money / 0 | Business invoices multiply free registrations beyond the remaining allowance by this tier price. Zero price creates no positive overage line. Generic entitlement checks do not enforce money values. |
 | `support.priority` | boolean / false | Intended support benefit. No automated core support-routing caller found. |
 
 ## Exact generic decision path
@@ -107,12 +107,21 @@ receiver's staff-bypass argument.
 **Free registration:** core `app/eventyay/base/services/orders.py` emits usage at
 order placement, not only payment confirmation. Business
 `invoicing_service.generate_business_invoice_for_organizer` reads unclaimed usage
-in the invoice interval, groups by event, and reads allowance/price directly from
-the selected tier. Its fallback allowance/price starts at zero; it does not call
-the generic add-on-aware evaluator. Consequently the catalogue's “per event”
-label is not proof of lifetime-per-event accounting: the current calculation
-uses the selected billing interval's records. Do not silently claim add-ons,
-generic overage flags, or cancellation reversal alter that formula.
+in the invoice interval and groups it by event; `free_registrations.py` resolves
+each event's position. The allowance is the selected tier's value (fallback zero,
+not the catalogue default) plus add-on allowances: organizer add-ons apply to
+every event, event add-ons to their event, each `quantity * typed value`. An
+add-on counts when its definition is active, it is not pending, it started by
+the period end, and no `ends_at`/`cancel_at`/`canceled_at` precedes the period
+start. The allowance covers the event's lifetime: all usage recorded for the
+event before the period start (invoiced or not) is subtracted first, and only
+`period usage - remaining allowance` is billed, so an earlier overage is never
+billed twice and never retroactively. Usage without an event shares one
+organizer bucket with organizer add-ons only. The same helper feeds the
+current-charges estimate in `billing_overview.py`, whose “Included” column shows
+the allowance remaining at period start. It does not call the generic evaluator;
+generic overage flags and order cancellation do not alter the formula, and
+checkout is never blocked.
 
 **Fees:** `services.resolve_fee_settings`, `signals.provide_platform_fee_policy`,
 and `platform_fee_ledger.py` resolve and snapshot the policy at payment time.
@@ -134,15 +143,17 @@ calculation, and payment collection are separate operations.
 - A boolean false tier plus a true eligible add-on permits the feature **when a
   caller actually asks**. `api.write=false` does block token, device and OAuth
   writes in core, but not browser-session writes.
-- Invoice-period free registrations 120, tier allowance 100, unit overage 0.20:
-  the dedicated registration calculation produces 4.00 before other invoice
-  adjustments. This is not a checkout rejection.
+- Free registrations for an event with tier allowance 100 and unit overage 0.20:
+  120 in the first period bills 20 (4.00); 30 more in the next period bills all
+  30 (6.00). With 80 in the first period nothing is billed, and 30 in the next
+  bills 10. An eligible 50-registration add-on raises the allowance to 150.
+  This is not a checkout rejection.
 
 For a new capability, update registry/type/default, tier seeding/admin selection,
 caller enforcement, usage identity (if metered), pricing/invoice behavior (if
 billable), and tests separately. Add-ons alone do not create enforcement callers.
 Relevant tests: `tests/test_addon_entitlements.py`, `test_event_addons.py`,
-`test_invoices.py`, `test_fee_policy_provider.py`, plus core
+`test_invoices.py`, `test_free_registrations.py`, `test_fee_policy_provider.py`, plus core
 `app/tests/base/test_entitlements.py` and affected mail/team tests.
 
 To audit wiring from a core checkout:

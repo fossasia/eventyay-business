@@ -20,8 +20,6 @@ from eventyay_business.models import TierEntitlement
     [
         "video.jitsi.concurrent_rooms",
         "support.priority",
-        "registration.free_allowance_per_event",
-        "registration.free_overage_price",
     ],
 )
 def test_beta_entitlements_are_marked_in_admin_choices_and_pricing(name):
@@ -46,9 +44,7 @@ def test_beta_entitlements_are_marked_in_admin_choices_and_pricing(name):
         {"item": {"organizer_features": [entitlement], "developer_features": []}},
     )
     assert str(cap.label) in html
-    assert "not yet" in str(cap.description) or "Billing is implemented" in str(
-        cap.description
-    )
+    assert "not yet" in str(cap.description)
 
 
 @pytest.mark.parametrize(
@@ -63,6 +59,8 @@ def test_beta_entitlements_are_marked_in_admin_choices_and_pricing(name):
         "api.read",
         "api.write",
         "api.webhooks",
+        "registration.free_allowance_per_event",
+        "registration.free_overage_price",
     ],
 )
 def test_wired_entitlements_are_not_marked_beta(name):

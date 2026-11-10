@@ -244,11 +244,10 @@ STANDARD_CAPABILITIES = [
     # Registration & Ticketing
     Capability(
         name="registration.free_allowance_per_event",
-        label=_("Free Ticket Allowance (Beta)"),
+        label=_("Free Ticket Allowance"),
         description=_(
-            "Free registrations included for each event within a billing period. Billing is implemented, "
-            "but the allowance is not tracked over the event's lifetime and does not include add-on allowances. "
-            "This is not a checkout limit."
+            "Free registrations included for each event over its lifetime, plus any add-on allowances. "
+            "Registrations beyond the allowance are billed at the overage price. This is not a checkout limit."
         ),
         value_type=CapabilityValueType.INTEGER,
         category="Registration",
@@ -258,11 +257,10 @@ STANDARD_CAPABILITIES = [
     ),
     Capability(
         name="registration.free_overage_price",
-        label=_("Free Ticket Overage Price (Beta)"),
+        label=_("Free Ticket Overage Price"),
         description=_(
-            "Price per free registration above the tier allowance within a billing period. "
-            "Billing is implemented, but follows the Beta free-ticket allowance calculation; "
-            "add-on allowances are not included."
+            "Price per free registration above the event's free ticket allowance, "
+            "including add-on allowances."
         ),
         value_type=CapabilityValueType.MONEY,
         category="Registration",
