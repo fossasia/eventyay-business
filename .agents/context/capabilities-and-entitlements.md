@@ -114,8 +114,13 @@ Checks run on each request, so a downgrade applies to existing rooms without
 deleting their configuration. BigBlueButton and other module types are not
 mapped and are never gated.
 
-**Email (counted):** `email.bulk.monthly` is checked and recorded only by four
-organizer compose actions. Usage is recorded when mail is queued, not when it is
+**Email (counted):** “bulk” means mail an organizer writes and sends to a group
+from a Compose screen. System and template mail (acceptance/rejection, schedule
+notifications, reminders from fixed templates, order and account mail) is
+deliberately not counted. `email.bulk.monthly` is checked and recorded by four
+organizer compose actions; the talk draft-proposal reminder
+(`orga/views/mails.py:ComposeDraftReminders`) is a fifth compose action that
+counts one per reminder once fossasia/eventyay#7225 is merged. Usage is recorded when mail is queued, not when it is
 delivered, and saving a draft is never counted.
 
 | Path (core) | Checked against the limit | Recorded as usage |
@@ -133,24 +138,24 @@ record. Monthly aggregation is by organizer and capability for the current
 calendar month, not by event, even when an event add-on contributes allowance.
 A denied limit does not automatically buy overage.
 
-**Email not counted or limited:** found in core `dev` with no entitlement call:
+**Email not counted, by design:** these have no entitlement call in core `dev`
+and should stay that way:
 
 - Talk outbox mail created by the system: acceptance/rejection and other
   submission state mails (`base/models/submission.py`), new-schedule speaker
   notifications (`base/models/schedule.py`), CfP question reminders
-  (`orga/views/cfp.py`), mails from the speaker page (`orga/views/speaker.py`),
-  access-code mails (`base/models/access_code.py`), and draft-proposal reminders
-  (`orga/forms/mails.py:DraftRemindersForm`, sent immediately).
-- Talk `OutboxSend`, which sends every pending outbox mail, including the
-  system-created ones above, without a check.
+  (`orga/views/cfp.py`), speaker invitations (`orga/views/speaker.py`) and
+  access-code mails (`base/models/access_code.py`). Talk `OutboxSend` and
+  `MailDetail` send them from the outbox without a check.
 - Transactional ticket mail: order confirmation, payment and expiry reminders,
   ticket downloads, waiting list, order import, bank transfer.
 - Account and team mail: team invitations, password resets, organizer and
   administrator messages.
 
-Whether transactional mail should ever count is an open product decision;
-blocking it at the limit would stop ticket delivery. Do not describe the
-capability as covering “all email”.
+Because the outbox mixes compose mail (counted when queued) with system mail,
+do not add counting to outbox sending: it would double count compose mail and
+start counting system mail. Do not describe the capability as covering “all
+email”.
 
 **Admin seats:** `check_full_admin_limit` ignores teams without
 `can_change_organizer_settings`, skips users/emails already holding full-admin
