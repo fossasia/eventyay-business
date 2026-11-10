@@ -89,12 +89,68 @@ a hard limit or automatically create charges.
 
 ## Consumer details and limitations
 
-**Email:** ticket sendmail checks unique recipient count inside an organizer-row
-transaction and records usage with a queue-derived idempotency key. Talk compose
-checks recipients and records created queued rows; draft-to-outbox checks and
-records one mail. These paths are not identical. Monthly aggregation is by
-organizer and capability, not by event, even when a particular event add-on
-contributes allowance. A denied limit does not automatically buy overage.
+**Video (not counted):** `video.youtube`, `video.jitsi` and `video.loungemesh`
+are yes/no switches. Nothing records usage, meters minutes or viewers, or limits
+the number of rooms; `video.jitsi.concurrent_rooms` is the only counted video
+capability and has no caller. Core's `check_video_entitlements(event,
+module_config)` maps module types to capabilities (`livestream.youtube` →
+`video.youtube`, `call.jitsi` → `video.jitsi`, `call.loungemesh` and
+`channel.loungemesh` → `video.loungemesh`) and asks for each with quantity 1 and
+no `user`, so the organizer's plan decides, not the attendee, moderator or a
+staff bypass. Allowed means the tier value is true or an eligible organizer or
+event add-on grants it. Callers, as inspected in core `dev`:
+
+| Where | Effect when denied |
+|---|---|
+| Room create (`base/services/event.py:_create_room`, API `RoomPermissions` POST) | `ValidationError` `entitlement_denied` / permission denied |
+| Room update (API `RoomPermissions` PATCH/PUT, websocket `config_patch` in `features/live/modules/room.py`) | Rejected; websocket error `config.entitlement_denied` |
+| Websocket actions requiring a module (`features/live/decorators.py`) | `room.entitlement_denied` |
+| Room config sent to clients (`base/services/event.py`) | The denied module is omitted |
+| Attendee room visibility (`base/settings.py:is_room_visible_for_attendee`) | Room hidden |
+| YouTube stream schedules (`api/serializers/stream_schedule.py`) and stream data (`filter_stream_by_entitlement`, broadcast marker in `base/services/room.py`) | Schedule rejected; stream data stripped; plan change re-broadcasts |
+| LoungeMesh token exchange/refresh (`api/views/loungemesh.py`) | 403 `entitlement_denied` |
+
+Checks run on each request, so a downgrade applies to existing rooms without
+deleting their configuration. BigBlueButton and other module types are not
+mapped and are never gated.
+
+**Email (counted):** `email.bulk.monthly` is checked and recorded only by four
+organizer compose actions. Usage is recorded when mail is queued, not when it is
+delivered, and saving a draft is never counted.
+
+| Path (core) | Checked against the limit | Recorded as usage |
+|---|---|---|
+| Ticket mail to attendees, `plugins/sendmail/views.py:SenderView` | unique recipient emails | unique recipient emails, key `ticket_bulk_mail_<queue pk>` |
+| Ticket mail to teams, `plugins/sendmail/views.py:ComposeTeamsMail` | unique recipient emails | unique recipient emails |
+| Talk compose to sessions/speakers and teams, `orga/views/mails.py:ComposeMailBaseView` | `len(form.get_recipients())` | number of `QueuedMail` rows created, key `bulk_mail_compose_<first pk>` |
+| Talk draft to outbox, `orga/views/mails.py:DraftToOutbox` | 1 | 1, key `bulk_mail_draft_to_outbox_<pk>` |
+
+The ticket paths check and record inside an organizer-row transaction; the talk
+paths check before the transaction. These paths are not identical. Scheduled
+ticket mails are counted when queued; `send_queued_mail` and
+`SendEmailQueueView` only deliver an existing queue entry and neither check nor
+record. Monthly aggregation is by organizer and capability for the current
+calendar month, not by event, even when an event add-on contributes allowance.
+A denied limit does not automatically buy overage.
+
+**Email not counted or limited:** found in core `dev` with no entitlement call:
+
+- Talk outbox mail created by the system: acceptance/rejection and other
+  submission state mails (`base/models/submission.py`), new-schedule speaker
+  notifications (`base/models/schedule.py`), CfP question reminders
+  (`orga/views/cfp.py`), mails from the speaker page (`orga/views/speaker.py`),
+  access-code mails (`base/models/access_code.py`), and draft-proposal reminders
+  (`orga/forms/mails.py:DraftRemindersForm`, sent immediately).
+- Talk `OutboxSend`, which sends every pending outbox mail, including the
+  system-created ones above, without a check.
+- Transactional ticket mail: order confirmation, payment and expiry reminders,
+  ticket downloads, waiting list, order import, bank transfer.
+- Account and team mail: team invitations, password resets, organizer and
+  administrator messages.
+
+Whether transactional mail should ever count is an open product decision;
+blocking it at the limit would stop ticket delivery. Do not describe the
+capability as covering “all email”.
 
 **Admin seats:** `check_full_admin_limit` ignores teams without
 `can_change_organizer_settings`, skips users/emails already holding full-admin
@@ -113,7 +169,7 @@ not the catalogue default) plus add-on allowances: organizer add-ons apply to
 every event, event add-ons to their event, each `quantity * typed value`. An
 add-on counts when its definition is active, it is not pending, it started by
 the period end, and no `ends_at`/`cancel_at`/`canceled_at` precedes the period
-start. The allowance covers the event's lifetime: all usage recorded for the
+start; a canceled or expired add-on with none of those dates grants nothing. The allowance covers the event's lifetime: all usage recorded for the
 event before the period start (invoiced or not) is subtracted first, and only
 `period usage - remaining allowance` is billed, so an earlier overage is never
 billed twice and never retroactively. Usage without an event shares one
