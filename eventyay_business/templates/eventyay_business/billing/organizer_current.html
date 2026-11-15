@@ -149,7 +149,7 @@
                             <td>{% if item.event %}{{ item.event.name }}{% else %}—{% endif %}</td>
                             <td class="text-right">{{ item.quantity|floatformat:-2 }} {{ item.unit }}</td>
                             <td class="text-right">{{ item.allowance|floatformat:-2 }}</td>
-                            <td class="text-right">{{ item.overage|floatformat:-2 }}</td>
+                            <td class="text-right">{% if item.overage is None %}—{% else %}{{ item.overage|floatformat:-2 }}{% endif %}</td>
                             <td class="text-right">
                                 {% if item.currency %}{{ item.amount|floatformat:2 }} {{ item.currency }}{% else %}—{% endif %}
                             </td>

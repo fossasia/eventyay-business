@@ -3,6 +3,11 @@
  * Standard ES Module (No jQuery, No Inline Scripts)
  */
 
+function defaultOptionLabel(cap) {
+    // A blank yes/no value falls back to the capability's default.
+    return cap && cap.default_value ? 'Default (Included)' : 'Default (Not Included)';
+}
+
 function escapeHtml(str) {
     if (!str) return '';
     const div = document.createElement('div');
@@ -81,7 +86,6 @@ export function initTierForm() {
 
                     const optEmpty = document.createElement('option');
                     optEmpty.value = '';
-                    optEmpty.textContent = '---------';
 
                     const optTrue = document.createElement('option');
                     optTrue.value = 'true';
@@ -103,6 +107,10 @@ export function initTierForm() {
                     }
 
                     currentValueEl.parentNode.replaceChild(select, currentValueEl);
+                }
+                const booleanSelect = row.querySelector('select[name$="-value"]');
+                if (booleanSelect && booleanSelect.options.length) {
+                    booleanSelect.options[0].textContent = defaultOptionLabel(cap);
                 }
 
                 // Hide unit for boolean capabilities
@@ -142,10 +150,14 @@ export function initTierForm() {
                 if (activeInput) {
                     if (cap && (cap.value_type === 'integer' || cap.value_type === 'decimal' || cap.value_type === 'money')) {
                         activeInput.type = 'number';
+                        activeInput.min = '0';
                         activeInput.step = cap.value_type === 'integer' ? '1' : 'any';
-                        activeInput.placeholder = cap.value_type === 'integer' ? 'e.g. 10' : 'e.g. 2.50';
+                        activeInput.placeholder = cap.value_type === 'integer'
+                            ? 'e.g. 10'
+                            : (cap.value_type === 'money' ? 'e.g. 0.20 (subscription currency)' : 'e.g. 2.50');
                     } else {
                         activeInput.type = 'text';
+                        activeInput.removeAttribute('min');
                         activeInput.placeholder = 'Value / Allowance';
                     }
                 }
@@ -162,10 +174,15 @@ export function initTierForm() {
                     }
                 }
 
-                // Show overage column for quotas
+                // Standard capabilities never bill generic overage: a limit denies the
+                // action, and free ticket overage has its own price entitlement.
+                const overageApplies = !cap;
                 if (overageCol) {
-                    overageCol.style.visibility = 'visible';
-                    overageCol.style.pointerEvents = 'auto';
+                    overageCol.style.visibility = overageApplies ? 'visible' : 'hidden';
+                    overageCol.style.pointerEvents = overageApplies ? 'auto' : 'none';
+                }
+                if (!overageApplies && overageToggle) {
+                    overageToggle.checked = false;
                 }
                 updateOverageVisibility();
             }
@@ -235,6 +252,17 @@ export function initAddonForm() {
         const capName = capSelect.value;
         const cap = capabilities[capName];
 
+        // Units only matter for limits; a yes/no add-on always uses one unit.
+        const quantityInput = document.querySelector('.addon-quantity-input, [name="quantity"]');
+        const quantityGroup = quantityInput && quantityInput.closest('.form-group');
+        const isBoolean = Boolean(cap && cap.value_type === 'boolean');
+        if (quantityGroup) {
+            quantityGroup.style.display = isBoolean ? 'none' : '';
+        }
+        if (quantityInput && isBoolean) {
+            quantityInput.value = '1';
+        }
+
         // 1. Description
         if (cap && cap.description) {
             descEl.innerHTML = '<i class="fa fa-info-circle text-info" style="margin-right: 4px;"></i>' + escapeHtml(cap.description);
@@ -298,6 +326,7 @@ export function initAddonForm() {
             if (activeInput) {
                 if (cap && (cap.value_type === 'integer' || cap.value_type === 'decimal' || cap.value_type === 'money')) {
                     activeInput.type = 'number';
+                    activeInput.min = '0';
                     activeInput.step = cap.value_type === 'integer' ? '1' : 'any';
                     const unitSuffix = cap.unit ? ` (${cap.unit})` : '';
                     activeInput.placeholder = (cap.value_type === 'integer' ? 'e.g. 10' : 'e.g. 2.50') + unitSuffix;

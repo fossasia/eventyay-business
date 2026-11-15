@@ -15,7 +15,11 @@ from eventyay.control.forms.global_settings import StripeKeyValidator
 from i18nfield.forms import I18nFormField, I18nTextInput
 from i18nfield.strings import LazyI18nString
 
-from .capabilities import get_grouped_capability_choices
+from .capabilities import (
+    CapabilityValueType,
+    get_capability,
+    get_grouped_capability_choices,
+)
 from .invoice_presentation import DEFAULT_SECTION_LABELS, DEFAULT_SECTION_ORDER
 from .models import (
     AddonDefinition,
@@ -106,6 +110,28 @@ class TierVersionForm(forms.ModelForm):
         return instance
 
 
+NEGATIVE_VALUE_ERROR = forms.ValidationError(
+    _("Value cannot be negative."), code="negative"
+)
+
+# Add-ons only change yes/no features and number limits; fees and prices ignore them.
+ADDON_VALUE_TYPES = (CapabilityValueType.BOOLEAN, CapabilityValueType.INTEGER)
+
+
+def addon_capability_choices():
+    """Capability choices that an add-on can actually change."""
+    result = []
+    for category, items in get_grouped_capability_choices():
+        allowed = [
+            (name, label)
+            for name, label in items
+            if get_capability(name).value_type in ADDON_VALUE_TYPES
+        ]
+        if allowed:
+            result.append((category, allowed))
+    return result
+
+
 class TierEntitlementForm(forms.ModelForm):
     class Meta:
         model = TierEntitlement
@@ -177,14 +203,13 @@ class TierEntitlementForm(forms.ModelForm):
         value = cleaned_data.get("value")
 
         if capability_name:
-            from .capabilities import CapabilityValueType, get_capability
-
             cap = get_capability(capability_name)
             if cap:
                 if cap.value_type == CapabilityValueType.INTEGER:
                     if value not in (None, ""):
                         try:
-                            int(value)
+                            if int(value) < 0:
+                                self.add_error("value", NEGATIVE_VALUE_ERROR)
                         except ValueError:
                             self.add_error(
                                 "value",
@@ -207,6 +232,8 @@ class TierEntitlementForm(forms.ModelForm):
                             val = Decimal(value)
                             if not val.is_finite():
                                 raise InvalidOperation
+                            if val < 0:
+                                self.add_error("value", NEGATIVE_VALUE_ERROR)
                         except (InvalidOperation, TypeError):
                             self.add_error(
                                 "value",
@@ -244,6 +271,11 @@ class TierEntitlementForm(forms.ModelForm):
                     cleaned_data["overage_price"] = None
                     cleaned_data["currency"] = ""
                     cleaned_data["overage_block_size"] = None
+
+        if capability_name and get_capability(capability_name):
+            # No standard capability bills generic overage: reaching a limit denies the
+            # action, and free ticket overage uses its own price entitlement.
+            cleaned_data["overage_allowed"] = False
 
         if not cleaned_data.get("overage_allowed"):
             cleaned_data["overage_price"] = None
@@ -430,7 +462,7 @@ class AddonDefinitionForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        grouped_choices = get_grouped_capability_choices()
+        grouped_choices = addon_capability_choices()
         choices = [("", "---------")] + grouped_choices
         if self.instance and self.instance.capability:
             all_caps = []
@@ -455,6 +487,14 @@ class AddonDefinitionForm(forms.ModelForm):
                 "class": "form-control addon-value-input",
                 "placeholder": _("Value / Allowance"),
             }
+        )
+        self.fields["quantity"].label = _("Units per assignment")
+        self.fields["quantity"].help_text = _(
+            "For limits, each unit adds the value above, and the price is charged per unit. "
+            "Yes/no features always use one unit."
+        )
+        self.fields["quantity"].widget.attrs.update(
+            {"class": "form-control addon-quantity-input", "min": "1"}
         )
         self.fields["currency"].widget.attrs.update(
             {
@@ -509,8 +549,6 @@ class AddonDefinitionForm(forms.ModelForm):
         value = cleaned_data.get("entitlement_value")
 
         if capability_name:
-            from .capabilities import CapabilityValueType, get_capability
-
             cap = get_capability(capability_name)
             is_existing_unchanged = (
                 self.instance
@@ -525,10 +563,26 @@ class AddonDefinitionForm(forms.ModelForm):
                         params={"name": capability_name},
                     ),
                 )
+            elif (
+                cap
+                and cap.value_type not in ADDON_VALUE_TYPES
+                and not is_existing_unchanged
+            ):
+                self.add_error(
+                    "capability",
+                    forms.ValidationError(
+                        _(
+                            "Add-ons can only enable features or raise limits. "
+                            "%(label)s is not changed by add-ons."
+                        ),
+                        params={"label": cap.label},
+                    ),
+                )
             elif cap and value:
                 if cap.value_type == CapabilityValueType.INTEGER:
                     try:
-                        int(value)
+                        if int(value) < 0:
+                            self.add_error("entitlement_value", NEGATIVE_VALUE_ERROR)
                     except ValueError:
                         self.add_error(
                             "entitlement_value",
@@ -546,6 +600,8 @@ class AddonDefinitionForm(forms.ModelForm):
                         val = Decimal(value)
                         if not val.is_finite():
                             raise InvalidOperation
+                        if val < 0:
+                            self.add_error("entitlement_value", NEGATIVE_VALUE_ERROR)
                     except (InvalidOperation, TypeError):
                         self.add_error(
                             "entitlement_value",
@@ -575,6 +631,8 @@ class AddonDefinitionForm(forms.ModelForm):
                                     )
                                 ),
                             )
+            if cap and cap.value_type == CapabilityValueType.BOOLEAN:
+                cleaned_data["quantity"] = 1
         return cleaned_data
 
 
@@ -782,7 +840,6 @@ class OrganizerAddonPurchaseForm(forms.Form):
             if self.addon.quantity:
                 self.fields["quantity"].initial = self.addon.quantity
 
-            from .capabilities import CapabilityValueType, get_capability
             from .models import AddonAssignmentScope
 
             cap = get_capability(self.addon.capability)
@@ -806,7 +863,6 @@ class OrganizerAddonPurchaseForm(forms.Form):
 
     def clean(self):
         cleaned_data = super().clean()
-        from .capabilities import CapabilityValueType, get_capability
         from .models import (
             AddonAssignmentScope,
             AddonStatus,
@@ -930,8 +986,6 @@ class EventAddonPurchaseForm(forms.Form):
             if self.addon.quantity:
                 self.fields["quantity"].initial = self.addon.quantity
 
-            from .capabilities import CapabilityValueType, get_capability
-
             cap = get_capability(self.addon.capability)
             if cap and cap.value_type == CapabilityValueType.BOOLEAN:
                 self.fields["quantity"].initial = 1
@@ -939,7 +993,6 @@ class EventAddonPurchaseForm(forms.Form):
 
     def clean(self):
         cleaned_data = super().clean()
-        from .capabilities import CapabilityValueType, get_capability
         from .models import AddonAssignmentScope, AddonStatus, EventAddon
 
         if (
