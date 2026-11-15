@@ -136,6 +136,7 @@ from .signals import (
     subscription_downgraded,
     subscription_purchased,
 )
+from .stripe_objects import stripe_to_dict
 from .stripe_service import (
     create_addon_checkout_session,
     create_subscription_checkout_session,
@@ -888,7 +889,9 @@ class OrganizerPlanUpgradeView(
                             stripe_sub = stripe.Subscription.retrieve(
                                 active_sub.stripe_subscription_id
                             )
-                            items = (stripe_sub.get("items") or {}).get("data", [])
+                            items = (stripe_to_dict(stripe_sub).get("items") or {}).get(
+                                "data", []
+                            )
                             target_price_id = (
                                 (
                                     tier_price.stripe_price_id

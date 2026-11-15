@@ -8,6 +8,7 @@ from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
+from .stripe_objects import stripe_to_dict
 from .stripe_service import process_webhook_event
 
 logger = logging.getLogger(__name__)
@@ -57,7 +58,7 @@ def stripe_business_webhook_view(request):
         return HttpResponseBadRequest("Invalid signature")
 
     try:
-        process_webhook_event(event.type, event.data.object)
+        process_webhook_event(event.type, stripe_to_dict(event.data.object))
     except Exception as exc:
         logger.exception(
             "Error processing Stripe webhook event %s: %s", event.type, exc

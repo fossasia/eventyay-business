@@ -39,6 +39,7 @@ from .signals import (
     subscription_purchased,
     subscription_recovered,
 )
+from .stripe_objects import stripe_to_dict
 from .vouchers import (
     CHECKOUT_SESSION_EXPIRY,
     VoucherQuote,
@@ -1773,10 +1774,7 @@ def fulfill_checkout_session_by_id(session_id: str):
             )
             return None
 
-        session_dict = (
-            session.to_dict() if hasattr(session, "to_dict") else dict(session)
-        )
-        return process_checkout_session_completed(session_dict)
+        return process_checkout_session_completed(stripe_to_dict(session))
     except Exception as exc:
         logger.exception(
             "Error fulfilling Stripe checkout session %s: %s", session_id, exc
@@ -1833,7 +1831,7 @@ def sync_organizer_from_stripe(organizer) -> Optional[Subscription]:
             customer=customer_id, status="active", limit=5
         )
         for s_sub in getattr(stripe_subs, "data", []):
-            s_dict = s_sub.to_dict() if hasattr(s_sub, "to_dict") else dict(s_sub)
+            s_dict = stripe_to_dict(s_sub)
             meta = s_dict.get("metadata", {})
             tier_version_id = meta.get("tier_version_id")
             tier_price_id = meta.get("tier_price_id")
@@ -1849,7 +1847,7 @@ def sync_organizer_from_stripe(organizer) -> Optional[Subscription]:
                 if prod_id and not tier_version_id:
                     try:
                         prod = stripe.Product.retrieve(prod_id)
-                        prod_meta = getattr(prod, "metadata", {})
+                        prod_meta = stripe_to_dict(getattr(prod, "metadata", None))
                         tier_slug = prod_meta.get("tier_slug")
                         t_ver_str = prod_meta.get("tier_version")
                         if tier_slug and t_ver_str:

@@ -29,6 +29,7 @@ from .notifications import (
 )
 from .platform_fee_ledger import organizer_consolidated_billing_enabled
 from .services import get_collection_retry_days, invalidate_entitlement_cache
+from .stripe_objects import stripe_to_dict
 
 logger = logging.getLogger(__name__)
 
@@ -188,7 +189,7 @@ def payment_intent_value(payment_intent, key, default=None):
 
 def payment_intent_metadata(payment_intent) -> dict:
     metadata = payment_intent_value(payment_intent, "metadata", {})
-    return dict(metadata) if metadata else {}
+    return dict(stripe_to_dict(metadata))
 
 
 def stripe_reference(value):
