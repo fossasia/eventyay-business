@@ -209,14 +209,13 @@ def _usage_estimate(organizer, subscription, period_start, period_end, totals):
         allowance = ZERO
         price = ZERO
         currency = ""
+        # Only free ticket overage is billed; other limits deny instead of charging.
+        overage = None
         if entitlement:
             try:
                 allowance = Decimal(str(entitlement.value or "0"))
             except InvalidOperation:
                 allowance = ZERO
-            price = entitlement.overage_price or ZERO
-            currency = entitlement.currency or ""
-        overage = max(data["quantity"] - allowance, ZERO)
         if capability == FREE_REGISTRATION_ALLOWANCE:
             # Lifetime allowance: show what was still included when the period began.
             event_usage = free_registration_usage[event_id]
@@ -230,7 +229,7 @@ def _usage_estimate(organizer, subscription, period_start, period_end, totals):
                     or subscription.currency
                     or "EUR"
                 )
-        amount = (overage * price).quantize(Decimal("0.01"))
+        amount = ((overage or ZERO) * price).quantize(Decimal("0.01"))
         event = data["records"][0].event
         usage.append(
             {

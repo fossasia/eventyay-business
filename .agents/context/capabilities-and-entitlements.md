@@ -87,6 +87,15 @@ Do not assume display formatting implements runtime policy. The generic evaluato
 does not use `overage_allowed`, `overage_price`, or `overage_block_size` to bypass
 a hard limit or automatically create charges.
 
+The admin forms follow this. The tier form shows a yes/no dropdown for boolean
+capabilities (its blank option is labelled with the catalogue default) and a
+non-negative number input otherwise, hides the generic overage controls for every
+registered capability, and clears them on save. The add-on form offers only
+boolean and integer capabilities, because nothing reads add-ons for decimal or
+money values; existing add-ons keep their capability. Yes/no add-ons always use
+one unit. The organizer current-charges estimate shows an overage amount only for
+free registrations.
+
 ## Consumer details and limitations
 
 **Video (not counted):** `video.youtube`, `video.jitsi` and `video.loungemesh`
