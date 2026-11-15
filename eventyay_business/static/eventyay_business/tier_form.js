@@ -40,6 +40,16 @@ export function initTierForm() {
         const overageFields = row.querySelector('[data-overage-fields]');
         const unitInput = row.querySelector('.entitlement-unit-input, input[name$="-unit"]');
 
+        function setOverageEnabled(enabled) {
+            // Disabled inputs are not submitted, so stale hidden values cannot fail validation.
+            [overageCol, overageFields].forEach((container) => {
+                if (!container) return;
+                container.querySelectorAll('input, select').forEach((input) => {
+                    input.disabled = !enabled;
+                });
+            });
+        }
+
         // Description helper under capability select
         let descEl = row.querySelector('.capability-description-text');
         if (!descEl && capSelect.parentElement) {
@@ -134,6 +144,7 @@ export function initTierForm() {
                 if (overageFields) {
                     overageFields.style.display = 'none';
                 }
+                setOverageEnabled(false);
             } else {
                 // Numeric quota, percentage, or text
                 if (currentValueEl.tagName.toLowerCase() === 'select') {
@@ -184,6 +195,7 @@ export function initTierForm() {
                 if (!overageApplies && overageToggle) {
                     overageToggle.checked = false;
                 }
+                setOverageEnabled(overageApplies);
                 updateOverageVisibility();
             }
         }

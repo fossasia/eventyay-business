@@ -76,17 +76,37 @@ def test_tier_form_ignores_generic_overage_for_standard_capabilities(capability,
 
 
 def test_tier_form_keeps_overage_for_custom_capabilities():
+    existing = TierEntitlement(capability="legacy.custom_feature")
+    form = TierEntitlementForm(
+        instance=existing,
+        data={
+            "capability": "legacy.custom_feature",
+            "value": "5",
+            "overage_allowed": "on",
+            "overage_price": "1.00",
+            "currency": "EUR",
+            "overage_block_size": "10",
+        },
+    )
+
+    assert form.is_valid(), form.errors
+    assert form.cleaned_data["overage_allowed"] is True
+    assert form.cleaned_data["overage_price"] == Decimal("1.00")
+    assert form.cleaned_data["overage_block_size"] == 10
+
+
+def test_hidden_overage_values_do_not_block_standard_capabilities():
     form = tier_form(
-        capability="",
-        value="5",
+        capability="email.bulk.monthly",
+        value="100",
         overage_allowed="on",
         overage_price="1.00",
-        currency="EUR",
+        currency="EU",
         overage_block_size="10",
     )
-    form.is_valid()
 
-    assert form.cleaned_data.get("overage_allowed") is True
+    assert form.is_valid(), form.errors
+    assert form.cleaned_data["currency"] == ""
 
 
 @pytest.mark.parametrize(

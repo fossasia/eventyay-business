@@ -110,6 +110,8 @@ class TierVersionForm(forms.ModelForm):
         return instance
 
 
+OVERAGE_FIELDS = ("overage_allowed", "overage_price", "currency", "overage_block_size")
+
 NEGATIVE_VALUE_ERROR = forms.ValidationError(
     _("Value cannot be negative."), code="negative"
 )
@@ -274,8 +276,11 @@ class TierEntitlementForm(forms.ModelForm):
 
         if capability_name and get_capability(capability_name):
             # No standard capability bills generic overage: reaching a limit denies the
-            # action, and free ticket overage uses its own price entitlement.
+            # action, and free ticket overage uses its own price entitlement. The inputs
+            # are hidden for these, so their errors must not block the save.
             cleaned_data["overage_allowed"] = False
+            for field in OVERAGE_FIELDS:
+                self.errors.pop(field, None)
 
         if not cleaned_data.get("overage_allowed"):
             cleaned_data["overage_price"] = None
