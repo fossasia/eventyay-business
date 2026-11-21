@@ -1522,3 +1522,45 @@ def test_sync_organizer_from_stripe(setup_data):
     assert inv is not None
     assert inv.status == BusinessInvoiceStatus.PAID
     assert inv.total == Decimal("99.00")
+
+
+@pytest.mark.django_db
+def test_sync_organizer_from_stripe_reads_tier_from_product_metadata(setup_data):
+    from .stripe_sdk import ObjectWithoutDictMethods
+
+    organizer, _, _, _, tier_version, _, _, _, _ = setup_data
+
+    remote_sub = ObjectWithoutDictMethods(
+        {
+            "id": "sub_remote_product_1",
+            "metadata": {},
+            "latest_invoice": "in_remote_product_1",
+            "items": {"data": [{"price": {"metadata": {}, "product": "prod_1"}}]},
+        }
+    )
+    product = ObjectWithoutDictMethods(
+        {
+            "id": "prod_1",
+            "metadata": {
+                "tier_slug": tier_version.tier.slug,
+                "tier_version": str(tier_version.version),
+            },
+        }
+    )
+
+    with (
+        patch(
+            "eventyay_business.stripe_service.get_stripe_secret_key_safe",
+            return_value="sk_test_123",
+        ),
+        patch(
+            "stripe.Customer.search",
+            return_value=MagicMock(data=[MagicMock(id="cus_found_1")]),
+        ),
+        patch("stripe.Subscription.list", return_value=MagicMock(data=[remote_sub])),
+        patch("stripe.Product.retrieve", return_value=product),
+    ):
+        synced = sync_organizer_from_stripe(organizer)
+
+    assert synced is not None
+    assert synced.tier_version == tier_version
