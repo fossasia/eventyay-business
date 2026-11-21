@@ -1,10 +1,16 @@
+import hashlib
+import hmac
+import json
 import pytest
 import stripe
+import time
+from django.test import RequestFactory
 from unittest.mock import patch
 
 from eventyay_business.invoice_collection import payment_intent_metadata
 from eventyay_business.stripe_objects import stripe_object_to_dict
 from eventyay_business.stripe_service import process_webhook_event
+from eventyay_business.views_stripe import stripe_business_webhook_view
 
 from .stripe_sdk import ObjectWithoutDictMethods
 
@@ -74,3 +80,45 @@ def test_payment_intent_metadata_reads_objects_without_dict_methods():
     )
 
     assert payment_intent_metadata(intent) == {"eventyay_business_invoice_id": "42"}
+
+
+def test_webhook_view_passes_a_dict_built_from_a_real_stripe_event():
+    secret = "whsec_test_secret"
+    session = {
+        "id": "cs_test_1",
+        "object": "checkout.session",
+        "metadata": {"type": "subscription", "organizer_slug": "org"},
+    }
+    payload = json.dumps(
+        {
+            "id": "evt_test_1",
+            "object": "event",
+            "type": "checkout.session.completed",
+            "data": {"object": session},
+        }
+    )
+    timestamp = int(time.time())
+    signature = hmac.new(
+        secret.encode(), f"{timestamp}.{payload}".encode(), hashlib.sha256
+    ).hexdigest()
+    request = RequestFactory().post(
+        "/webhook/",
+        data=payload,
+        content_type="application/json",
+        HTTP_STRIPE_SIGNATURE=f"t={timestamp},v1={signature}",
+    )
+
+    with (
+        patch(
+            "eventyay.helpers.stripe_utils.get_stripe_webhook_secret_key",
+            return_value=secret,
+        ),
+        patch(
+            "eventyay_business.stripe_service.process_checkout_session_completed"
+        ) as mock_handler,
+    ):
+        response = stripe_business_webhook_view(request)
+
+    assert response.status_code == 200
+    (received,) = mock_handler.call_args.args
+    assert received.get("metadata", {}).get("organizer_slug") == "org"
