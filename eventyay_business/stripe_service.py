@@ -1231,7 +1231,9 @@ def process_subscription_checkout_completed(session_data: dict):
             return None
 
         tier_price = (
-            TierPrice.objects.filter(pk=tier_price_id).first() if tier_price_id else None
+            TierPrice.objects.filter(pk=tier_price_id).first()
+            if tier_price_id
+            else None
         )
         tier_version = (
             TierVersion.objects.filter(pk=tier_version_id).first()
