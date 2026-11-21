@@ -39,6 +39,7 @@ from .signals import (
     subscription_purchased,
     subscription_recovered,
 )
+from .stripe_objects import stripe_object_to_dict
 from .vouchers import (
     CHECKOUT_SESSION_EXPIRY,
     VoucherQuote,
@@ -626,6 +627,7 @@ def process_webhook_event(event_type: str, data_object: dict):
     """
     Process incoming verified Stripe webhook event.
     """
+    data_object = stripe_object_to_dict(data_object)
     if event_type == "checkout.session.completed":
         return process_checkout_session_completed(data_object)
     elif event_type == "checkout.session.expired":
@@ -1773,15 +1775,30 @@ def fulfill_checkout_session_by_id(session_id: str):
             )
             return None
 
-        session_dict = (
-            session.to_dict() if hasattr(session, "to_dict") else dict(session)
-        )
-        return process_checkout_session_completed(session_dict)
+        return process_checkout_session_completed(stripe_object_to_dict(session))
     except Exception as exc:
         logger.exception(
             "Error fulfilling Stripe checkout session %s: %s", session_id, exc
         )
         return None
+
+
+def _matching_tier_price_id(tier_version_id, price: dict) -> Optional[str]:
+    """Return the tier price matching a Stripe price's billing interval and currency."""
+    interval = (price.get("recurring") or {}).get("interval")
+    billing_interval = {
+        "month": BillingInterval.MONTHLY,
+        "year": BillingInterval.ANNUAL,
+    }.get(interval)
+    currency = price.get("currency")
+    if not billing_interval or not currency:
+        return None
+    tier_price = TierPrice.objects.filter(
+        tier_version_id=tier_version_id,
+        billing_interval=billing_interval,
+        currency__iexact=currency,
+    ).first()
+    return str(tier_price.pk) if tier_price else None
 
 
 def sync_organizer_from_stripe(organizer) -> Optional[Subscription]:
@@ -1833,7 +1850,7 @@ def sync_organizer_from_stripe(organizer) -> Optional[Subscription]:
             customer=customer_id, status="active", limit=5
         )
         for s_sub in getattr(stripe_subs, "data", []):
-            s_dict = s_sub.to_dict() if hasattr(s_sub, "to_dict") else dict(s_sub)
+            s_dict = stripe_object_to_dict(s_sub)
             meta = s_dict.get("metadata", {})
             tier_version_id = meta.get("tier_version_id")
             tier_price_id = meta.get("tier_price_id")
@@ -1849,7 +1866,9 @@ def sync_organizer_from_stripe(organizer) -> Optional[Subscription]:
                 if prod_id and not tier_version_id:
                     try:
                         prod = stripe.Product.retrieve(prod_id)
-                        prod_meta = getattr(prod, "metadata", {})
+                        prod_meta = stripe_object_to_dict(
+                            getattr(prod, "metadata", None)
+                        )
                         tier_slug = prod_meta.get("tier_slug")
                         t_ver_str = prod_meta.get("tier_version")
                         if tier_slug and t_ver_str:
@@ -1860,6 +1879,9 @@ def sync_organizer_from_stripe(organizer) -> Optional[Subscription]:
                                 tier_version_id = str(t_ver.pk)
                     except Exception:
                         pass
+
+                if tier_version_id and not tier_price_id:
+                    tier_price_id = _matching_tier_price_id(tier_version_id, price_obj)
 
             if tier_version_id or tier_price_id:
                 tier_price = (
@@ -1872,12 +1894,19 @@ def sync_organizer_from_stripe(organizer) -> Optional[Subscription]:
                     if tier_version_id
                     else (tier_price.tier_version if tier_price else None)
                 )
-                if tier_version:
+                if tier_version and not tier_price:
+                    logger.warning(
+                        "No tier price matches Stripe subscription %s for organizer %s; "
+                        "skipping sync",
+                        s_sub.id,
+                        organizer.slug,
+                    )
+                elif tier_version:
                     session_mock = {
                         "metadata": {
                             "type": "subscription",
                             "organizer_slug": organizer.slug,
-                            "tier_price_id": str(tier_price.pk) if tier_price else "",
+                            "tier_price_id": str(tier_price.pk),
                             "tier_version_id": str(tier_version.pk),
                         },
                         "customer": customer_id,
