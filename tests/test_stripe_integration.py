@@ -1524,18 +1524,15 @@ def test_sync_organizer_from_stripe(setup_data):
     assert inv.total == Decimal("99.00")
 
 
-@pytest.mark.django_db
-def test_sync_organizer_from_stripe_reads_tier_from_product_metadata(setup_data):
+def _sync_from_product_metadata(organizer, tier_version, stripe_price):
     from .stripe_sdk import ObjectWithoutDictMethods
-
-    organizer, _, _, _, tier_version, _, _, _, _ = setup_data
 
     remote_sub = ObjectWithoutDictMethods(
         {
             "id": "sub_remote_product_1",
             "metadata": {},
             "latest_invoice": "in_remote_product_1",
-            "items": {"data": [{"price": {"metadata": {}, "product": "prod_1"}}]},
+            "items": {"data": [{"price": {"metadata": {}, **stripe_price}}]},
         }
     )
     product = ObjectWithoutDictMethods(
@@ -1560,7 +1557,42 @@ def test_sync_organizer_from_stripe_reads_tier_from_product_metadata(setup_data)
         patch("stripe.Subscription.list", return_value=MagicMock(data=[remote_sub])),
         patch("stripe.Product.retrieve", return_value=product),
     ):
-        synced = sync_organizer_from_stripe(organizer)
+        return sync_organizer_from_stripe(organizer)
+
+
+@pytest.mark.django_db
+def test_sync_organizer_from_stripe_reads_tier_from_product_metadata(setup_data):
+    organizer, _, _, _, tier_version, tier_price, _, _, _ = setup_data
+
+    synced = _sync_from_product_metadata(
+        organizer,
+        tier_version,
+        {"product": "prod_1", "currency": "usd", "recurring": {"interval": "month"}},
+    )
 
     assert synced is not None
     assert synced.tier_version == tier_version
+    assert synced.billing_interval == BillingInterval.MONTHLY
+    assert synced.currency == "USD"
+    invoice = BusinessInvoice.objects.get(organizer=organizer)
+    assert invoice.status == BusinessInvoiceStatus.PAID
+    assert invoice.total == tier_price.amount
+
+
+@pytest.mark.django_db
+def test_sync_organizer_from_stripe_skips_product_metadata_without_matching_price(
+    setup_data,
+):
+    organizer, _, _, _, tier_version, _, _, _, _ = setup_data
+
+    synced = _sync_from_product_metadata(
+        organizer,
+        tier_version,
+        {"product": "prod_1", "currency": "eur", "recurring": {"interval": "year"}},
+    )
+
+    assert synced is None
+    assert not organizer.subscriptions.filter(
+        stripe_subscription_id="sub_remote_product_1"
+    ).exists()
+    assert not BusinessInvoice.objects.filter(organizer=organizer).exists()

@@ -1230,11 +1230,7 @@ def process_subscription_checkout_completed(session_data: dict):
             )
             return None
 
-        tier_price = (
-            TierPrice.objects.filter(pk=tier_price_id).first()
-            if tier_price_id
-            else None
-        )
+        tier_price = TierPrice.objects.filter(pk=tier_price_id).first()
         tier_version = (
             TierVersion.objects.filter(pk=tier_version_id).first()
             if tier_version_id
@@ -1787,6 +1783,24 @@ def fulfill_checkout_session_by_id(session_id: str):
         return None
 
 
+def _matching_tier_price_id(tier_version_id, price: dict) -> Optional[str]:
+    """Return the tier price matching a Stripe price's billing interval and currency."""
+    interval = (price.get("recurring") or {}).get("interval")
+    billing_interval = {
+        "month": BillingInterval.MONTHLY,
+        "year": BillingInterval.ANNUAL,
+    }.get(interval)
+    currency = price.get("currency")
+    if not billing_interval or not currency:
+        return None
+    tier_price = TierPrice.objects.filter(
+        tier_version_id=tier_version_id,
+        billing_interval=billing_interval,
+        currency__iexact=currency,
+    ).first()
+    return str(tier_price.pk) if tier_price else None
+
+
 def sync_organizer_from_stripe(organizer) -> Optional[Subscription]:
     """
     Query Stripe for any active subscriptions belonging to this organizer
@@ -1866,6 +1880,9 @@ def sync_organizer_from_stripe(organizer) -> Optional[Subscription]:
                     except Exception:
                         pass
 
+                if tier_version_id and not tier_price_id:
+                    tier_price_id = _matching_tier_price_id(tier_version_id, price_obj)
+
             if tier_version_id or tier_price_id:
                 tier_price = (
                     TierPrice.objects.filter(pk=tier_price_id).first()
@@ -1877,12 +1894,19 @@ def sync_organizer_from_stripe(organizer) -> Optional[Subscription]:
                     if tier_version_id
                     else (tier_price.tier_version if tier_price else None)
                 )
-                if tier_version:
+                if tier_version and not tier_price:
+                    logger.warning(
+                        "No tier price matches Stripe subscription %s for organizer %s; "
+                        "skipping sync",
+                        s_sub.id,
+                        organizer.slug,
+                    )
+                elif tier_version:
                     session_mock = {
                         "metadata": {
                             "type": "subscription",
                             "organizer_slug": organizer.slug,
-                            "tier_price_id": str(tier_price.pk) if tier_price else "",
+                            "tier_price_id": str(tier_price.pk),
                             "tier_version_id": str(tier_version.pk),
                         },
                         "customer": customer_id,
