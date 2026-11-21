@@ -1227,3 +1227,78 @@ def test_tier_new_draft_preserves_configuration_snapshot(
     assert new_draft is not None
     assert new_draft.version == pro_version.version + 1
     assert new_draft.configuration_snapshot.get("grace_period_days") == 15
+
+
+@pytest.mark.django_db
+@override_settings(SITE_URL="https://testserver")
+def test_paid_to_paid_downgrade_updates_the_stripe_subscription_item(
+    client, lifecycle_data
+):
+    from .stripe_sdk import ObjectWithoutDictMethods
+
+    organizer, _, _, _, _, pro_version, _, user = lifecycle_data
+    client.force_login(user)
+
+    basic_tier = Tier.objects.create(
+        name="Basic Tier",
+        slug="basic-tier",
+        status=TierStatus.PUBLISHED,
+        is_public=True,
+        display_order=0,
+    )
+    basic_version = TierVersion.objects.create(
+        tier=basic_tier, version=1, published_at=now()
+    )
+    TierEntitlement.objects.create(
+        tier_version=basic_version, capability="organizer.full_admins", value="5"
+    )
+    basic_price = TierPrice.objects.create(
+        tier_version=basic_version,
+        billing_interval=BillingInterval.MONTHLY,
+        amount=Decimal("20.00"),
+        currency="USD",
+        active=True,
+        stripe_price_id="price_basic_monthly",
+    )
+
+    sub = Subscription.objects.get(organizer=organizer)
+    sub.tier_version = pro_version
+    sub.billing_interval = BillingInterval.MONTHLY
+    sub.starts_at = now() - timedelta(days=15)
+    sub.ends_at = now() + timedelta(days=15)
+    sub.stripe_subscription_id = "sub_stripe_paid_downgrade"
+    sub.save()
+
+    remote_sub = ObjectWithoutDictMethods(
+        {"id": "sub_stripe_paid_downgrade", "items": {"data": [{"id": "si_pro"}]}}
+    )
+    with (
+        patch("eventyay_business.views.is_stripe_configured", return_value=True),
+        patch(
+            "eventyay_business.views.get_stripe_secret_key_safe",
+            return_value="sk_test_123",
+        ),
+        patch(
+            "eventyay_business.views.stripe.Subscription.retrieve",
+            return_value=remote_sub,
+        ),
+        patch("eventyay_business.views.stripe.Subscription.modify") as mock_modify,
+    ):
+        response = client.post(
+            reverse(
+                "plugins:eventyay_business:organizer.plan.upgrade",
+                kwargs={"organizer": organizer.slug},
+            ),
+            {"tier_price_id": basic_price.id},
+            follow=True,
+        )
+
+    assert response.status_code == 200
+    mock_modify.assert_called_once_with(
+        "sub_stripe_paid_downgrade",
+        cancel_at_period_end=False,
+        proration_behavior="none",
+        items=[{"id": "si_pro", "price": "price_basic_monthly"}],
+    )
+    sub.refresh_from_db()
+    assert sub.pending_tier_version == basic_version

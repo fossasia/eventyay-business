@@ -136,6 +136,7 @@ from .signals import (
     subscription_downgraded,
     subscription_purchased,
 )
+from .stripe_objects import stripe_object_to_dict
 from .stripe_service import (
     create_addon_checkout_session,
     create_subscription_checkout_session,
@@ -885,8 +886,10 @@ class OrganizerPlanUpgradeView(
                             )
                         else:
                             # Paid-to-Paid downgrade
-                            stripe_sub = stripe.Subscription.retrieve(
-                                active_sub.stripe_subscription_id
+                            stripe_sub = stripe_object_to_dict(
+                                stripe.Subscription.retrieve(
+                                    active_sub.stripe_subscription_id
+                                )
                             )
                             items = (stripe_sub.get("items") or {}).get("data", [])
                             target_price_id = (
@@ -1028,7 +1031,7 @@ class OrganizerPlanUpgradeView(
                     request,
                     _("Could not initiate payment session. Please try again later."),
                 )
-            except (ValidationError, stripe.error.StripeError):
+            except (ValidationError, stripe.StripeError):
                 logger.exception(
                     "Failed to create Stripe checkout session for tier upgrade"
                 )

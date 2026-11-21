@@ -52,7 +52,7 @@ def stripe_business_webhook_view(request):
     except ValueError as exc:
         logger.error("Invalid payload in Stripe webhook: %s", exc)
         return HttpResponseBadRequest("Invalid payload")
-    except stripe.error.SignatureVerificationError as exc:
+    except stripe.SignatureVerificationError as exc:
         logger.error("Invalid signature in Stripe webhook: %s", exc)
         return HttpResponseBadRequest("Invalid signature")
 

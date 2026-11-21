@@ -29,6 +29,7 @@ from .notifications import (
 )
 from .platform_fee_ledger import organizer_consolidated_billing_enabled
 from .services import get_collection_retry_days, invalidate_entitlement_cache
+from .stripe_objects import stripe_object_to_dict
 
 logger = logging.getLogger(__name__)
 
@@ -188,7 +189,7 @@ def payment_intent_value(payment_intent, key, default=None):
 
 def payment_intent_metadata(payment_intent) -> dict:
     metadata = payment_intent_value(payment_intent, "metadata", {})
-    return dict(metadata) if metadata else {}
+    return dict(stripe_object_to_dict(metadata)) if metadata else {}
 
 
 def stripe_reference(value):
@@ -752,7 +753,7 @@ def collect_business_invoice(invoice_or_id) -> BusinessInvoice:
                     },
                     idempotency_key=idempotency_key,
                 )
-        except (stripe.error.APIConnectionError, TimeoutError) as exc:
+        except (stripe.APIConnectionError, TimeoutError) as exc:
             logger.warning(
                 "Stripe collection needs reconciliation for Business invoice %s: %s",
                 invoice.invoice_number,
@@ -761,7 +762,7 @@ def collect_business_invoice(invoice_or_id) -> BusinessInvoice:
             return mark_collection_reconciliation(
                 invoice, CollectionFailureCode.STRIPE_CONNECTION_ERROR
             )
-        except stripe.error.CardError as exc:
+        except stripe.CardError as exc:
             intent = payment_intent_from_error(exc) or intent
             force_requires_action = (
                 collection_error_details(exc, intent).get("code")
@@ -773,7 +774,7 @@ def collect_business_invoice(invoice_or_id) -> BusinessInvoice:
                 error=exc,
                 force_requires_action=force_requires_action,
             )
-        except stripe.error.StripeError as exc:
+        except stripe.StripeError as exc:
             failure_code = organizer_actionable_stripe_failure(exc)
             if failure_code:
                 logger.warning(
@@ -922,7 +923,7 @@ def collect_ready_business_invoices(invoice_ids=None) -> dict:
     for invoice_id in invoice_ids_to_collect:
         try:
             invoice = collect_business_invoice(invoice_id)
-        except (DatabaseError, InvoiceCollectionError, stripe.error.StripeError) as exc:
+        except (DatabaseError, InvoiceCollectionError, stripe.StripeError) as exc:
             logger.warning(
                 "Business invoice %s collection failed; continuing with remaining invoices: %s",
                 invoice_id,
