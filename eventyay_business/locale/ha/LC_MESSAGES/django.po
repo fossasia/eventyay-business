@@ -1,0 +1,4642 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-10-20 10:54+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: ha\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: eventyay_business/apps.py
+msgid "Eventyay Business"
+msgstr ""
+
+#: eventyay_business/apps.py
+msgid "Eventyay plugin for tiers, add-ons, and billing restrictions"
+msgstr ""
+
+#: eventyay_business/capabilities.py
+msgid "YouTube Streaming"
+msgstr ""
+
+#: eventyay_business/capabilities.py
+msgid "Stream your events live on YouTube to reach a wider audience"
+msgstr ""
+
+#: eventyay_business/capabilities.py
+msgid "Jitsi Video Rooms"
+msgstr ""
+
+#: eventyay_business/capabilities.py
+msgid ""
+"Host live video sessions and Q&As directly inside your event using Jitsi"
+msgstr ""
+
+#: eventyay_business/capabilities.py
+msgid "Simultaneous Video Rooms"
+msgstr ""
+
+#: eventyay_business/capabilities.py
+msgid ""
+"How many Jitsi video rooms can be running at the same time for your event"
+msgstr ""
+
+#: eventyay_business/capabilities.py
+msgid "Spatial Networking Lounge"
+msgstr ""
+
+#: eventyay_business/capabilities.py
+msgid ""
+"Give attendees an interactive spatial space to network and mingle between "
+"sessions"
+msgstr ""
+
+#: eventyay_business/capabilities.py
+msgid "Monthly Bulk Emails"
+msgstr ""
+
+#: eventyay_business/capabilities.py
+msgid "Number of announcement emails you can send to your attendees each month"
+msgstr ""
+
+#: eventyay_business/capabilities.py
+msgid "Team Admin Seats"
+msgstr ""
+
+#: eventyay_business/capabilities.py
+msgid ""
+"Maximum number of team members who can be granted full administrator access"
+msgstr ""
+
+#: eventyay_business/capabilities.py
+msgid "API Read Access"
+msgstr ""
+
+#: eventyay_business/capabilities.py
+msgid ""
+"Allows your integrations to read event, order, and attendee data via the "
+"REST API"
+msgstr ""
+
+#: eventyay_business/capabilities.py
+msgid "API Write Access"
+msgstr ""
+
+#: eventyay_business/capabilities.py
+msgid "Allows your integrations to create and update data via the REST API"
+msgstr ""
+
+#: eventyay_business/capabilities.py
+msgid "Webhook Delivery"
+msgstr ""
+
+#: eventyay_business/capabilities.py
+msgid ""
+"Receive real-time HTTP notifications when orders, tickets, or attendee "
+"records change"
+msgstr ""
+
+#: eventyay_business/capabilities.py
+msgid "Platform Fee"
+msgstr ""
+
+#: eventyay_business/capabilities.py
+msgid "Percentage fee applied by the platform on each paid ticket transaction"
+msgstr ""
+
+#: eventyay_business/capabilities.py
+msgid "Free Ticket Allowance"
+msgstr ""
+
+#: eventyay_business/capabilities.py
+msgid ""
+"Number of free registrations included per event before any overage charges "
+"apply"
+msgstr ""
+
+#: eventyay_business/capabilities.py
+msgid "Free Ticket Overage Price"
+msgstr ""
+
+#: eventyay_business/capabilities.py
+msgid ""
+"Price charged per free registration once your included allowance is exceeded"
+msgstr ""
+
+#: eventyay_business/capabilities.py
+msgid "Priority Support"
+msgstr ""
+
+#: eventyay_business/capabilities.py
+msgid ""
+"Access to a dedicated support queue with faster response times and SLA "
+"guarantees"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Grace period (days)"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid ""
+"Override the grace period duration in days for subscriptions on this tier "
+"version. Leave empty to use global default."
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Custom / Other"
+msgstr ""
+
+#: eventyay_business/forms.py
+#: eventyay_business/templates/eventyay_business/tiers/form.html
+msgid "Value / Allowance"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Unit (e.g. rooms, %)"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Value must be a valid whole number (integer)."
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Value must be a valid number or decimal."
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Value must be a boolean (e.g. true, false, included, disabled)."
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Please enter a valid 3-letter currency code (e.g. USD, EUR)."
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid ""
+"Override the grace period duration in days for this subscription. Leave "
+"empty to use tier version or global default."
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "This organizer already has an active or pending subscription."
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Update all existing active assignments"
+msgstr ""
+
+#: eventyay_business/forms.py
+#, python-format
+msgid ""
+"If checked, %(count)d active assignment(s) will be updated to match the new "
+"capability, allowance, and price immediately. If unchecked, existing "
+"assignments remain grandfathered."
+msgstr ""
+
+#: eventyay_business/forms.py
+#, python-format
+msgid "Unknown capability: %(name)s"
+msgstr ""
+
+#: eventyay_business/forms.py eventyay_business/models.py
+msgid "Plans"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Organisers can enter the voucher when switching to one of these plans."
+msgstr ""
+
+#: eventyay_business/forms.py eventyay_business/models.py
+#: eventyay_business/signals.py
+#: eventyay_business/templates/eventyay_business/addons/assignments/event_list.html
+#: eventyay_business/templates/eventyay_business/addons/assignments/organizer_list.html
+#: eventyay_business/templates/eventyay_business/addons/list.html
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+msgid "Add-ons"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Organisers can enter the voucher when buying one of these add-ons."
+msgstr ""
+
+#: eventyay_business/forms.py eventyay_business/models.py
+msgid "Discount duration"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid ""
+"How long a recurring plan or add-on stays discounted after the voucher is "
+"redeemed. One-time add-ons are discounted once."
+msgstr ""
+
+#: eventyay_business/forms.py eventyay_business/models.py
+msgid "Number of billing periods"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Used when the discount lasts a set number of billing periods."
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Enter how many billing periods the discount lasts."
+msgstr ""
+
+#: eventyay_business/forms.py eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/addons/assignments/event_list.html
+#: eventyay_business/templates/eventyay_business/addons/assignments/organizer_list.html
+#: eventyay_business/templates/eventyay_business/invoices/admin_detail.html
+#: eventyay_business/templates/eventyay_business/invoices/organizer_detail.html
+msgid "Quantity"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Number of units to activate."
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Target Event"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Select which event this add-on applies to."
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Voucher code"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "If you have a voucher for this add-on, enter it here."
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "This add-on is currently unavailable for purchase."
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Please select an event for this add-on."
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Invalid event selected."
+msgstr ""
+
+#: eventyay_business/forms.py
+#, python-format
+msgid "This add-on capability is already active for %(event)s."
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "This add-on capability is already active for your organisation."
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "This add-on is currently unavailable for this event."
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Publishable key (Live)"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Live publishable key for organizer billing and platform fees."
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Secret key (Live)"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Live secret key for organizer billing and platform fees."
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Publishable key (Test)"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Test publishable key for organizer billing and platform fees."
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Secret key (Test)"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Test secret key for organizer billing and platform fees."
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Webhook secret key"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid ""
+"Configure this endpoint in your Stripe dashboard to receive billing events."
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Billing validation"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid ""
+"Billing validation lets you require organizers to set up a billing method "
+"before they can create events. When this option is enabled, no new event can "
+"be created until a valid billing method has been added."
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Business subscription grace period (days)"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid ""
+"Number of days past-due subscriptions remain active before being expired."
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Invoice collection retry days"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid ""
+"Comma-separated days after a failed charge to retry, for example 1, 3, 5. "
+"Use up to 10 ascending values between 1 and 365."
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Grace-period reminder days"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid ""
+"Comma-separated days before paid access expires when reminders are sent."
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Renewal reminder lead time (days)"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Billing notification sender"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid ""
+"Optional sender address for Business billing notifications. Leave empty to "
+"use the system default."
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Billing notification reply-to"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Optional address that receives organizer replies."
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Billing support contact"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Support address displayed in billing notification templates."
+msgstr ""
+
+#: eventyay_business/forms.py
+#: eventyay_business/templates/eventyay_business/admin/business_settings.html
+msgid "Organizer Billing"
+msgstr ""
+
+#: eventyay_business/forms.py
+#: eventyay_business/templates/eventyay_business/admin/business_settings.html
+msgid "Billing Validation"
+msgstr ""
+
+#: eventyay_business/forms.py
+#: eventyay_business/templates/eventyay_business/admin/business_settings.html
+msgid "Email Notifications"
+msgstr ""
+
+#: eventyay_business/forms.py eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/addons/assignments/event_list.html
+#: eventyay_business/templates/eventyay_business/addons/assignments/organizer_list.html
+#: eventyay_business/templates/eventyay_business/addons/list.html
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+#: eventyay_business/templates/eventyay_business/billing/admin_current.html
+#: eventyay_business/templates/eventyay_business/billing/fee_table.html
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_list.html
+#: eventyay_business/templates/eventyay_business/billing/rollout_monitor.html
+#: eventyay_business/templates/eventyay_business/invoices/admin_detail.html
+#: eventyay_business/templates/eventyay_business/invoices/admin_list.html
+#: eventyay_business/templates/eventyay_business/notifications/admin_list.html
+#: eventyay_business/templates/eventyay_business/subscriptions/list.html
+msgid "Organizer"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Notification type"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Test recipient"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Language"
+msgstr ""
+
+#: eventyay_business/forms.py eventyay_business/models.py
+msgid "Subject"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Message"
+msgstr ""
+
+#: eventyay_business/forms.py
+#, python-brace-format
+msgid "Use the placeholder menu to insert values such as {organizer_name}."
+msgstr ""
+
+#: eventyay_business/forms.py
+#, python-format
+msgid "Invalid placeholder syntax: %(error)s"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "The subject must be a single line."
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Select only supported languages."
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Issuer legal name"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Issuer address"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Issuer tax registration"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Support email"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Payment instructions"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Due-date text"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Invoice footer"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Invoice terms"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Invoice logo"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid ""
+"Use a wide or square logo with a transparent or white background. The "
+"invoice keeps its aspect ratio within a 48 × 22 mm area."
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Section order"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid ""
+"Enter each section key exactly once, separated by commas: plans, addons, "
+"ticket_fees, adjustments, taxes."
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Plans section label"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Add-ons section label"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Ticket fees section label"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Adjustments section label"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Taxes section label"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Show zero-value sections"
+msgstr ""
+
+#: eventyay_business/forms.py
+msgid "Use every supported section key exactly once."
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/tiers/detail.html
+#: eventyay_business/templates/eventyay_business/tiers/list.html
+#: eventyay_business/templates/eventyay_business/tiers/version_detail.html
+msgid "Draft"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/tiers/detail.html
+#: eventyay_business/templates/eventyay_business/tiers/list.html
+#: eventyay_business/templates/eventyay_business/tiers/version_detail.html
+msgid "Published"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/tiers/detail.html
+#: eventyay_business/templates/eventyay_business/tiers/list.html
+msgid "Archived"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/tiers/detail.html
+msgid "Slug"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/addons/list.html
+#: eventyay_business/templates/eventyay_business/tiers/list.html
+msgid "Name"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_detail.html
+#: eventyay_business/templates/eventyay_business/invoices/admin_detail.html
+#: eventyay_business/templates/eventyay_business/invoices/organizer_detail.html
+#: eventyay_business/templates/eventyay_business/tiers/detail.html
+msgid "Description"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/addons/assignments/event_list.html
+#: eventyay_business/templates/eventyay_business/addons/assignments/organizer_list.html
+#: eventyay_business/templates/eventyay_business/addons/list.html
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_detail.html
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_list.html
+#: eventyay_business/templates/eventyay_business/event/addons.html
+#: eventyay_business/templates/eventyay_business/invoices/admin_detail.html
+#: eventyay_business/templates/eventyay_business/invoices/admin_list.html
+#: eventyay_business/templates/eventyay_business/invoices/organizer_detail.html
+#: eventyay_business/templates/eventyay_business/invoices/organizer_list.html
+#: eventyay_business/templates/eventyay_business/notifications/admin_list.html
+#: eventyay_business/templates/eventyay_business/subscriptions/list.html
+#: eventyay_business/templates/eventyay_business/tiers/list.html
+#: eventyay_business/templates/eventyay_business/tiers/version_detail.html
+msgid "Status"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Is public"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Display order"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Stripe product ID"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Created at"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Updated at"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Tier"
+msgstr ""
+
+#: eventyay_business/models.py eventyay_business/signals.py
+#: eventyay_business/templates/eventyay_business/tiers/list.html
+msgid "Tiers"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/tiers/version_detail.html
+msgid "Version"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Effective from"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Effective until"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Published at"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Configuration snapshot"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/tiers/version_detail.html
+msgid "Created by"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Tier version"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Tier versions"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Monthly"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Annual"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Billing interval"
+msgstr ""
+
+#: eventyay_business/models.py eventyay_business/notifications.py
+#: eventyay_business/templates/eventyay_business/billing/admin_current.html
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_list.html
+#: eventyay_business/templates/eventyay_business/fees/list.html
+#: eventyay_business/templates/eventyay_business/tiers/form.html
+msgid "Currency"
+msgstr ""
+
+#: eventyay_business/models.py eventyay_business/notifications.py
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_detail.html
+#: eventyay_business/templates/eventyay_business/invoices/admin_list.html
+#: eventyay_business/templates/eventyay_business/invoices/organizer_list.html
+#: eventyay_business/templates/eventyay_business/tiers/detail.html
+#: eventyay_business/templates/eventyay_business/tiers/form.html
+#: eventyay_business/templates/eventyay_business/tiers/version_detail.html
+msgid "Amount"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Stripe price ID"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/addons/assignments/event_list.html
+#: eventyay_business/templates/eventyay_business/addons/assignments/organizer_list.html
+#: eventyay_business/templates/eventyay_business/addons/list.html
+#: eventyay_business/templates/eventyay_business/event/addons.html
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+#: eventyay_business/templates/eventyay_business/tiers/detail.html
+#: eventyay_business/templates/eventyay_business/tiers/form.html
+#: eventyay_business/templates/eventyay_business/tiers/version_detail.html
+msgid "Active"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Tier price"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Tier prices"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+#: eventyay_business/templates/eventyay_business/tiers/detail.html
+#: eventyay_business/templates/eventyay_business/tiers/version_detail.html
+msgid "Capability"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/tiers/detail.html
+#: eventyay_business/templates/eventyay_business/tiers/version_detail.html
+msgid "Value"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/tiers/form.html
+msgid "Unit"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Overage allowed"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Overage price"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Overage currency"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Overage block size"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+#: eventyay_business/templates/eventyay_business/organizer/plan_upgrade.html
+msgid "Included"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/organizer/plan_upgrade.html
+msgid "Not included"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "0% (No platform fee)"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Free (No overage fee)"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Tier entitlement"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Tier entitlements"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Pending"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Past due"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/addons/assignments/event_list.html
+#: eventyay_business/templates/eventyay_business/addons/assignments/organizer_list.html
+msgid "Canceled"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/addons/assignments/event_list.html
+#: eventyay_business/templates/eventyay_business/addons/assignments/organizer_list.html
+#: eventyay_business/templates/eventyay_business/event/addons.html
+msgid "Expired"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/addons/assignments/event_list.html
+#: eventyay_business/templates/eventyay_business/addons/assignments/organizer_list.html
+#: eventyay_business/templates/eventyay_business/subscriptions/list.html
+msgid "Starts at"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/addons/assignments/event_list.html
+#: eventyay_business/templates/eventyay_business/addons/assignments/organizer_list.html
+#: eventyay_business/templates/eventyay_business/subscriptions/list.html
+msgid "Ends at"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Cancel at"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Stripe customer ID"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Stripe subscription ID"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Pending tier version"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Pending billing interval"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Pending change at"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Past due since"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Subscription"
+msgstr ""
+
+#: eventyay_business/models.py eventyay_business/signals.py
+#: eventyay_business/templates/eventyay_business/subscriptions/list.html
+msgid "Subscriptions"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/addons/assignments/event_list.html
+#: eventyay_business/templates/eventyay_business/addons/list.html
+#: eventyay_business/templates/eventyay_business/billing/admin_current.html
+#: eventyay_business/templates/eventyay_business/billing/fee_table.html
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+#: eventyay_business/templates/eventyay_business/event/addon_purchase.html
+#: eventyay_business/templates/eventyay_business/invoices/admin_detail.html
+#: eventyay_business/templates/eventyay_business/invoices/organizer_detail.html
+#: eventyay_business/templates/eventyay_business/organizer/addon_purchase.html
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Event"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Occurred at"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Source type"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Source ID"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Idempotency key"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Metadata"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Business invoice"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Usage record"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Usage records"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "One-time"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Recurring"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Past Due"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Assignment scope"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Pricing mode"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/event/addons.html
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Price"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Entitlement value"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Included quantity / allowance"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/addons/list.html
+#: eventyay_business/templates/eventyay_business/tiers/detail.html
+#: eventyay_business/templates/eventyay_business/tiers/list.html
+msgid "Public"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Add-on definition"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Add-on definitions"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/addons/assignments/event_list.html
+#: eventyay_business/templates/eventyay_business/addons/assignments/organizer_list.html
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+#: eventyay_business/templates/eventyay_business/event/addons.html
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Add-on"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Capability snapshot"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Entitlement value snapshot"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Price snapshot"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Currency snapshot"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Canceled at"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Stripe payment intent ID"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Organizer add-on"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Organizer add-ons"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Event add-on"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Event add-ons"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/billing/fee_table.html
+msgid "Open"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/billing/fee_table.html
+msgid "Paid"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Uncollectible"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Not started"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Processing"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Action required"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Failed"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Succeeded"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Invoice issued"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Collection problem"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Collection succeeded"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+msgid "Payment method missing"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+msgid "Authorization missing"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Payment declined"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Authentication required"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Payment retry scheduled"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Grace period started"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Grace period reminder"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Access expired for nonpayment"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Payment method updated"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Access restored"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Support intervention required"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Platform billing alert"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Plan activated"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Plan change scheduled"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Plan change canceled"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Plan changed"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Plan cancellation scheduled"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Plan cancellation canceled"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Plan canceled"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Add-on activated"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Add-on cancellation scheduled"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Add-on canceled"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Add-on expired"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Renewal approaching"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Credit or adjustment issued"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Administrator test"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Sending"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Sent"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Invoice billing snapshot"
+msgstr ""
+
+#: eventyay_business/models.py eventyay_business/signals.py
+msgid "Organizer billing contact"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Organizer administrator"
+msgstr ""
+
+#: eventyay_business/models.py eventyay_business/signals.py
+msgid "Platform administrator"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Explicit test recipient"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Running"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Completed"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Ready for review"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+msgid "Blocked"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Calculation error"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Subscription plan"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Add-on package"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Platform ticket transaction fee"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Free ticket registration overage"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Manual adjustment"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Credit"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/invoices/admin_detail.html
+#: eventyay_business/templates/eventyay_business/invoices/organizer_detail.html
+msgid "Tax"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Other"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Charge"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Refund"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Cancellation"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Correction"
+msgstr ""
+
+#: eventyay_business/models.py eventyay_business/notifications.py
+msgid "Invoice number"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Billing period start"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Billing period end"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/billing/rollout_monitor.html
+msgid "Payment state"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/invoices/admin_detail.html
+#: eventyay_business/templates/eventyay_business/invoices/organizer_detail.html
+msgid "Issue date"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/invoices/admin_detail.html
+#: eventyay_business/templates/eventyay_business/invoices/organizer_detail.html
+msgid "Due date"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Finalized at"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Finalized by"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Paid at"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Billing address snapshot"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Invoice presentation snapshot"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Collection attempt count"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Last collection attempt at"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Collection metadata"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Corrects invoice"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/invoices/admin_detail.html
+#: eventyay_business/templates/eventyay_business/invoices/organizer_detail.html
+msgid "Subtotal"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/invoices/admin_detail.html
+#: eventyay_business/templates/eventyay_business/invoices/organizer_detail.html
+msgid "Total"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Stripe invoice ID"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Business invoices"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Finalized invoice financial and customer data cannot be changed."
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Logical event key"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/notifications/admin_list.html
+msgid "Event type"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Related object type"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Related object ID"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/notifications/admin_list.html
+msgid "Recipient"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Recipient source"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Locale"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Template name"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Context"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Attempt count"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Last attempt at"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Sent at"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Last error"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/notifications/admin_list.html
+msgid "Billing notification delivery"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Billing notification deliveries"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/invoices/admin_detail.html
+#: eventyay_business/templates/eventyay_business/invoices/organizer_detail.html
+msgid "Summary"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Started at"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Completed at"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Reconciliation run"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_detail.html
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_list.html
+msgid "Expected total"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Line count"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Blocking finding count"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_detail.html
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_list.html
+msgid "Findings"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Snapshot"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_detail.html
+msgid "Fingerprint"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Accepted fingerprint"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Accepted at"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Accepted by"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/invoices/admin_detail.html
+#: eventyay_business/templates/eventyay_business/invoices/organizer_detail.html
+#: eventyay_business/templates/eventyay_business/notifications/admin_list.html
+msgid "Invoice"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Line type"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Unit price"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Service period start"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Service period end"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Usage reference"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Calculation metadata"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Business invoice line"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Business invoice lines"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Finalized invoice lines cannot be changed."
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Finalized invoice lines cannot be deleted."
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Authorized Stripe customer ID"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Authorized at"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Authorized by"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Revoked at"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Terms version"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Billing collection authorization"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Billing collection authorizations"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Order"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/invoices/admin_detail.html
+#: eventyay_business/templates/eventyay_business/invoices/organizer_detail.html
+msgid "Payment"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Related ledger entry"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Entry type"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Source key"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_detail.html
+msgid "Billing period"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Eligible fee base"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Fee percentage"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Order fee maximum"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Calculated fee"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Collected at checkout"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Accrued amount"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Policy source"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Is override"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Platform fee ledger entry"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Platform fee ledger entries"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Platform fee ledger financial fields cannot be changed."
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/fees/list.html
+msgid "Country"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Service fee percentage"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Percentage fee applied to tickets for this country and currency."
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Maximum fee"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid ""
+"Maximum fee limit in the specified currency. 0 indicates no maximum fee "
+"limit (unlimited)."
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Country fee setting"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Country fee settings"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Service fee percentage must be between 0 and 100."
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Maximum fee cannot be negative."
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "First billing period only"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "A set number of billing periods"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Every billing period while the voucher is valid"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Voucher"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Voucher plan and add-on targets"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Reserved for checkout"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Redeemed"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Released"
+msgstr ""
+
+#: eventyay_business/models.py
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+msgid "Plan"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Billing periods discounted"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Empty when every billing period is discounted."
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Billing periods already discounted"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Stripe checkout session"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Voucher redemption"
+msgstr ""
+
+#: eventyay_business/models.py
+msgid "Voucher redemptions"
+msgstr ""
+
+#: eventyay_business/notifications.py
+msgid "Organizer name"
+msgstr ""
+
+#: eventyay_business/notifications.py
+msgid "Plan or add-on name"
+msgstr ""
+
+#: eventyay_business/notifications.py
+msgid "Event name"
+msgstr ""
+
+#: eventyay_business/notifications.py
+msgid "Invoice issue date"
+msgstr ""
+
+#: eventyay_business/notifications.py
+msgid "Effective or renewal date"
+msgstr ""
+
+#: eventyay_business/notifications.py
+msgid "Payment or cancellation deadline"
+msgstr ""
+
+#: eventyay_business/notifications.py
+msgid "Next payment retry date"
+msgstr ""
+
+#: eventyay_business/notifications.py
+msgid "Days remaining"
+msgstr ""
+
+#: eventyay_business/notifications.py
+msgid "Current billing state"
+msgstr ""
+
+#: eventyay_business/notifications.py
+msgid "Platform failure code"
+msgstr ""
+
+#: eventyay_business/notifications.py
+msgid "Relevant Eventyay page"
+msgstr ""
+
+#: eventyay_business/notifications.py
+msgid "Configured billing support address"
+msgstr ""
+
+#: eventyay_business/notifications.py
+#, python-brace-format
+msgid "Eventyay invoice {invoice_number}"
+msgstr ""
+
+#: eventyay_business/notifications.py
+#, python-brace-format
+msgid "Action required for Eventyay invoice {invoice_number}"
+msgstr ""
+
+#: eventyay_business/notifications.py
+#, python-brace-format
+msgid "Eventyay invoice {invoice_number} paid"
+msgstr ""
+
+#: eventyay_business/notifications.py
+#, python-brace-format
+msgid "Payment method needed for Eventyay invoice {invoice_number}"
+msgstr ""
+
+#: eventyay_business/notifications.py
+#, python-brace-format
+msgid "Automatic payment is off for invoice {invoice_number}"
+msgstr ""
+
+#: eventyay_business/notifications.py
+#, python-brace-format
+msgid "Payment declined for Eventyay invoice {invoice_number}"
+msgstr ""
+
+#: eventyay_business/notifications.py
+#, python-brace-format
+msgid "Confirm payment for Eventyay invoice {invoice_number}"
+msgstr ""
+
+#: eventyay_business/notifications.py
+#, python-brace-format
+msgid "Payment retry scheduled for invoice {invoice_number}"
+msgstr ""
+
+#: eventyay_business/notifications.py
+msgid "Eventyay billing grace period started"
+msgstr ""
+
+#: eventyay_business/notifications.py
+#, python-brace-format
+msgid "{days_remaining} days remain in your Eventyay billing grace period"
+msgstr ""
+
+#: eventyay_business/notifications.py
+msgid "Eventyay paid access expired for nonpayment"
+msgstr ""
+
+#: eventyay_business/notifications.py
+msgid "Eventyay payment method updated"
+msgstr ""
+
+#: eventyay_business/notifications.py
+msgid "Eventyay paid access restored"
+msgstr ""
+
+#: eventyay_business/notifications.py
+#, python-brace-format
+msgid "Support is needed for invoice {invoice_number}"
+msgstr ""
+
+#: eventyay_business/notifications.py
+#, python-brace-format
+msgid "Eventyay platform billing alert for {organizer_name}"
+msgstr ""
+
+#: eventyay_business/notifications.py
+#, python-brace-format
+msgid "Your Eventyay {object_name} plan is active"
+msgstr ""
+
+#: eventyay_business/notifications.py
+msgid "Your Eventyay plan change is scheduled"
+msgstr ""
+
+#: eventyay_business/notifications.py
+msgid "Your scheduled Eventyay plan change was canceled"
+msgstr ""
+
+#: eventyay_business/notifications.py
+#, python-brace-format
+msgid "Your Eventyay plan changed to {object_name}"
+msgstr ""
+
+#: eventyay_business/notifications.py
+msgid "Your Eventyay plan cancellation is scheduled"
+msgstr ""
+
+#: eventyay_business/notifications.py
+msgid "Your Eventyay plan cancellation was canceled"
+msgstr ""
+
+#: eventyay_business/notifications.py
+msgid "Your Eventyay paid plan ended"
+msgstr ""
+
+#: eventyay_business/notifications.py
+#, python-brace-format
+msgid "Eventyay add-on {object_name} is active"
+msgstr ""
+
+#: eventyay_business/notifications.py
+#, python-brace-format
+msgid "Eventyay add-on {object_name} cancellation is scheduled"
+msgstr ""
+
+#: eventyay_business/notifications.py
+#, python-brace-format
+msgid "Eventyay add-on {object_name} ended"
+msgstr ""
+
+#: eventyay_business/notifications.py
+#, python-brace-format
+msgid "Eventyay add-on {object_name} expired"
+msgstr ""
+
+#: eventyay_business/notifications.py
+#, python-brace-format
+msgid "Eventyay {object_name} renews soon"
+msgstr ""
+
+#: eventyay_business/notifications.py
+#, python-brace-format
+msgid "Credit or adjustment issued for invoice {invoice_number}"
+msgstr ""
+
+#: eventyay_business/notifications.py
+msgid "Eventyay Business notification test"
+msgstr ""
+
+#: eventyay_business/signals.py
+msgid "Business"
+msgstr ""
+
+#: eventyay_business/signals.py
+#: eventyay_business/templates/eventyay_business/admin/business_settings.html
+msgid "Business Settings"
+msgstr ""
+
+#: eventyay_business/signals.py
+#: eventyay_business/templates/eventyay_business/billing/admin_current.html
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+#: eventyay_business/templates/eventyay_business/invoices/organizer_list.html
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Current charges"
+msgstr ""
+
+#: eventyay_business/signals.py
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+#: eventyay_business/templates/eventyay_business/invoices/admin_list.html
+#: eventyay_business/templates/eventyay_business/invoices/organizer_list.html
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Invoices"
+msgstr ""
+
+#: eventyay_business/signals.py
+msgid "Notification delivery"
+msgstr ""
+
+#: eventyay_business/signals.py
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_list.html
+msgid "Billing reconciliation"
+msgstr ""
+
+#: eventyay_business/signals.py
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+msgid "Billing activation"
+msgstr ""
+
+#: eventyay_business/signals.py
+msgid "Plan & Billing"
+msgstr ""
+
+#: eventyay_business/signals.py
+#: eventyay_business/templates/eventyay_business/event/addons.html
+msgid "Add-ons & Modules"
+msgstr ""
+
+#: eventyay_business/signals.py
+#, python-format
+msgid "Plans: %(names)s"
+msgstr ""
+
+#: eventyay_business/signals.py
+#, python-format
+msgid "Add-ons: %(names)s"
+msgstr ""
+
+#: eventyay_business/signals.py
+#, python-format
+msgid "Discount lasts %(count)s billing periods"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/addons/assignments/event_list.html
+msgid "Event Add-on Assignments"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/addons/assignments/event_list.html
+#: eventyay_business/templates/eventyay_business/addons/assignments/form.html
+msgid "Assign Add-on to Event"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/addons/assignments/event_list.html
+msgid "No event add-on assignments found."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/addons/assignments/event_list.html
+#: eventyay_business/templates/eventyay_business/addons/assignments/organizer_list.html
+msgid "Scheduled / Inactive"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/addons/assignments/event_list.html
+#: eventyay_business/templates/eventyay_business/addons/assignments/organizer_list.html
+msgid "Edit"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/addons/assignments/event_list.html
+#: eventyay_business/templates/eventyay_business/addons/assignments/organizer_list.html
+msgid "Revoke assignment"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/addons/assignments/form.html
+msgid "Edit event add-on assignment"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/addons/assignments/form.html
+msgid "Edit organizer add-on assignment"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/addons/assignments/form.html
+msgid "Assign add-on to event"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/addons/assignments/form.html
+msgid "Assign add-on to organizer"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/addons/assignments/form.html
+msgid "Edit Event Add-on Assignment"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/addons/assignments/form.html
+msgid "Edit Organizer Add-on Assignment"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/addons/assignments/form.html
+#: eventyay_business/templates/eventyay_business/addons/assignments/organizer_list.html
+msgid "Assign Add-on to Organizer"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/addons/assignments/form.html
+#: eventyay_business/templates/eventyay_business/addons/form.html
+#: eventyay_business/templates/eventyay_business/admin/business_settings.html
+#: eventyay_business/templates/eventyay_business/fees/form.html
+#: eventyay_business/templates/eventyay_business/subscriptions/form.html
+#: eventyay_business/templates/eventyay_business/tiers/form.html
+msgid "Save"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/addons/assignments/form.html
+#: eventyay_business/templates/eventyay_business/addons/form.html
+#: eventyay_business/templates/eventyay_business/event/addon_purchase.html
+#: eventyay_business/templates/eventyay_business/event/addons.html
+#: eventyay_business/templates/eventyay_business/fees/delete.html
+#: eventyay_business/templates/eventyay_business/fees/form.html
+#: eventyay_business/templates/eventyay_business/organizer/addon_purchase.html
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+#: eventyay_business/templates/eventyay_business/subscriptions/form.html
+#: eventyay_business/templates/eventyay_business/tiers/form.html
+msgid "Cancel"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/addons/assignments/organizer_list.html
+msgid "Organizer Add-on Assignments"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/addons/assignments/organizer_list.html
+msgid "No organizer add-on assignments found."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/addons/form.html
+msgid "Edit add-on"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/addons/form.html
+msgid "Create add-on"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/addons/list.html
+msgid "Create Add-on"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/addons/list.html
+msgid "You haven't configured any add-ons yet."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/addons/list.html
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Scope"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/addons/list.html
+msgid "Pricing"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/addons/list.html
+msgid "Capability & Entitlement"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/addons/list.html
+msgid "Quantity / Allowance"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/addons/list.html
+msgid "Value:"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/addons/list.html
+msgid "Inactive"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/addons/list.html
+msgid "Deactivate"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/addons/list.html
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+msgid "Activate"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/addons/nav_tabs.html
+msgid "Definitions"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/addons/nav_tabs.html
+msgid "Organizer Assignments"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/addons/nav_tabs.html
+msgid "Event Assignments"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/admin/business_settings.html
+msgid "Stripe — Organizer Billing"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/admin/business_settings.html
+msgid ""
+"This configuration is used for organiser billing and platform fee collection."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/admin/business_settings.html
+msgid "Live Credentials"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/admin/business_settings.html
+msgid "Test Credentials"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/admin/business_settings.html
+msgid "Webhooks"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/admin/business_settings.html
+msgid "Enable"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/admin/business_settings.html
+msgid ""
+"Configure the sender and support identity used for organizer billing "
+"messages. Delivery history and test sends are available from the "
+"notification log."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/admin/business_settings.html
+#: eventyay_business/templates/eventyay_business/notifications/admin_list.html
+msgid "Send test notification"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/admin/business_settings.html
+msgid "Invoice presentation"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/admin/business_settings.html
+msgid ""
+"These values are copied into each invoice when it is finalized. Later "
+"changes affect new invoices and the preview, but never alter finalized "
+"invoices."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/admin/business_settings.html
+msgid "Issuer"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/admin/business_settings.html
+msgid "Wording"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/admin/business_settings.html
+msgid "Sections"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/admin/business_settings.html
+msgid "Preview saved settings"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+msgid "Review reconciliation"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+msgid "Monitor rollout"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+msgid "Consolidated billing activation"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+msgid ""
+"Activation records the organizer’s cutover time. Ticket payments completed "
+"after that time accrue fees in the Business ledger, and the monthly task "
+"generates and collects Eventyay invoices for that organizer."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+msgid "Before activation"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+msgid "Create the organizer’s canonical Stripe billing customer."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+msgid "Save a payment method for that customer."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+msgid ""
+"Have the organizer save a payment method and accept automatic payments in "
+"the same action."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+msgid ""
+"Cancel every legacy Stripe plan and add-on subscription so it cannot charge "
+"independently."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+msgid ""
+"Run reporting mode and explicitly accept the latest reconciliation result."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+msgid ""
+"Activation is intentionally one-way. If the payment method or authorization "
+"is later removed, invoice generation continues but automatic collection "
+"pauses until the billing setup is repaired."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+msgid "Activate selected ready organizers"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+msgid "Billing customer"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+msgid "Payment method"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+msgid "Authorization"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+msgid "Legacy subscriptions"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+msgid "Reconciliation"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_list.html
+#: eventyay_business/templates/eventyay_business/tiers/detail.html
+msgid "Actions"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+#, python-format
+msgid "Active since %(activated_at)s"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+msgid "Ready"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+msgid "Customer missing"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+msgid "Legacy subscriptions still active"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+msgid "Accepted reconciliation missing or stale"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+msgid "Missing"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+msgid "Authorized"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_detail.html
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_list.html
+msgid "Accepted"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+msgid "Review required"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+msgid "Not run"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+#, python-format
+msgid "Select %(organizer)s"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_activation.html
+msgid "No organizers found."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_current.html
+msgid "Export filtered CSV"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_current.html
+msgid ""
+"This is the ticket-fee ledger used by invoice generation. Open results "
+"include all unbilled charges through the selected month; invoiced and all "
+"results are limited to activity inside the selected month."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_current.html
+msgid "Billing setup incomplete:"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_current.html
+#, python-format
+msgid "One active organizer subscription has no Stripe billing customer."
+msgid_plural ""
+"%(count)s active organizer subscriptions have no Stripe billing customer."
+msgstr[0] ""
+msgstr[1] ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_current.html
+msgid "Review activation readiness"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_current.html
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_list.html
+msgid "Filters"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_current.html
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_list.html
+#: eventyay_business/templates/eventyay_business/notifications/admin_list.html
+msgid "All organizers"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_current.html
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_list.html
+msgid "Billing month"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_current.html
+msgid "All currencies"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_current.html
+msgid "Ledger state"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_current.html
+msgid "Open through month"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_current.html
+msgid "Invoiced in month"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_current.html
+msgid "All activity in month"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_current.html
+msgid "Event name or slug"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_current.html
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_list.html
+#: eventyay_business/templates/eventyay_business/invoices/admin_list.html
+#: eventyay_business/templates/eventyay_business/notifications/admin_list.html
+msgid "Reset"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_current.html
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_list.html
+msgid "Apply filters"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_current.html
+msgid "Matching ledger entries"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_current.html
+msgid "Net ticket fees"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_current.html
+msgid "Ticket fee ledger"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_current.html
+msgid "No ticket-fee ledger entries match these filters."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/admin_current.html
+msgid ""
+"Only post-cutover ticket payments create open ledger entries. Plans, add-ons "
+"and usage are shown on each organizer’s current-charges page."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/automatic_payment_cancel.html
+msgid "Choose what to stop"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/automatic_payment_cancel.html
+msgid "Turning off automatic payments changes payment collection only."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/automatic_payment_cancel.html
+msgid ""
+"Your plan and add-ons will remain active. Eventyay will continue issuing "
+"invoices, and all existing and future invoice balances remain due, but the "
+"saved payment method will not be charged automatically."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/automatic_payment_cancel.html
+msgid "Your active subscriptions"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/automatic_payment_cancel.html
+#, python-format
+msgid ""
+"\n"
+"                Plan: %(plan)s\n"
+"              "
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/automatic_payment_cancel.html
+msgid "Review or cancel plan"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/automatic_payment_cancel.html
+#, python-format
+msgid "Organization add-on: %(addon)s"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/automatic_payment_cancel.html
+msgid "Cancel this add-on"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/automatic_payment_cancel.html
+#, python-format
+msgid ""
+"\n"
+"                Event add-on: %(addon)s for %(event)s\n"
+"              "
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/automatic_payment_cancel.html
+msgid "Turn off automatic payments only"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/automatic_payment_cancel.html
+msgid "Keep automatic payments on"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/fee_table.html
+msgid "Order / payment"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/fee_table.html
+msgid "Eligible amount"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/fee_table.html
+msgid "Rate / cap"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/fee_table.html
+msgid "Fee"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/fee_table.html
+msgid "Refunds / credits"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/fee_table.html
+msgid "Net"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/fee_table.html
+msgid "State"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/fee_table.html
+msgid "Policy"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/fee_table.html
+msgid "Ledger source"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/fee_table.html
+msgid "No cap"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/fee_table.html
+msgid "Invoiced"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/fee_table.html
+msgid "Mixed"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/fee_table.html
+msgid "Override"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/fee_table.html
+msgid "No ticket fee calculations match this period."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+msgid "Estimated charges"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+#, python-format
+msgid ""
+"This estimate covers %(start)s to %(end)s. The invoice is expected after the "
+"period closes on %(issue)s and can change before finalization."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+msgid ""
+"Automatic payments are on. Eventyay will charge the saved payment method "
+"when each organizer invoice is finalized."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+msgid ""
+"Turning off automatic payments does not cancel your plan or add-ons, and all "
+"issued invoices remain due."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+msgid "Turn off automatic payments"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+msgid ""
+"Complete the organizer billing details to create the canonical Stripe "
+"billing customer."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+msgid "Save a payment method to enable automatic invoice payments."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+msgid "Save the payment method again to accept the automatic-payment terms."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+msgid "Open billing settings"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+msgid ""
+"I authorize Eventyay to charge this saved payment method for finalized "
+"organizer invoices, including off-session charges."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+msgid "Enable automatic payments"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+msgid "Estimated invoice totals"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+msgid "Ticket fees"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+msgid "Usage and overages"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+msgid "Tax estimate"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+msgid "Not yet calculated"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+msgid "Estimated total"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+msgid "No estimated charges are available for this billing period."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+msgid "Plan and add-ons"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+msgid "No billable plan price was found for this period."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_detail.html
+#: eventyay_business/templates/eventyay_business/invoices/admin_detail.html
+#: eventyay_business/templates/eventyay_business/invoices/organizer_detail.html
+#: eventyay_business/templates/eventyay_business/notifications/admin_list.html
+msgid "Type"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+msgid "Usage"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+#: eventyay_business/templates/eventyay_business/tiers/form.html
+msgid "Overage"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+msgid "Estimate"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+msgid "No metered usage has been recorded for this period."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/organizer_current.html
+msgid "Ticket fee breakdown"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_detail.html
+msgid "Reconciliation result"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_detail.html
+#, python-format
+msgid "Reconciliation: %(organizer)s (%(currency)s)"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_detail.html
+#, python-format
+msgid "Accepted by %(user)s on %(date)s"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_detail.html
+msgid "Not accepted"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_detail.html
+msgid "Expected invoice lines"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_detail.html
+#: eventyay_business/templates/eventyay_business/invoices/admin_detail.html
+#: eventyay_business/templates/eventyay_business/invoices/organizer_detail.html
+msgid "Service period"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_detail.html
+msgid "Source"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_detail.html
+msgid "No billable lines."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_detail.html
+#, python-format
+msgid ""
+"\n"
+"      Saved inputs: %(fees)s platform-fee entries and %(usage)s usage "
+"records.\n"
+"    "
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_detail.html
+msgid "Accept this reconciliation"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_detail.html
+msgid "Back to reconciliation"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_list.html
+msgid ""
+"Reporting mode calculates the consolidated invoice and records its inputs, "
+"but rolls back invoices, source claims, emails and collection. No money is "
+"moved."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_list.html
+msgid "Run reporting mode"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_list.html
+msgid "Closed billing month"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_list.html
+msgid "Run reconciliation"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_list.html
+#: eventyay_business/templates/eventyay_business/invoices/admin_list.html
+#: eventyay_business/templates/eventyay_business/notifications/admin_list.html
+msgid "All statuses"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_list.html
+msgid "Export latest run"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_list.html
+#: eventyay_business/templates/eventyay_business/invoices/admin_list.html
+#: eventyay_business/templates/eventyay_business/invoices/organizer_list.html
+msgid "Period"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_list.html
+#: eventyay_business/templates/eventyay_business/tiers/detail.html
+#: eventyay_business/templates/eventyay_business/tiers/list.html
+#: eventyay_business/templates/eventyay_business/tiers/version_detail.html
+msgid "Yes"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_list.html
+#: eventyay_business/templates/eventyay_business/tiers/detail.html
+#: eventyay_business/templates/eventyay_business/tiers/list.html
+#: eventyay_business/templates/eventyay_business/tiers/version_detail.html
+msgid "No"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_list.html
+msgid "Review"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/reconciliation_list.html
+msgid "No reconciliation results found."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/rollout_monitor.html
+msgid "Billing rollout monitor"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/rollout_monitor.html
+msgid ""
+"This read-only view follows activated organizers through their first "
+"consolidated invoice cycle. It does not retry collection or change billing "
+"state."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/rollout_monitor.html
+msgid "Cutover"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/rollout_monitor.html
+msgid "Latest invoice"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/rollout_monitor.html
+msgid "PaymentIntent"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/rollout_monitor.html
+#: eventyay_business/templates/eventyay_business/notifications/admin_list.html
+msgid "Attempts"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/rollout_monitor.html
+msgid "Access state"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/rollout_monitor.html
+msgid "Attention"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/rollout_monitor.html
+msgid "Awaiting first invoice"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/rollout_monitor.html
+msgid "Reconciliation required"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/rollout_monitor.html
+msgid "Retries exhausted"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/rollout_monitor.html
+msgid "No organizers have activated consolidated billing."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/billing/rollout_monitor.html
+msgid "Back to activation"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/admin_test.txt
+msgid "This is a test of Eventyay Business billing notifications."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/admin_test.txt
+msgid "No invoice, subscription, add-on or payment state was changed."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/admin_test.txt
+#, python-format
+msgid "Configured support contact: %(support_email)s"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/collection_problem.txt
+#, python-format
+msgid ""
+"Hello %(organizer)s,\n"
+"\n"
+"We could not automatically collect payment for invoice %(invoice)s."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/collection_problem.txt
+msgid ""
+"Review your billing settings and update the saved payment method if needed:"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/collection_problem.txt
+#: eventyay_business/templates/eventyay_business/email/collection_succeeded.txt
+#: eventyay_business/templates/eventyay_business/email/invoice_issued.txt
+#: eventyay_business/templates/eventyay_business/email/lifecycle.txt
+#, python-format
+msgid "Questions? Contact %(support_email)s."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/collection_succeeded.txt
+#, python-format
+msgid ""
+"Hello %(organizer)s,\n"
+"\n"
+"Payment for invoice %(invoice)s (%(amount)s %(currency)s) was collected "
+"successfully."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/collection_succeeded.txt
+msgid "The paid invoice is available in Eventyay:"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/invoice_issued.txt
+#, python-format
+msgid ""
+"Hello %(organizer)s,\n"
+"\n"
+"Invoice %(invoice)s for %(amount)s %(currency)s was issued on %(issue_date)s."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/invoice_issued.txt
+msgid "Review and download the invoice in Eventyay:"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/lifecycle.txt
+#, python-format
+msgid "Hello %(organizer)s,"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/lifecycle.txt
+#, python-format
+msgid ""
+"Eventyay could not collect invoice %(invoice)s because no usable payment "
+"method is saved. Your paid access remains available only until the deadline "
+"below. Add a payment method to keep the subscription and recurring add-ons "
+"active."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/lifecycle.txt
+#, python-format
+msgid ""
+"Automatic collection is disabled for invoice %(invoice)s. Your subscription "
+"remains active, but Eventyay cannot collect the amount until automatic "
+"payments are enabled or the payment details are saved again."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/lifecycle.txt
+#, python-format
+msgid ""
+"The saved payment method was declined for invoice %(invoice)s. Eventyay will "
+"retry according to the billing schedule unless a replacement payment method "
+"is required."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/lifecycle.txt
+#, python-format
+msgid ""
+"Invoice %(invoice)s requires payment authentication. Open Eventyay billing "
+"settings to confirm the payment or replace the payment method."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/lifecycle.txt
+#, python-format
+msgid ""
+"Another collection attempt for invoice %(invoice)s is scheduled for "
+"%(retry)s."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/lifecycle.txt
+#, python-format
+msgid ""
+"The billing grace period has started. Paid plan and recurring add-on access "
+"is scheduled to expire on %(deadline)s if the outstanding balance is not "
+"paid."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/lifecycle.txt
+#, python-format
+msgid ""
+"There are %(days)s days left in the billing grace period. Paid access is "
+"scheduled to expire on %(deadline)s if payment is not recovered."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/lifecycle.txt
+msgid ""
+"Paid plan or add-on access expired because the outstanding payment was not "
+"recovered before the grace deadline. This was a nonpayment expiry, not a "
+"voluntary cancellation."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/lifecycle.txt
+msgid ""
+"Your payment method was updated and Eventyay started retrying eligible "
+"outstanding invoices. No plan or add-on was canceled by this update."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/lifecycle.txt
+msgid ""
+"Late payment succeeded and Eventyay restored the paid plan and recurring add-"
+"on access associated with this organizer."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/lifecycle.txt
+#, python-format
+msgid ""
+"Automatic collection for invoice %(invoice)s is exhausted or cannot continue "
+"safely. Contact support to resolve the outstanding balance."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/lifecycle.txt
+#, python-format
+msgid "Your %(plan)s plan is active."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/lifecycle.txt
+#, python-format
+msgid ""
+"Your change to the %(plan)s plan is scheduled for %(date)s. Your current "
+"plan remains active until then."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/lifecycle.txt
+msgid ""
+"The scheduled plan change was canceled. Your current plan remains active."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/lifecycle.txt
+#, python-format
+msgid "Your plan changed to %(plan)s."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/lifecycle.txt
+#, python-format
+msgid ""
+"Your paid plan is scheduled to end on %(deadline)s and transition to "
+"%(plan)s. Paid features remain available until then."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/lifecycle.txt
+msgid ""
+"The scheduled plan cancellation was canceled. Your current paid plan remains "
+"active."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/lifecycle.txt
+msgid ""
+"Your paid plan ended following the cancellation you requested. This message "
+"does not refer to a nonpayment expiry."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/lifecycle.txt
+#, python-format
+msgid "The %(addon)s add-on is active for %(event)s."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/lifecycle.txt
+#, python-format
+msgid "The %(addon)s add-on is active."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/lifecycle.txt
+#, python-format
+msgid ""
+"The %(addon)s add-on is scheduled to end on %(deadline)s. Its features "
+"remain active until then."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/lifecycle.txt
+#, python-format
+msgid "The %(addon)s add-on ended following the requested cancellation."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/lifecycle.txt
+#, python-format
+msgid "Access provided by the %(addon)s add-on expired."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/lifecycle.txt
+#, python-format
+msgid "The %(name)s renewal is approaching on %(date)s."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/lifecycle.txt
+#, python-format
+msgid "A credit or adjustment was issued for invoice %(invoice)s."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/lifecycle.txt
+msgid "There is an update to your Eventyay Business billing account."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/lifecycle.txt
+#, python-format
+msgid "Amount: %(amount)s %(currency)s"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/lifecycle.txt
+#, python-format
+msgid "Current state: %(current_state)s"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/lifecycle.txt
+#, python-format
+msgid "Deadline: %(deadline)s"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/lifecycle.txt
+msgid "Review this in Eventyay:"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/platform_alert.txt
+#, python-format
+msgid ""
+"Eventyay could not reconcile billing for organizer %(organizer)s and invoice "
+"%(invoice)s because of a platform-side condition."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/platform_alert.txt
+#, python-format
+msgid "Failure code: %(code)s"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/email/platform_alert.txt
+msgid ""
+"This condition was not presented to the organizer as their fault. Review the "
+"platform Stripe configuration, service availability and invoice "
+"reconciliation state:"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addon_cancel.html
+#: eventyay_business/templates/eventyay_business/organizer/addon_cancel.html
+msgid "Cancel Add-on"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addon_cancel.html
+#: eventyay_business/templates/eventyay_business/organizer/addon_cancel.html
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Confirm Cancellation"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addon_cancel.html
+#, python-format
+msgid ""
+"\n"
+"                    Are you sure you want to cancel the add-on "
+"<strong>%(name)s</strong> for <strong>%(event)s</strong>?\n"
+"                "
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addon_cancel.html
+#: eventyay_business/templates/eventyay_business/organizer/addon_cancel.html
+msgid "Included capability:"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addon_cancel.html
+#: eventyay_business/templates/eventyay_business/organizer/addon_cancel.html
+msgid "Cancellation Timing:"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addon_cancel.html
+msgid "Cancel at end of current period"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addon_cancel.html
+msgid ""
+"This event will retain access to the add-on features until the end of its "
+"prepaid period."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addon_cancel.html
+#: eventyay_business/templates/eventyay_business/organizer/addon_cancel.html
+msgid "Cancel immediately"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addon_cancel.html
+msgid "Access to this add-on for this event will be revoked immediately."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addon_cancel.html
+msgid ""
+"This add-on has no scheduled expiration date and will be canceled "
+"immediately upon confirmation."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addon_cancel.html
+#: eventyay_business/templates/eventyay_business/organizer/addon_cancel.html
+msgid "Keep Add-on"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addon_purchase.html
+msgid "Enable Add-on"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addon_purchase.html
+#: eventyay_business/templates/eventyay_business/organizer/addon_purchase.html
+msgid "Add-on Details"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addon_purchase.html
+msgid "Target Event:"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addon_purchase.html
+#: eventyay_business/templates/eventyay_business/organizer/addon_purchase.html
+msgid "Capability / Feature:"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addon_purchase.html
+#: eventyay_business/templates/eventyay_business/organizer/addon_purchase.html
+msgid "Feature Name:"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addon_purchase.html
+#: eventyay_business/templates/eventyay_business/organizer/addon_purchase.html
+msgid "Allowance per unit:"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addon_purchase.html
+#: eventyay_business/templates/eventyay_business/organizer/addon_purchase.html
+msgid "Scope:"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addon_purchase.html
+#: eventyay_business/templates/eventyay_business/organizer/addon_purchase.html
+msgid "Price:"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addon_purchase.html
+#: eventyay_business/templates/eventyay_business/organizer/addon_purchase.html
+#: eventyay_business/templates/eventyay_business/organizer/plan_upgrade.html
+msgid "The voucher could not be checked. Please try again."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addon_purchase.html
+#: eventyay_business/templates/eventyay_business/organizer/addon_purchase.html
+msgid "With voucher:"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addon_purchase.html
+#: eventyay_business/templates/eventyay_business/organizer/addon_purchase.html
+msgid "per unit"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addon_purchase.html
+#: eventyay_business/templates/eventyay_business/organizer/addon_purchase.html
+msgid "Selected Quantity:"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addon_purchase.html
+#: eventyay_business/templates/eventyay_business/organizer/addon_purchase.html
+msgid "Total Cost:"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addon_purchase.html
+#: eventyay_business/templates/eventyay_business/organizer/addon_purchase.html
+msgid "Recurring fee"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addon_purchase.html
+#: eventyay_business/templates/eventyay_business/organizer/addon_purchase.html
+msgid "One-time payment"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addon_purchase.html
+#: eventyay_business/templates/eventyay_business/event/addons.html
+#: eventyay_business/templates/eventyay_business/organizer/addon_purchase.html
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+#: eventyay_business/templates/eventyay_business/organizer/plan_upgrade.html
+msgid "Free"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addon_purchase.html
+#: eventyay_business/templates/eventyay_business/organizer/addon_purchase.html
+#: eventyay_business/templates/eventyay_business/organizer/plan_upgrade.html
+msgid "Automatic invoice payments"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addon_purchase.html
+#: eventyay_business/templates/eventyay_business/organizer/addon_purchase.html
+msgid ""
+"Completing this paid purchase authorizes Eventyay to save the payment method "
+"used and automatically charge future organizer invoices. You can turn off "
+"automatic payments later without canceling this add-on."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addon_purchase.html
+msgid "Confirm & Enable for Event"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addons.html
+msgid "Active Event Add-ons"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addons.html
+msgid ""
+"Features, capability extensions, and modules currently active for this event."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addons.html
+msgid "Add-on Name"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addons.html
+#: eventyay_business/templates/eventyay_business/tiers/form.html
+msgid "Capability / Feature"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addons.html
+msgid "Allowance / Units"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addons.html
+msgid "Activated"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addons.html
+msgid "Expires / Duration"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addons.html
+msgid "No expiration"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addons.html
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Cancels"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addons.html
+msgid "No event-specific add-ons are currently active for this event."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addons.html
+msgid "Available Event Add-ons"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addons.html
+msgid "Extend this event with optional event-level features and capabilities."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addons.html
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Feature / Allowance"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addons.html
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+#: eventyay_business/templates/eventyay_business/tiers/form.html
+msgid "Action"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addons.html
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Grants:"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addons.html
+msgid "Enable for this Event"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/event/addons.html
+msgid ""
+"There are currently no additional event-level add-ons available for self-"
+"service purchase."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/fees/delete.html
+msgid "Delete country fee setting"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/fees/delete.html
+#, python-format
+msgid ""
+"Are you sure you want to delete the fee setting override for "
+"<strong>%(country)s (%(currency)s)</strong>?"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/fees/delete.html
+msgid ""
+"After deletion, ticket fees for this country will fall back to global "
+"settings or tier entitlements."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/fees/delete.html
+msgid "Delete"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/fees/form.html
+msgid "Edit country fee setting"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/fees/form.html
+msgid "Add country fee setting"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/fees/list.html
+msgid "Fee Settings"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/fees/list.html
+msgid ""
+"Set fee percentages on tier entitlements and use this page for country-"
+"specific overrides."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/fees/list.html
+msgid "Add country override"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/fees/list.html
+msgid "Country-Wise Fee Settings"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/fees/list.html
+msgid ""
+"Override tier service fees and set maximum fee caps for specific countries "
+"and currencies. Orders originating from these countries will use these "
+"custom rates."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/fees/list.html
+#, python-format
+msgid "Service Fee %%"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/fees/list.html
+msgid "Maximum Fee"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/fees/list.html
+msgid "Unlimited (0.00)"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/fees/list.html
+msgid "No country-specific fee overrides configured."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/invoices/admin_detail.html
+#: eventyay_business/templates/eventyay_business/invoices/organizer_detail.html
+msgid "Download PDF"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/invoices/admin_detail.html
+#: eventyay_business/templates/eventyay_business/invoices/organizer_detail.html
+msgid "Back to Invoices"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/invoices/admin_detail.html
+#: eventyay_business/templates/eventyay_business/invoices/organizer_detail.html
+msgid "Invoice Details"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/invoices/admin_detail.html
+#: eventyay_business/templates/eventyay_business/invoices/organizer_detail.html
+msgid "Invoice Number"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/invoices/admin_detail.html
+#: eventyay_business/templates/eventyay_business/invoices/organizer_detail.html
+msgid "Billing Period"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/invoices/admin_detail.html
+#: eventyay_business/templates/eventyay_business/invoices/organizer_detail.html
+msgid "Invoice Line Items"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/invoices/admin_detail.html
+#: eventyay_business/templates/eventyay_business/invoices/organizer_detail.html
+msgid "Unit Price"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/invoices/admin_detail.html
+#: eventyay_business/templates/eventyay_business/invoices/organizer_detail.html
+msgid "Orders:"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/invoices/admin_detail.html
+#: eventyay_business/templates/eventyay_business/invoices/organizer_detail.html
+msgid "Total fees:"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/invoices/admin_detail.html
+#: eventyay_business/templates/eventyay_business/invoices/organizer_detail.html
+msgid "Free registrations:"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/invoices/admin_detail.html
+#: eventyay_business/templates/eventyay_business/invoices/organizer_detail.html
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Allowance:"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/invoices/admin_detail.html
+#: eventyay_business/templates/eventyay_business/invoices/organizer_detail.html
+msgid "Overage count:"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/invoices/admin_detail.html
+#: eventyay_business/templates/eventyay_business/invoices/organizer_detail.html
+msgid "No line items found."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/invoices/admin_list.html
+msgid "Customize email templates"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/invoices/admin_list.html
+msgid "Business Invoices"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/invoices/admin_list.html
+msgid "Search invoice # or organizer..."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/invoices/admin_list.html
+#: eventyay_business/templates/eventyay_business/notifications/admin_list.html
+msgid "Filter"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/invoices/admin_list.html
+msgid "No business invoices found."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/invoices/admin_list.html
+#: eventyay_business/templates/eventyay_business/invoices/organizer_list.html
+msgid "Invoice #"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/invoices/admin_list.html
+#: eventyay_business/templates/eventyay_business/invoices/organizer_list.html
+msgid "Date"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/invoices/admin_list.html
+#: eventyay_business/templates/eventyay_business/invoices/organizer_list.html
+msgid "View"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/invoices/organizer_list.html
+msgid "Back to Plan & Billing"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/invoices/organizer_list.html
+msgid "No invoices have been issued yet."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/notifications/admin_list.html
+msgid "All notification types"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/notifications/admin_list.html
+msgid "Created"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/notifications/admin_list.html
+msgid "Related object"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/notifications/admin_list.html
+msgid "Failure"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/notifications/admin_list.html
+msgid "Retry"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/notifications/admin_list.html
+msgid "No billing notification deliveries match these filters."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/notifications/template_form.html
+#, python-format
+msgid "Edit %(notification)s email"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/notifications/template_form.html
+msgid "Email template"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/notifications/template_form.html
+msgid "Add language"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/notifications/template_form.html
+msgid "Save template"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/notifications/template_form.html
+msgid "Reset all languages to defaults"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/notifications/template_form.html
+msgid "Back to email templates"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/notifications/template_form.html
+msgid "Available placeholders"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/notifications/template_form.html
+msgid ""
+"Insert these values in the subject or message. Keep the braces exactly as "
+"shown."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/notifications/test.html
+msgid "Send a test billing notification"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/notifications/test.html
+msgid ""
+"Test delivery creates an audit record but never changes invoice, payment, "
+"subscription or add-on state."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/notifications/test.html
+msgid "Send test"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/notifications/test.html
+msgid "View delivery history"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/addon_cancel.html
+#, python-format
+msgid ""
+"\n"
+"                    Are you sure you want to cancel the add-on "
+"<strong>%(name)s</strong> for your organisation?\n"
+"                "
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/addon_cancel.html
+msgid "Cancel at end of current billing period"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/addon_cancel.html
+msgid ""
+"You will retain access to the add-on features until the end of your prepaid "
+"period."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/addon_cancel.html
+msgid "Access to this add-on will be revoked immediately."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/addon_cancel.html
+msgid ""
+"This continuous add-on has no scheduled expiration date and will be canceled "
+"immediately upon confirmation."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/addon_purchase.html
+msgid "Purchase Add-on"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/addon_purchase.html
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Add to Plan"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/addon_purchase.html
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Organisation"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/addon_purchase.html
+msgid "Confirm & Add to Plan"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Plan & Usage"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+#: eventyay_business/templates/eventyay_business/organizer/plan_upgrade.html
+msgid "Change / Upgrade Plan"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Cancel Subscription"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Current Subscription"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Keep Current Plan"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Scheduled Plan Change:"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+#, python-format
+msgid ""
+"\n"
+"                            Your subscription will downgrade to "
+"%(target_tier)s on %(change_date)s. Until then, your current plan "
+"entitlements remain active.\n"
+"                        "
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Payment Past Due:"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+#, python-format
+msgid ""
+"\n"
+"                                Your recent renewal payment failed. You are "
+"in a %(days)s-day grace period ending on %(end_date)s. Your features remain "
+"active, but please update your payment method to avoid service "
+"interruption.\n"
+"                            "
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid ""
+"Your grace period has expired. Please update your payment method immediately "
+"to restore full plan features."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Plan:"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Status:"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Started:"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Renews / Ends:"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid ""
+"No active subscription found. You are currently operating without an "
+"assigned plan."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Active Add-ons"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Included Quantity"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Capability & Value"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Expires / Renews"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Never / Continuous"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Event:"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Available Add-ons & Extensions"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid ""
+"Enhance your organisation or specific events with additional capabilities, "
+"integrations, and extra capacity."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid ""
+"There are currently no additional add-ons available for self-service "
+"purchase."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Your Organisation's Features"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Click to collapse"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Click to expand"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid ""
+"These are the features and limits included in your current plan. They "
+"control what your team and attendees can do."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Category"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Feature"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Your Limit / Access"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+#: eventyay_business/templates/eventyay_business/organizer/plan_upgrade.html
+msgid "Enabled"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Disabled"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Custom limit set for your plan"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Custom"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "No organiser features defined."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+#: eventyay_business/templates/eventyay_business/organizer/plan_upgrade.html
+msgid "Developer & API Access"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid ""
+"These settings apply if you connect third-party tools or build integrations "
+"using the Eventyay REST API or webhooks."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Your Access"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Technical name"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "No developer features defined."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+#, python-format
+msgid ""
+"\n"
+"                                    Are you sure you want to cancel your "
+"<strong>%(plan_name)s</strong> subscription?\n"
+"                                "
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+#, python-format
+msgid ""
+"\n"
+"                                        Your subscription will remain active "
+"until the end of your current billing period on <strong>%(end_date)s</"
+"strong>. After this date, your account will be downgraded to the Free plan.\n"
+"                                    "
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid ""
+"Your subscription will be cancelled and your account will immediately be "
+"downgraded to the Free plan."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan.html
+msgid "Keep Subscription"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan_upgrade.html
+msgid "Back to Plan & Usage"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan_upgrade.html
+#, python-format
+msgid ""
+"\n"
+"                Your organization is currently on the <strong>%(tier_name)s</"
+"strong> plan.\n"
+"            "
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan_upgrade.html
+msgid ""
+"When you select a paid plan, you authorize Eventyay to save the payment "
+"method used and automatically charge future organizer invoices. Invoice "
+"totals can vary based on your plan, add-ons, ticket fees, usage, refunds, "
+"adjustments and applicable taxes. You can turn off automatic payments later "
+"without canceling the plan."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan_upgrade.html
+msgid "Have a voucher code?"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan_upgrade.html
+msgid "Apply"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan_upgrade.html
+msgid "Current Plan"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan_upgrade.html
+msgid "Complete event management suite with standard platform features."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan_upgrade.html
+msgid "Standard Platform Limits"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan_upgrade.html
+msgid ""
+"Default allowances apply. Custom quotas and limits will appear here when "
+"published."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan_upgrade.html
+msgid "Organisation & Event Features"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan_upgrade.html
+msgid "Current"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan_upgrade.html
+msgid "Select"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan_upgrade.html
+msgid "Always free — no credit card required"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan_upgrade.html
+msgid "Downgrade to Free"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan_upgrade.html
+msgid "No pricing options available."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/organizer/plan_upgrade.html
+msgid "No public subscription plans are currently available."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/subscriptions/form.html
+msgid "Edit subscription"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/subscriptions/form.html
+#: eventyay_business/templates/eventyay_business/subscriptions/list.html
+msgid "Create subscription"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/subscriptions/form.html
+msgid "Past Due Subscription:"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/subscriptions/form.html
+#, python-format
+msgid ""
+"\n"
+"                    This subscription is in a %(days)s-day grace period "
+"ending on %(end_date)s.\n"
+"                "
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/subscriptions/form.html
+msgid "This subscription's grace period has expired."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/subscriptions/list.html
+msgid "Tier Version"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/subscriptions/list.html
+#, python-format
+msgid ""
+"\n"
+"                                        Grace until %(end_date)s\n"
+"                                    "
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/subscriptions/list.html
+msgid "Grace expired"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/subscriptions/list.html
+msgid "No subscriptions found."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/detail.html
+msgid "Tier Details"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/detail.html
+msgid "General Information"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/detail.html
+#: eventyay_business/templates/eventyay_business/tiers/list.html
+msgid "Latest Version"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/detail.html
+msgid "Grace Period:"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/detail.html
+msgid "days"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/detail.html
+#: eventyay_business/templates/eventyay_business/tiers/form.html
+#: eventyay_business/templates/eventyay_business/tiers/version_detail.html
+msgid "Prices"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/detail.html
+#: eventyay_business/templates/eventyay_business/tiers/version_detail.html
+msgid "Interval"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/detail.html
+msgid "No prices defined."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/detail.html
+#: eventyay_business/templates/eventyay_business/tiers/version_detail.html
+msgid "Entitlements"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/detail.html
+#: eventyay_business/templates/eventyay_business/tiers/form.html
+#: eventyay_business/templates/eventyay_business/tiers/version_detail.html
+msgid "Overage Allowed"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/detail.html
+msgid "No entitlements defined."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/detail.html
+msgid "No versions exist for this tier."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/detail.html
+msgid "Create New Draft Version"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/detail.html
+msgid "Edit Draft"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/detail.html
+#, python-format
+msgid "Migrate %(counter)s existing subscriber to v%(version)s"
+msgid_plural "Migrate %(counter)s existing subscribers to v%(version)s"
+msgstr[0] ""
+msgstr[1] ""
+
+#: eventyay_business/templates/eventyay_business/tiers/detail.html
+msgid ""
+"Are you sure you want to publish this draft? It cannot be edited once "
+"published."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/detail.html
+msgid "Publish Draft"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/detail.html
+msgid "Are you sure you want to archive this tier?"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/detail.html
+msgid "Archive Tier"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/detail.html
+msgid "Version History"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/detail.html
+msgid "prices"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/detail.html
+msgid "entitlements"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/form.html
+#, python-format
+msgid "Edit Tier: %(name)s"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/form.html
+#: eventyay_business/templates/eventyay_business/tiers/list.html
+msgid "Create Tier"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/form.html
+msgid "General Settings"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/form.html
+msgid "Version Settings"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/form.html
+msgid ""
+"Configure pricing intervals for this tier. Subscriptions can be billed "
+"monthly or yearly in supported currencies."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/form.html
+msgid "Billing Interval"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/form.html
+msgid "Stripe Price ID"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/form.html
+msgid "Delete Price"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/form.html
+msgid "Add Price"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/form.html
+msgid "Populate Standard Capabilities"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/form.html
+msgid "Entitlements & Feature Quotas"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/form.html
+msgid ""
+"Define feature availability and usage allowances included in this tier "
+"version. Features adapt automatically based on type (Included toggles for "
+"features, numeric quotas for limits, and percentage fees)."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/form.html
+msgid "Allow overage"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/form.html
+msgid "Delete Entitlement"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/form.html
+msgid "Overage Pricing Configuration"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/form.html
+msgid "Price per Block"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/form.html
+msgid "Block Size (Quantity per charge)"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/form.html
+msgid "Add Entitlement"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/list.html
+msgid "You haven't created any tiers yet."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/list.html
+msgid "View Tier"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/list.html
+msgid "Edit Tier"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/version_detail.html
+msgid "Back to Tier"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/version_detail.html
+msgid "Version Info"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/version_detail.html
+msgid "Draft (unpublished)"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/version_detail.html
+msgid "No prices defined for this version."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/version_detail.html
+msgid "No entitlements defined for this version."
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/version_detail.html
+msgid "Subscribers"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/version_detail.html
+msgid "Active / Pending:"
+msgstr ""
+
+#: eventyay_business/templates/eventyay_business/tiers/version_detail.html
+msgid "Count of subscriptions currently on this version."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Tier created successfully with standard capabilities."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid ""
+"This tier is published. To edit prices or entitlements, please create a new "
+"draft version."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Standard capabilities have been populated for this tier version."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Cannot save edits: this version was published concurrently."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Tier draft saved successfully."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Cannot create a new draft: there is already an unpublished draft."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "New draft version created. You can now make changes."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Cannot publish a draft for an archived tier. Unarchive it first."
+msgstr ""
+
+#: eventyay_business/views.py
+#, python-format
+msgid ""
+"Tier published successfully. Migrated %(count)d subscriber(s) to "
+"v%(version)d."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Tier published successfully."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "This tier has no unpublished draft."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Tier archived successfully."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Subscription created successfully."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Subscription updated successfully."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Please select a plan."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Invalid plan selected."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Vouchers can only be used on paid plans."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid ""
+"Save a payment method in billing settings before changing to a paid plan."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Vouchers cannot be used when moving to a cheaper plan."
+msgstr ""
+
+#: eventyay_business/views.py
+#, python-format
+msgid ""
+"Your organisation currently has %(current)d for %(feature)s, which exceeds "
+"the limit of %(limit)d on %(tier)s. Existing data will not be deleted, but "
+"you will not be able to add or use additional capacity until usage is within "
+"limits."
+msgstr ""
+
+#: eventyay_business/views.py
+#, python-format
+msgid "Failed to update subscription with payment provider: %s"
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Subscription not found."
+msgstr ""
+
+#: eventyay_business/views.py
+#, python-format
+msgid "Your plan has been changed to %(tier)s."
+msgstr ""
+
+#: eventyay_business/views.py
+#, python-format
+msgid ""
+"Your plan downgrade to %(tier)s has been scheduled for %(renewal)s. Your "
+"current plan features will remain active until then."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Could not initiate payment session. Please try again later."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid ""
+"We could not start the secure payment setup. Check your billing details and "
+"try again."
+msgstr ""
+
+#: eventyay_business/views.py
+#, python-format
+msgid "Successfully updated your plan to %(name)s."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "No scheduled downgrade found."
+msgstr ""
+
+#: eventyay_business/views.py
+#, python-format
+msgid "Failed to cancel scheduled downgrade with payment provider: %s"
+msgstr ""
+
+#: eventyay_business/views.py
+msgid ""
+"Your scheduled plan downgrade has been canceled. Your current plan will "
+"continue renewing normally."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "No active subscription found."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "You are already on the Free plan. No cancellation is required."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Your subscription already has a scheduled plan change in progress."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Free plan is currently not available. Please contact support."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Free plan version is currently not available. Please contact support."
+msgstr ""
+
+#: eventyay_business/views.py
+#, python-format
+msgid "Failed to cancel subscription with payment provider: %s"
+msgstr ""
+
+#: eventyay_business/views.py
+#, python-format
+msgid "Your subscription has been canceled and your plan changed to %(tier)s."
+msgstr ""
+
+#: eventyay_business/views.py
+#, python-format
+msgid ""
+"Your subscription cancellation has been scheduled. Your current plan "
+"features will remain active until %(renewal)s, after which your account will "
+"transition to %(tier)s."
+msgstr ""
+
+#: eventyay_business/views.py
+#, python-format
+msgid "This add-on is already active for %(event)s."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "This add-on is already active for your organisation."
+msgstr ""
+
+#: eventyay_business/views.py
+#, python-format
+msgid "The %(addon)s add-on has been added to your organisation."
+msgstr ""
+
+#: eventyay_business/views.py
+#, python-format
+msgid "Payment provider error: %(error)s"
+msgstr ""
+
+#: eventyay_business/views.py
+#, python-format
+msgid "Discount applies to the first %(count)s billing periods."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Discount applies to every billing period while the voucher is valid."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Discount applies to the first billing period."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Enter a voucher code."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Voucher applied."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "This voucher cannot be used for any of these plans."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "This add-on is already not active."
+msgstr ""
+
+#: eventyay_business/views.py
+#, python-format
+msgid "Add-on '%(name)s' has been canceled."
+msgstr ""
+
+#: eventyay_business/views.py
+#, python-format
+msgid ""
+"Add-on '%(name)s' is scheduled to cancel at the end of the billing period."
+msgstr ""
+
+#: eventyay_business/views.py
+#, python-format
+msgid "The %(addon)s add-on has been added to %(event)s."
+msgstr ""
+
+#: eventyay_business/views.py
+#, python-format
+msgid "Add-on '%(name)s' has been canceled for %(event)s."
+msgstr ""
+
+#: eventyay_business/views.py
+#, python-format
+msgid "Add-on '%(name)s' is scheduled to cancel at the end of the period."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Add-on created successfully."
+msgstr ""
+
+#: eventyay_business/views.py
+#, python-format
+msgid ""
+"Add-on updated successfully and %(count)d existing active assignment(s) "
+"updated."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Add-on updated successfully."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "activated"
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "deactivated"
+msgstr ""
+
+#: eventyay_business/views.py
+#, python-format
+msgid "Add-on %(name)s was %(status)s."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Organizer add-on assigned successfully."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Organizer add-on assignment updated."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Event add-on assigned successfully."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Event add-on assignment updated."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "This add-on assignment is already inactive."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "The organizer add-on assignment has been revoked."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "The event add-on assignment has been revoked."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Complete the organizer billing details before authorizing collection."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Save a payment method before authorizing automatic collection."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Confirm the automatic collection authorization."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Automatic invoice collection is authorized."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Automatic payments are already off."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid ""
+"Automatic payments are off. Your subscriptions remain active and invoices "
+"still become due."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "This notification was already sent."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "This notification is already being delivered."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "The notification retry was queued."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "The test notification was queued without changing billing state."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "The notification template was reset to its translated defaults."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "The notification template was saved."
+msgstr ""
+
+#: eventyay_business/views.py
+#, python-format
+msgid "Activated consolidated billing for %(count)s organizer(s)."
+msgstr ""
+
+#: eventyay_business/views.py
+#, python-format
+msgid "Skipped %(count)s organizer(s) that failed the locked preflight."
+msgstr ""
+
+#: eventyay_business/views.py
+#, python-format
+msgid "Billing reconciliation completed for %(count)s result(s)."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Resolve every blocking finding before accepting this result."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Reconciliation result accepted."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "This organizer is not ready for activation."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Consolidated billing has been activated."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Country fee setting created successfully."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Country fee setting updated successfully."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Country fee setting deleted successfully."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Your changes have been saved."
+msgstr ""
+
+#: eventyay_business/views.py
+msgid "Your changes have not been saved, see below for errors."
+msgstr ""
+
+#: eventyay_business/views_stripe.py
+msgid "Your payment was successful and your plan has been activated!"
+msgstr ""
+
+#: eventyay_business/views_stripe.py
+msgid ""
+"Your payment was successful! Your subscription or add-on is being activated "
+"and will appear shortly."
+msgstr ""
+
+#: eventyay_business/views_stripe.py
+msgid "The checkout process was canceled. No charges were made."
+msgstr ""
+
+#: eventyay_business/vouchers.py
+msgid "This voucher has expired or has already been used up."
+msgstr ""
+
+#: eventyay_business/vouchers.py
+msgid "This voucher code is not valid."
+msgstr ""
+
+#: eventyay_business/vouchers.py
+msgid "This voucher is not valid for your organisation."
+msgstr ""
+
+#: eventyay_business/vouchers.py
+#, python-format
+msgid "This voucher cannot be used for %(name)s."
+msgstr ""
+
+#: eventyay_business/vouchers.py
+#, python-format
+msgid "This voucher gives no discount on %(name)s."
+msgstr ""
