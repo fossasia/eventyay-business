@@ -517,6 +517,8 @@ def organizer_notification_context(
             value = format_notification_datetime(value, recipient.locale)
         elif isinstance(value, Decimal):
             value = str(value)
+        elif not isinstance(value, (str, int, float, bool, list, dict, type(None))):
+            value = str(value)
         context[key] = value if value is not None else ""
     return context
 
@@ -598,6 +600,9 @@ def queue_subscription_notification(
             )
         ),
     )
+    amount = context_values.pop("amount", amount)
+    currency = context_values.pop("currency", currency)
+    current_state = context_values.pop("current_state", current_state)
     effective_date = context_values.pop(
         "effective_date", subscription.pending_change_at or subscription.starts_at
     )
@@ -636,6 +641,21 @@ def queue_addon_notification(
     with language(recipient.locale):
         current_state = str(assignment.get_status_display())
     marker = key_suffix or assignment.updated_at.isoformat()
+    object_name = context_values.pop(
+        "object_name", str(assignment.addon.name) if assignment.addon else ""
+    )
+    event_name = context_values.pop(
+        "event_name", str(assignment.event.name) if is_event_addon else ""
+    )
+    amount = context_values.pop(
+        "amount", (assignment.price or Decimal("0.00")) * assignment.quantity
+    )
+    currency = context_values.pop("currency", assignment.currency)
+    effective_date = context_values.pop("effective_date", assignment.starts_at)
+    deadline = context_values.pop(
+        "deadline", assignment.cancel_at or assignment.ends_at
+    )
+    current_state = context_values.pop("current_state", current_state)
     return queue_organizer_notification(
         organizer=organizer,
         event_type=event_type,
@@ -646,12 +666,12 @@ def queue_addon_notification(
         related_object_type=("event_addon" if is_event_addon else "organizer_addon"),
         related_object_id=str(assignment.pk),
         recipient=recipient,
-        object_name=assignment.addon.name,
-        event_name=assignment.event.name if is_event_addon else "",
-        amount=(assignment.price or Decimal("0.00")) * assignment.quantity,
-        currency=assignment.currency,
-        effective_date=assignment.starts_at,
-        deadline=assignment.cancel_at or assignment.ends_at,
+        object_name=object_name,
+        event_name=event_name,
+        amount=amount,
+        currency=currency,
+        effective_date=effective_date,
+        deadline=deadline,
         current_state=current_state,
         **context_values,
     )
