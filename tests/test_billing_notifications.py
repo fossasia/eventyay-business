@@ -1,5 +1,5 @@
 import pytest
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from django.conf import settings
 from django.db import transaction
@@ -7,7 +7,7 @@ from django.template.loader import render_to_string
 from django.test import override_settings
 from django.urls import reverse
 from django.utils.timezone import make_aware, now
-from eventyay.base.models import Organizer, User
+from eventyay.base.models import Event, Organizer, User
 from eventyay.base.models.auth import StaffSession
 from eventyay.base.models.organizer import OrganizerBillingModel
 from eventyay.base.services.mail import SendMailException
@@ -16,13 +16,18 @@ from unittest.mock import patch
 
 from eventyay_business.forms import BillingNotificationTemplateForm
 from eventyay_business.models import (
+    AddonAssignmentScope,
+    AddonDefinition,
+    AddonStatus,
     BillingNotificationDelivery,
     BillingNotificationEventType,
     BillingNotificationRecipientSource,
     BillingNotificationStatus,
     BusinessInvoice,
     BusinessInvoiceStatus,
+    EventAddon,
     InvoicePaymentState,
+    OrganizerAddon,
     Subscription,
 )
 from eventyay_business.notifications import (
@@ -31,11 +36,13 @@ from eventyay_business.notifications import (
     NOTIFICATION_SPECS,
     BillingNotificationRecipient,
     deliver_billing_notification,
+    format_notification_datetime,
     invoice_billing_recipient,
     notification_template_active_locales,
     notification_template_overrides,
     notification_template_sources,
     preview_notification_context,
+    queue_addon_notification,
     queue_billing_notification,
     queue_invoice_notification,
     render_notification_content,
@@ -702,4 +709,148 @@ def test_rendered_notification_subject_is_truncated_to_model_limit(
     assert (
         delivery.subject
         == ("Notice for " + "A" * 300)[:MAX_NOTIFICATION_SUBJECT_LENGTH]
+    )
+
+
+@pytest.mark.django_db
+def test_queue_addon_notification_populates_context_and_handles_event_and_organizer_scope(
+    notification_setup,
+):
+    organizer, _, _ = notification_setup
+    org_addon_def = AddonDefinition.objects.create(
+        name="API Write Access",
+        slug="api-write-access",
+        capability="api.write",
+        entitlement_value="true",
+        price=Decimal("49.00"),
+        currency="EUR",
+        active=True,
+        assignment_scope=AddonAssignmentScope.ORGANIZER,
+    )
+    current = now()
+    org_addon = OrganizerAddon.objects.create(
+        organizer=organizer,
+        addon=org_addon_def,
+        starts_at=current,
+        ends_at=current + timedelta(days=30),
+        status=AddonStatus.ACTIVE,
+        price=Decimal("49.00"),
+        currency="EUR",
+        quantity=2,
+    )
+
+    with patch("eventyay_business.notifications.schedule_billing_notification"):
+        delivery = queue_addon_notification(
+            org_addon,
+            BillingNotificationEventType.ADDON_ACTIVATED,
+        )
+
+    assert delivery is not None
+    assert delivery.related_object_type == "organizer_addon"
+    assert delivery.related_object_id == str(org_addon.pk)
+    assert delivery.context["object_name"] == "API Write Access"
+    assert delivery.context["amount"] == "98.00"
+    assert delivery.context["currency"] == "EUR"
+    assert delivery.context["effective_date"] == format_notification_datetime(
+        current, delivery.locale
+    )
+    assert delivery.context["deadline"] == format_notification_datetime(
+        org_addon.ends_at, delivery.locale
+    )
+
+    event = Event.objects.create(
+        organizer=organizer,
+        name="Tech Conference",
+        slug="tech-conf",
+        date_from=current,
+        live=True,
+    )
+    event_addon_def = AddonDefinition.objects.create(
+        name="Spatial Lounge",
+        slug="spatial-lounge",
+        capability="video.mesh",
+        entitlement_value="true",
+        price=Decimal("19.00"),
+        currency="EUR",
+        active=True,
+        assignment_scope=AddonAssignmentScope.EVENT,
+    )
+    event_addon = EventAddon.objects.create(
+        event=event,
+        addon=event_addon_def,
+        starts_at=current,
+        ends_at=current + timedelta(days=14),
+        status=AddonStatus.ACTIVE,
+        price=Decimal("19.00"),
+        currency="EUR",
+        quantity=1,
+    )
+
+    with patch("eventyay_business.notifications.schedule_billing_notification"):
+        event_delivery = queue_addon_notification(
+            event_addon,
+            BillingNotificationEventType.ADDON_ACTIVATED,
+        )
+
+    assert event_delivery is not None
+    assert event_delivery.related_object_type == "event_addon"
+    assert event_delivery.related_object_id == str(event_addon.pk)
+    assert event_delivery.context["object_name"] == "Spatial Lounge"
+    assert event_delivery.context["event_name"] == "Tech Conference"
+
+
+@pytest.mark.django_db
+def test_queue_addon_notification_accepts_context_overrides_without_duplicate_argument_error(
+    notification_setup,
+):
+    organizer, _, _ = notification_setup
+    addon_def = AddonDefinition.objects.create(
+        name="Priority Support",
+        slug="priority-support",
+        capability="support.priority",
+        entitlement_value="true",
+        price=Decimal("99.00"),
+        currency="EUR",
+        active=True,
+        assignment_scope=AddonAssignmentScope.ORGANIZER,
+    )
+    starts = now()
+    ends = starts + timedelta(days=30)
+    addon = OrganizerAddon.objects.create(
+        organizer=organizer,
+        addon=addon_def,
+        starts_at=starts,
+        ends_at=ends,
+        status=AddonStatus.ACTIVE,
+        price=Decimal("99.00"),
+        currency="EUR",
+        quantity=1,
+    )
+
+    override_effective_date = ends
+    override_deadline = ends + timedelta(days=7)
+
+    with patch("eventyay_business.notifications.schedule_billing_notification"):
+        delivery = queue_addon_notification(
+            addon,
+            BillingNotificationEventType.RENEWAL_APPROACHING,
+            key_suffix=ends.isoformat(),
+            effective_date=override_effective_date,
+            deadline=override_deadline,
+            object_name="Custom Addon Display Name",
+            amount=Decimal("80.00"),
+            currency="USD",
+            current_state="Expiring Soon",
+        )
+
+    assert delivery is not None
+    assert delivery.context["object_name"] == "Custom Addon Display Name"
+    assert delivery.context["amount"] == "80.00"
+    assert delivery.context["currency"] == "USD"
+    assert delivery.context["current_state"] == "Expiring Soon"
+    assert delivery.context["effective_date"] == format_notification_datetime(
+        override_effective_date, delivery.locale
+    )
+    assert delivery.context["deadline"] == format_notification_datetime(
+        override_deadline, delivery.locale
     )

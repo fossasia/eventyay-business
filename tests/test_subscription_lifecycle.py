@@ -6,14 +6,20 @@ from django.test import override_settings
 from django.urls import reverse
 from django.utils.timezone import now
 from eventyay.base.entitlements import check_entitlement
-from eventyay.base.models import Organizer, Team, User
+from eventyay.base.models import Event, Organizer, Team, User
 from eventyay.base.models.auth import StaffSession
 from unittest.mock import MagicMock, patch
 
 from eventyay_business.models import (
+    AddonAssignmentScope,
+    AddonDefinition,
+    AddonPricingMode,
+    AddonStatus,
     BillingInterval,
     BillingNotificationDelivery,
     BillingNotificationEventType,
+    EventAddon,
+    OrganizerAddon,
     Subscription,
     SubscriptionStatus,
     Tier,
@@ -557,6 +563,55 @@ def test_lifecycle_task_queues_deduplicated_grace_and_renewal_reminders(
     subscription.status = SubscriptionStatus.ACTIVE
     subscription.ends_at = now() + timedelta(days=5)
     subscription.save()
+
+    addon_def = AddonDefinition.objects.create(
+        name="Recurring Addon",
+        slug="recurring-addon",
+        capability="api.write",
+        entitlement_value="true",
+        price=Decimal("20.00"),
+        currency="EUR",
+        active=True,
+        pricing_mode=AddonPricingMode.RECURRING,
+        assignment_scope=AddonAssignmentScope.ORGANIZER,
+    )
+    org_addon = OrganizerAddon.objects.create(
+        organizer=organizer,
+        addon=addon_def,
+        status=AddonStatus.ACTIVE,
+        starts_at=now() - timedelta(days=25),
+        ends_at=now() + timedelta(days=5),
+        price=Decimal("20.00"),
+        currency="EUR",
+    )
+    event = Event.objects.create(
+        organizer=organizer,
+        name="Lifecycle Event",
+        slug="lifecycle-event",
+        date_from=now(),
+        live=True,
+    )
+    event_addon_def = AddonDefinition.objects.create(
+        name="Event Recurring Addon",
+        slug="event-recurring-addon",
+        capability="video.stream",
+        entitlement_value="true",
+        price=Decimal("15.00"),
+        currency="EUR",
+        active=True,
+        pricing_mode=AddonPricingMode.RECURRING,
+        assignment_scope=AddonAssignmentScope.EVENT,
+    )
+    event_addon = EventAddon.objects.create(
+        event=event,
+        addon=event_addon_def,
+        status=AddonStatus.ACTIVE,
+        starts_at=now() - timedelta(days=25),
+        ends_at=now() + timedelta(days=5),
+        price=Decimal("15.00"),
+        currency="EUR",
+    )
+
     with patch("eventyay_business.notifications.schedule_billing_notification"):
         manage_subscription_lifecycles()
         manage_subscription_lifecycles()
@@ -564,7 +619,24 @@ def test_lifecycle_task_queues_deduplicated_grace_and_renewal_reminders(
     assert (
         BillingNotificationDelivery.objects.filter(
             event_type=BillingNotificationEventType.RENEWAL_APPROACHING,
+            related_object_type="subscription",
             related_object_id=str(subscription.pk),
+        ).count()
+        == 1
+    )
+    assert (
+        BillingNotificationDelivery.objects.filter(
+            event_type=BillingNotificationEventType.RENEWAL_APPROACHING,
+            related_object_type="organizer_addon",
+            related_object_id=str(org_addon.pk),
+        ).count()
+        == 1
+    )
+    assert (
+        BillingNotificationDelivery.objects.filter(
+            event_type=BillingNotificationEventType.RENEWAL_APPROACHING,
+            related_object_type="event_addon",
+            related_object_id=str(event_addon.pk),
         ).count()
         == 1
     )

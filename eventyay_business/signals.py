@@ -330,7 +330,7 @@ def _queue_subscription_lifecycle(
     )
 
 
-def _queue_addon_lifecycle(instance, event_type, key_suffix=""):
+def _queue_addon_lifecycle(instance, event_type, key_suffix="", **context_values):
     from .notifications import queue_addon_notification
 
     transaction.on_commit(
@@ -338,6 +338,7 @@ def _queue_addon_lifecycle(instance, event_type, key_suffix=""):
             instance,
             event_type,
             key_suffix=key_suffix,
+            **context_values,
         ),
         robust=True,
     )
