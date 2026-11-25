@@ -335,7 +335,7 @@ urlpatterns = [
     ),
     # Stripe Webhook and Checkout URLs
     path(
-        "control/business/stripe/webhook/",
+        "_business/stripe/webhook/",
         views_stripe.stripe_business_webhook_view,
         name="stripe.webhook",
     ),

@@ -48,7 +48,6 @@ from eventyay_business.stripe_service import (
 from eventyay_business.views_stripe import (
     StripeCheckoutCancelView,
     StripeCheckoutSuccessView,
-    stripe_business_webhook_view,
 )
 
 
@@ -767,14 +766,12 @@ def test_webhook_subscription_lifecycle_events(setup_data):
 
 
 @pytest.mark.django_db
-def test_stripe_webhook_view_http(setup_data):
-    rf = RequestFactory()
+def test_stripe_webhook_view_http(client, setup_data):
 
     # Missing signature header -> 400
-    req = rf.post(
-        "/control/business/stripe/webhook/", data=b"{}", content_type="application/json"
+    resp = client.post(
+        "/_business/stripe/webhook/", data=b"{}", content_type="application/json"
     )
-    resp = stripe_business_webhook_view(req)
     assert resp.status_code == 400
 
     # Missing secret key in settings -> 503
@@ -782,13 +779,12 @@ def test_stripe_webhook_view_http(setup_data):
         "eventyay.helpers.stripe_utils.get_stripe_webhook_secret_key",
         side_effect=Exception("No key"),
     ):
-        req = rf.post(
-            "/control/business/stripe/webhook/",
+        resp = client.post(
+            "/_business/stripe/webhook/",
             data=b"{}",
             content_type="application/json",
             HTTP_STRIPE_SIGNATURE="sig_123",
         )
-        resp = stripe_business_webhook_view(req)
         assert resp.status_code == 503
 
     # Valid signature processes event -> 200
@@ -802,13 +798,12 @@ def test_stripe_webhook_view_http(setup_data):
             fake_event.data.object = {"metadata": {}}
             mock_construct.return_value = fake_event
 
-            req = rf.post(
-                "/control/business/stripe/webhook/",
+            resp = client.post(
+                "/_business/stripe/webhook/",
                 data=b'{"id": "evt_test"}',
                 content_type="application/json",
                 HTTP_STRIPE_SIGNATURE="sig_valid_123",
             )
-            resp = stripe_business_webhook_view(req)
             assert resp.status_code == 200
 
 
