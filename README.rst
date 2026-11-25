@@ -68,3 +68,11 @@ Released under the terms of the Apache License 2.0
 
 .. _eventyay: https://github.com/eventyay/eventyay
 .. _eventyay development setup: https://docs.eventyay.eu/en/latest/development/setup.html
+
+Stripe billing webhook
+----------------------
+
+Configure the Business webhook destination in Stripe as
+``https://<eventyay-host>/_business/stripe/webhook/``. When upgrading,
+update the existing destination from ``/control/business/stripe/webhook/``
+and resend failed deliveries after deployment.
