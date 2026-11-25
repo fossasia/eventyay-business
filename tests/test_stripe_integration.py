@@ -1496,7 +1496,14 @@ def test_sync_organizer_from_stripe(setup_data):
             "tier_price_id": str(tier_price.pk),
             "tier_version_id": str(tier_version.pk),
         },
-        "latest_invoice": "in_remote_001",
+        "current_period_start": 1735689600,
+        "current_period_end": 1738368000,
+        "latest_invoice": {
+            "id": "in_remote_001",
+            "amount_paid": 4210,
+            "currency": "eur",
+            "status": "paid",
+        },
         "items": {"data": []},
     }
 
@@ -1516,12 +1523,15 @@ def test_sync_organizer_from_stripe(setup_data):
                 assert synced is not None
                 assert synced.status == SubscriptionStatus.ACTIVE
                 assert synced.tier_version == tier_version
+                assert sync_organizer_from_stripe(organizer).pk == synced.pk
 
-    # Invoice generated
-    inv = BusinessInvoice.objects.filter(organizer=organizer).first()
-    assert inv is not None
+    inv = BusinessInvoice.objects.get(organizer=organizer)
     assert inv.status == BusinessInvoiceStatus.PAID
-    assert inv.total == Decimal("99.00")
+    assert inv.total == Decimal("42.10")
+    assert inv.currency == "EUR"
+    assert inv.stripe_invoice_id == "in_remote_001"
+    assert synced.starts_at.timestamp() == 1735689600
+    assert synced.ends_at.timestamp() == 1738368000
 
 
 def _sync_from_product_metadata(organizer, tier_version, stripe_price):
@@ -1531,8 +1541,16 @@ def _sync_from_product_metadata(organizer, tier_version, stripe_price):
         {
             "id": "sub_remote_product_1",
             "metadata": {},
-            "latest_invoice": "in_remote_product_1",
-            "items": {"data": [{"price": {"metadata": {}, **stripe_price}}]},
+            "latest_invoice": None,
+            "items": {
+                "data": [
+                    {
+                        "current_period_start": 1735689600,
+                        "current_period_end": 1738368000,
+                        "price": {"metadata": {}, **stripe_price},
+                    }
+                ]
+            },
         }
     )
     product = ObjectWithoutDictMethods(
@@ -1574,9 +1592,8 @@ def test_sync_organizer_from_stripe_reads_tier_from_product_metadata(setup_data)
     assert synced.tier_version == tier_version
     assert synced.billing_interval == BillingInterval.MONTHLY
     assert synced.currency == "USD"
-    invoice = BusinessInvoice.objects.get(organizer=organizer)
-    assert invoice.status == BusinessInvoiceStatus.PAID
-    assert invoice.total == tier_price.amount
+    assert synced.ends_at.timestamp() == 1738368000
+    assert not BusinessInvoice.objects.filter(organizer=organizer).exists()
 
 
 @pytest.mark.django_db
