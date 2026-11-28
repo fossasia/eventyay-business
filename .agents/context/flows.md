@@ -69,7 +69,7 @@ through two collectors. Read `tests/test_billing_migration.py`,
 ## Routing and scheduled work
 
 `urls.py` maps `/pricing/`, `/admin/global/business/`, organizer/event business
-views under `/control/`, and `/control/business/stripe/webhook/`. Use Django URL
+views under `/control/`, and `/_business/stripe/webhook/`. Use Django URL
 names and permission checks from existing views rather than constructing paths.
 
 `apps.py` imports tasks; `tasks.py` defines lifecycle, invoice, collection,
