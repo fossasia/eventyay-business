@@ -3,6 +3,7 @@ from typing import Optional
 import logging
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils.timezone import now
@@ -681,8 +682,23 @@ def _record_checkout_invoice_for_subscription(
     Creates a BusinessInvoice and BusinessInvoiceLine (status=PAID)
     for a completed subscription checkout session. Idempotent.
     """
+    currency = (
+        session_data.get("currency")
+        or (tier_price.currency if tier_price else None)
+        or subscription.currency
+        or "USD"
+    ).upper()
+
     amount_total = session_data.get("amount_total")
-    if amount_total is not None:
+    if "recovered_invoice" in session_data:
+        invoice = session_data["recovered_invoice"]
+        if not invoice:
+            return None
+        currency = invoice["currency"].upper()
+        total = Decimal(invoice["amount_paid"]).scaleb(
+            -settings.CURRENCY_PLACES.get(currency, 2)
+        )
+    elif amount_total is not None:
         try:
             total = (Decimal(str(amount_total)) / Decimal("100")).quantize(
                 Decimal("0.01")
@@ -694,15 +710,8 @@ def _record_checkout_invoice_for_subscription(
     else:
         total = Decimal("0.00")
 
-    if total <= Decimal("0.00"):
+    if total <= Decimal("0.00") and "recovered_invoice" not in session_data:
         return None
-
-    currency = (
-        session_data.get("currency")
-        or (tier_price.currency if tier_price else None)
-        or subscription.currency
-        or "USD"
-    ).upper()
 
     stripe_sub_id = session_data.get("subscription")
     stripe_pi_id = session_data.get("payment_intent")
@@ -1244,13 +1253,13 @@ def process_subscription_checkout_completed(session_data: dict):
         if user_id:
             user = User.objects.filter(pk=user_id).first()
 
-        current_time = now()
+        current_time = session_data.get("period_start") or now()
         interval_val = (
             getattr(tier_price, "billing_interval", None)
             or getattr(tier_price, "interval", None)
             or BillingInterval.MONTHLY
         )
-        ends_at = current_time + (
+        ends_at = session_data.get("period_end") or current_time + (
             timedelta(days=365)
             if interval_val in ("year", "annual", BillingInterval.ANNUAL)
             else timedelta(days=30)
@@ -1280,6 +1289,13 @@ def process_subscription_checkout_completed(session_data: dict):
                     .first()
                 )
             if processed_sub:
+                if (
+                    "period_start" in session_data
+                    and processed_sub.status == SubscriptionStatus.ACTIVE
+                ):
+                    processed_sub.starts_at = current_time
+                    processed_sub.ends_at = ends_at
+                    processed_sub.save(update_fields=["starts_at", "ends_at"])
                 _record_checkout_invoice_for_subscription(
                     organizer=organizer,
                     subscription=processed_sub,
@@ -1847,7 +1863,10 @@ def sync_organizer_from_stripe(organizer) -> Optional[Subscription]:
     # 2. List active subscriptions in Stripe
     try:
         stripe_subs = stripe.Subscription.list(
-            customer=customer_id, status="active", limit=5
+            customer=customer_id,
+            status="active",
+            limit=5,
+            expand=["data.latest_invoice"],
         )
         for s_sub in getattr(stripe_subs, "data", []):
             s_dict = stripe_object_to_dict(s_sub)
@@ -1902,7 +1921,26 @@ def sync_organizer_from_stripe(organizer) -> Optional[Subscription]:
                         organizer.slug,
                     )
                 elif tier_version:
+                    item = items_data[0] if items_data else {}
+                    start = s_dict.get("current_period_start") or item.get(
+                        "current_period_start"
+                    )
+                    end = s_dict.get("current_period_end") or item.get(
+                        "current_period_end"
+                    )
+                    if not start or not end:
+                        logger.warning(
+                            "Missing billing period for Stripe subscription %s",
+                            s_sub.id,
+                        )
+                        continue
+                    invoice = s_dict.get("latest_invoice")
+                    if not isinstance(invoice, dict) or invoice.get("status") != "paid":
+                        invoice = None
                     session_mock = {
+                        "period_start": datetime.fromtimestamp(start, tz=timezone.utc),
+                        "period_end": datetime.fromtimestamp(end, tz=timezone.utc),
+                        "recovered_invoice": invoice,
                         "metadata": {
                             "type": "subscription",
                             "organizer_slug": organizer.slug,
@@ -1911,7 +1949,7 @@ def sync_organizer_from_stripe(organizer) -> Optional[Subscription]:
                         },
                         "customer": customer_id,
                         "subscription": s_sub.id,
-                        "invoice": getattr(s_sub, "latest_invoice", None),
+                        "invoice": invoice["id"] if invoice else None,
                     }
                     return process_subscription_checkout_completed(session_mock)
     except Exception as exc:
